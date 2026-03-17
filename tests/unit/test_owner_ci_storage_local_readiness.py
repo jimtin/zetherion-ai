@@ -12,6 +12,7 @@ from zetherion_ai.owner_ci.storage import (
     OwnerCiStorage,
     _expand_local_candidate_roots,
     _load_local_repo_readiness,
+    _load_local_worker_certification,
 )
 
 
@@ -75,6 +76,156 @@ def test_expand_local_candidate_roots_translates_windows_paths_for_posix_runtime
     roots = _expand_local_candidate_roots(r"C:\ZetherionCI\workspaces\catalyst-group-solutions")
 
     assert Path("/mnt/c/ZetherionCI/workspaces/catalyst-group-solutions") in roots
+
+
+def test_expand_local_candidate_roots_handles_blank_and_absolute_paths(tmp_path) -> None:
+    assert _expand_local_candidate_roots("") == []
+    assert tmp_path in _expand_local_candidate_roots(str(tmp_path))
+
+
+def test_load_local_repo_readiness_skips_invalid_candidates_before_valid_receipt(tmp_path) -> None:
+    repo_root = tmp_path / "zetherion-ai"
+    invalid_path = repo_root / ".artifacts" / "local-readiness-receipt.json"
+    valid_path = repo_root / ".ci" / "local-readiness-receipt.json"
+    invalid_path.parent.mkdir(parents=True)
+    valid_path.parent.mkdir(parents=True)
+    invalid_path.write_text("{invalid", encoding="utf-8")
+    valid_path.write_text(
+        json.dumps(
+            {
+                "repo_id": "zetherion-ai",
+                "merge_ready": True,
+                "deploy_ready": False,
+                "summary": "loaded from ci directory",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    receipt, payload = _load_local_repo_readiness(
+        {
+            "repo_id": "zetherion-ai",
+            "allowed_paths": [str(repo_root)],
+        }
+    )
+
+    assert receipt is not None
+    assert payload is not None
+    assert receipt.repo_id == "zetherion-ai"
+    assert receipt.summary == "loaded from ci directory"
+
+
+def test_load_local_repo_readiness_continues_past_non_normalizable_payloads(tmp_path) -> None:
+    repo_root = tmp_path / "zetherion-ai"
+    first_path = repo_root / ".artifacts" / "local-readiness-receipt.json"
+    second_path = repo_root / ".ci" / "local-readiness-receipt.json"
+    first_path.parent.mkdir(parents=True)
+    second_path.parent.mkdir(parents=True)
+    first_path.write_text(
+        json.dumps(
+            {
+                "merge_ready": True,
+                "deploy_ready": False,
+                "summary": "missing repo id should be skipped",
+            }
+        ),
+        encoding="utf-8",
+    )
+    second_path.write_text(
+        json.dumps(
+            {
+                "repo_id": "zetherion-ai",
+                "merge_ready": True,
+                "deploy_ready": True,
+                "summary": "fallback receipt",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    receipt, payload = _load_local_repo_readiness(
+        {
+            "repo_id": "",
+            "allowed_paths": [str(repo_root)],
+        }
+    )
+
+    assert receipt is not None
+    assert payload is not None
+    assert receipt.repo_id == "zetherion-ai"
+    assert receipt.summary == "fallback receipt"
+
+
+def test_load_local_worker_certification_skips_invalid_candidates_before_valid_receipt(
+    tmp_path,
+) -> None:
+    repo_root = tmp_path / "zetherion-ai"
+    invalid_path = repo_root / ".artifacts" / "worker-certification-receipt.json"
+    nondict_path = repo_root / ".artifacts" / "ci-worker-connectivity.json"
+    valid_path = repo_root / ".ci" / "worker-certification-receipt.json"
+    invalid_path.parent.mkdir(parents=True)
+    valid_path.parent.mkdir(parents=True)
+    invalid_path.write_text("{invalid", encoding="utf-8")
+    nondict_path.write_text('["skip"]', encoding="utf-8")
+    valid_path.write_text(
+        json.dumps(
+            {
+                "status": "healthy",
+                "execution_backend": "wsl_docker",
+                "docker_backend": "wsl_docker",
+                "bootstrap_succeeded": True,
+                "registration_succeeded": True,
+                "heartbeat_succeeded": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    receipt, payload = _load_local_worker_certification(
+        {
+            "repo_id": "zetherion-ai",
+            "allowed_paths": [str(repo_root)],
+        }
+    )
+
+    assert receipt is not None
+    assert payload is not None
+    assert receipt["status"] == "healthy"
+    assert payload["execution_backend"] == "wsl_docker"
+
+
+def test_load_local_worker_certification_continues_past_nondict_json_payloads(tmp_path) -> None:
+    repo_root = tmp_path / "zetherion-ai"
+    first_path = repo_root / ".artifacts" / "worker-certification-receipt.json"
+    second_path = repo_root / ".ci" / "ci-worker-connectivity.json"
+    first_path.parent.mkdir(parents=True)
+    second_path.parent.mkdir(parents=True)
+    first_path.write_text('"skip-me"', encoding="utf-8")
+    second_path.write_text(
+        json.dumps(
+            {
+                "status": "healthy",
+                "execution_backend": "docker",
+                "docker_backend": "docker",
+                "bootstrap_succeeded": True,
+                "registration_succeeded": True,
+                "heartbeat_succeeded": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    receipt, payload = _load_local_worker_certification(
+        {
+            "repo_id": "zetherion-ai",
+            "allowed_paths": ["", str(repo_root)],
+        }
+    )
+
+    assert receipt is not None
+    assert payload is not None
+    assert receipt["status"] == "healthy"
+    assert payload["execution_backend"] == "docker"
 
 
 @pytest.mark.asyncio
@@ -251,6 +402,74 @@ async def test_get_reporting_readiness_builds_owner_ci_run_receipts_and_unknown_
     assert readiness["repo_readiness"][1]["readiness"]["failed_required_paths"] == [
         "cgs_auth_flow_passed"
     ]
+
+
+@pytest.mark.asyncio
+async def test_get_reporting_readiness_skips_invalid_entries_and_marks_pending_repo() -> None:
+    storage = OwnerCiStorage.__new__(OwnerCiStorage)
+    storage.list_repo_profiles = AsyncMock(
+        return_value=[
+            {
+                "repo_id": "repo-pending",
+                "display_name": "Pending Repo",
+                "active": True,
+                "stack_kind": "python",
+                "metadata": {},
+                "allowed_paths": [],
+            },
+            {
+                "repo_id": "   ",
+                "display_name": "Skip Me",
+                "active": True,
+                "stack_kind": "python",
+                "metadata": {},
+                "allowed_paths": [],
+            },
+        ]
+    )
+    storage.list_runs = AsyncMock(
+        return_value=[
+            {"repo_id": "", "run_id": "skip-blank-repo"},
+            {"repo_id": "repo-pending", "run_id": ""},
+            {"repo_id": "repo-known", "run_id": "run-1"},
+            {"repo_id": "repo-known", "run_id": "run-2"},
+        ]
+    )
+    storage.get_run = AsyncMock(
+        return_value={
+            "run_id": "run-1",
+            "repo_id": "repo-known",
+            "status": "ready_to_merge",
+            "git_ref": "main",
+            "review_receipts": {"merge_blocked": False},
+            "metadata": {
+                "release_verification": {
+                    "status": "healthy",
+                }
+            },
+            "shards": [],
+            "created_at": "2026-03-13T10:00:00Z",
+            "updated_at": "2026-03-13T10:05:00Z",
+        }
+    )
+
+    readiness = await OwnerCiStorage.get_reporting_readiness(storage, "owner-1")
+
+    assert [entry["repo_id"] for entry in readiness["repo_readiness"]] == [
+        "repo-pending",
+        "repo-known",
+    ]
+    assert readiness["repo_readiness"][0]["receipt_source"] == "missing"
+    assert readiness["repo_readiness"][0]["latest_run"] is None
+    assert readiness["repo_readiness"][0]["readiness"]["missing_evidence"] == [
+        "owner_ci_run_missing"
+    ]
+    assert readiness["repo_readiness"][0]["readiness"]["summary"] == (
+        "No owner-CI run has produced readiness receipts yet."
+    )
+    assert readiness["repo_readiness"][1]["display_name"] == "repo-known"
+    assert readiness["repo_readiness"][1]["receipt_source"] == "owner_ci_run"
+    storage.get_run.assert_awaited_once_with("owner-1", "run-1")
 
 
 @pytest.mark.asyncio

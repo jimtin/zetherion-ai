@@ -1,6 +1,6 @@
 """Tests for heartbeat scheduler module."""
 
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -15,6 +15,7 @@ from zetherion_ai.scheduler.heartbeat import (
     HeartbeatConfig,
     HeartbeatScheduler,
     HeartbeatStats,
+    QuietHoursWindow,
 )
 from zetherion_ai.skills.base import HeartbeatAction
 
@@ -119,6 +120,13 @@ class TestHeartbeatScheduler:
         assert "user1" not in scheduler._user_ids
         assert "user2" in scheduler._user_ids
 
+    def test_remove_user_missing_is_noop(self) -> None:
+        """remove_user should ignore unknown users."""
+        scheduler = HeartbeatScheduler()
+        scheduler.set_user_ids(["user1"])
+        scheduler.remove_user("user2")
+        assert scheduler._user_ids == ["user1"]
+
     def test_schedule_event(self) -> None:
         """schedule_event should add event to pending list."""
         scheduler = HeartbeatScheduler()
@@ -150,6 +158,14 @@ class TestHeartbeatScheduler:
         result = scheduler.cancel_event("unknown-id")
         assert result is False
 
+    def test_within_quiet_window_daytime_false(self) -> None:
+        """_within_quiet_window should reject times outside daytime windows."""
+        assert HeartbeatScheduler._within_quiet_window(
+            time(18, 0),
+            time(9, 0),
+            time(17, 0),
+        ) is False
+
     def test_is_quiet_hours_daytime(self) -> None:
         """_is_quiet_hours should return False during daytime."""
         # Configure quiet hours from 22:00 to 07:00
@@ -163,6 +179,247 @@ class TestHeartbeatScheduler:
         # and returns a boolean
         result = scheduler._is_quiet_hours()
         assert isinstance(result, bool)
+
+    def test_is_quiet_hours_disabled(self) -> None:
+        """_is_quiet_hours should short-circuit when disabled."""
+        scheduler = HeartbeatScheduler()
+        with patch.object(
+            scheduler,
+            "_default_quiet_window",
+            return_value=QuietHoursWindow(
+                start=time(22, 0),
+                end=time(7, 0),
+                enabled=False,
+            ),
+        ):
+            assert scheduler._is_quiet_hours() is False
+
+    @pytest.mark.asyncio
+    async def test_resolve_quiet_window_fallback_paths(self) -> None:
+        """_resolve_quiet_window should fall back on missing, failing, or empty resolvers."""
+        default_window = QuietHoursWindow(start=time(21, 0), end=time(6, 0), enabled=True)
+
+        scheduler = HeartbeatScheduler()
+        with patch.object(scheduler, "_default_quiet_window", return_value=default_window):
+            assert await scheduler._resolve_quiet_window("user1") is default_window
+
+        resolver = AsyncMock(side_effect=[RuntimeError("boom"), None])
+        scheduler_with_resolver = HeartbeatScheduler(quiet_hours_resolver=resolver)
+        with patch.object(
+            scheduler_with_resolver,
+            "_default_quiet_window",
+            return_value=default_window,
+        ):
+            assert await scheduler_with_resolver._resolve_quiet_window("user1") is default_window
+            assert await scheduler_with_resolver._resolve_quiet_window("user1") is default_window
+
+        resolved_window = QuietHoursWindow(
+            start=time(8, 0),
+            end=time(17, 0),
+            timezone="UTC",
+            enabled=True,
+        )
+        returning_resolver = AsyncMock(return_value=resolved_window)
+        scheduler_with_value = HeartbeatScheduler(quiet_hours_resolver=returning_resolver)
+        assert await scheduler_with_value._resolve_quiet_window("user1") is resolved_window
+
+    @pytest.mark.asyncio
+    async def test_is_quiet_hours_for_user_disabled_and_invalid_timezone(self) -> None:
+        """User quiet-hours checks should handle disabled windows and bad timezones gracefully."""
+        scheduler = HeartbeatScheduler()
+        with patch.object(
+            scheduler,
+            "_resolve_quiet_window",
+            new=AsyncMock(
+                return_value=QuietHoursWindow(
+                    start=time(22, 0),
+                    end=time(7, 0),
+                    enabled=False,
+                )
+            ),
+        ):
+            assert await scheduler._is_quiet_hours_for_user("user1") is False
+
+        with patch.object(
+            scheduler,
+            "_resolve_quiet_window",
+            new=AsyncMock(
+                return_value=QuietHoursWindow(
+                    start=time(0, 0),
+                    end=time(23, 59),
+                    timezone="Mars/Phobos",
+                    enabled=True,
+                )
+            ),
+        ):
+            assert await scheduler._is_quiet_hours_for_user("user1") is True
+
+    @pytest.mark.asyncio
+    async def test_next_notification_time_timezone_paths(self) -> None:
+        """Timezone-aware next notification logic should cover immediate and deferred branches."""
+
+        class _DaytimeUTC(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                base = datetime(2026, 3, 17, 18, 30, tzinfo=UTC)
+                return base.astimezone(tz) if tz is not None else base.replace(tzinfo=None)
+
+        scheduler = HeartbeatScheduler()
+        with (
+            patch.object(
+                scheduler,
+                "_resolve_quiet_window",
+                new=AsyncMock(
+                    return_value=QuietHoursWindow(
+                        start=time(22, 0),
+                        end=time(7, 0),
+                        timezone="UTC",
+                        enabled=False,
+                    )
+                ),
+            ),
+            patch("zetherion_ai.scheduler.heartbeat.datetime", _DaytimeUTC),
+        ):
+            immediate = await scheduler._next_notification_time("user1")
+        assert immediate == datetime(2026, 3, 17, 18, 30)
+
+        with (
+            patch.object(
+                scheduler,
+                "_resolve_quiet_window",
+                new=AsyncMock(
+                    return_value=QuietHoursWindow(
+                        start=time(22, 0),
+                        end=time(7, 0),
+                        timezone="UTC",
+                        enabled=True,
+                    )
+                ),
+            ),
+            patch.object(scheduler, "_within_quiet_window", return_value=False),
+            patch("zetherion_ai.scheduler.heartbeat.datetime", _DaytimeUTC),
+        ):
+            not_quiet = await scheduler._next_notification_time("user1")
+        assert not_quiet == datetime(2026, 3, 17, 18, 30)
+
+        class _NightUTC(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                base = datetime(2026, 3, 17, 23, 30, tzinfo=UTC)
+                return base.astimezone(tz) if tz is not None else base.replace(tzinfo=None)
+
+        with (
+            patch.object(
+                scheduler,
+                "_resolve_quiet_window",
+                new=AsyncMock(
+                    return_value=QuietHoursWindow(
+                        start=time(22, 0),
+                        end=time(7, 0),
+                        timezone="UTC",
+                        enabled=True,
+                    )
+                ),
+            ),
+            patch.object(scheduler, "_within_quiet_window", return_value=True),
+            patch("zetherion_ai.scheduler.heartbeat.datetime", _NightUTC),
+        ):
+            overnight = await scheduler._next_notification_time("user1")
+        assert overnight.date() == datetime(2026, 3, 18).date()
+
+        with (
+            patch.object(
+                scheduler,
+                "_resolve_quiet_window",
+                new=AsyncMock(
+                    return_value=QuietHoursWindow(
+                        start=time(9, 0),
+                        end=time(17, 0),
+                        timezone="UTC",
+                        enabled=True,
+                    )
+                ),
+            ),
+            patch.object(scheduler, "_within_quiet_window", return_value=True),
+            patch("zetherion_ai.scheduler.heartbeat.datetime", _DaytimeUTC),
+        ):
+            daytime_deferred = await scheduler._next_notification_time("user1")
+        assert daytime_deferred.date() == datetime(2026, 3, 18).date()
+
+    @pytest.mark.asyncio
+    async def test_next_notification_time_local_paths(self) -> None:
+        """Local next notification logic should cover immediate and deferred branches."""
+
+        class _DaytimeLocal(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                base = datetime(2026, 3, 17, 18, 30)
+                if tz is None:
+                    return base
+                return base.replace(tzinfo=UTC).astimezone(tz)
+
+        class _NightLocal(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                base = datetime(2026, 3, 17, 23, 30)
+                if tz is None:
+                    return base
+                return base.replace(tzinfo=UTC).astimezone(tz)
+
+        scheduler = HeartbeatScheduler()
+        with (
+            patch.object(
+                scheduler,
+                "_resolve_quiet_window",
+                new=AsyncMock(
+                    return_value=QuietHoursWindow(
+                        start=time(22, 0),
+                        end=time(7, 0),
+                        enabled=True,
+                    )
+                ),
+            ),
+            patch.object(scheduler, "_within_quiet_window", return_value=False),
+            patch("zetherion_ai.scheduler.heartbeat.datetime", _DaytimeLocal),
+        ):
+            immediate = await scheduler._next_notification_time("user1")
+        assert immediate == datetime(2026, 3, 17, 18, 30)
+
+        with (
+            patch.object(
+                scheduler,
+                "_resolve_quiet_window",
+                new=AsyncMock(
+                    return_value=QuietHoursWindow(
+                        start=time(22, 0),
+                        end=time(7, 0),
+                        enabled=True,
+                    )
+                ),
+            ),
+            patch.object(scheduler, "_within_quiet_window", return_value=True),
+            patch("zetherion_ai.scheduler.heartbeat.datetime", _NightLocal),
+        ):
+            overnight = await scheduler._next_notification_time("user1")
+        assert overnight == datetime(2026, 3, 18, 7, 0)
+
+        with (
+            patch.object(
+                scheduler,
+                "_resolve_quiet_window",
+                new=AsyncMock(
+                    return_value=QuietHoursWindow(
+                        start=time(9, 0),
+                        end=time(17, 0),
+                        enabled=True,
+                    )
+                ),
+            ),
+            patch.object(scheduler, "_within_quiet_window", return_value=True),
+            patch("zetherion_ai.scheduler.heartbeat.datetime", _DaytimeLocal),
+        ):
+            daytime_deferred = await scheduler._next_notification_time("user1")
+        assert daytime_deferred == datetime(2026, 3, 18, 17, 0)
 
     @pytest.mark.asyncio
     async def test_start_stop(self) -> None:
@@ -293,6 +550,76 @@ class TestHeartbeatScheduler:
         assert enqueue_kwargs["scheduled_for"] == trigger_time
 
     @pytest.mark.asyncio
+    async def test_execute_actions_queue_immediate_and_fallback_paths(self) -> None:
+        """Queued execution should cover immediate enqueue and defer/execute fallbacks."""
+        action = HeartbeatAction(
+            skill_name="gmail",
+            action_type="send_message",
+            user_id="123",
+            data={"message": "Digest ready"},
+            priority=5,
+        )
+
+        queue_manager = AsyncMock()
+        queue_manager.is_accepting_work = True
+        queue_manager.enqueue = AsyncMock()
+        scheduler = HeartbeatScheduler(queue_manager=queue_manager)
+
+        with patch.object(scheduler, "_is_quiet_hours_for_user", new=AsyncMock(return_value=False)):
+            immediate_results = await scheduler._execute_actions([action])
+
+        assert len(immediate_results) == 1
+        assert immediate_results[0].message == "Enqueued"
+        assert queue_manager.enqueue.await_args.kwargs["scheduled_for"] is None
+
+        fallback_queue = AsyncMock()
+        fallback_queue.is_accepting_work = True
+        fallback_queue.enqueue = AsyncMock(side_effect=RuntimeError("queue unavailable"))
+        fallback_scheduler = HeartbeatScheduler(queue_manager=fallback_queue)
+        trigger_time = datetime.now() + timedelta(hours=1)
+
+        with (
+            patch.object(
+                fallback_scheduler,
+                "_is_quiet_hours_for_user",
+                new=AsyncMock(return_value=True),
+            ),
+            patch.object(
+                fallback_scheduler,
+                "_next_notification_time",
+                new=AsyncMock(return_value=trigger_time),
+            ),
+        ):
+            deferred_fallback = await fallback_scheduler._execute_actions([action])
+
+        assert len(deferred_fallback) == 1
+        assert "Deferred until" in (deferred_fallback[0].message or "")
+        assert len(fallback_scheduler._scheduled_events) == 1
+
+        direct_fallback_queue = AsyncMock()
+        direct_fallback_queue.is_accepting_work = True
+        direct_fallback_queue.enqueue = AsyncMock(side_effect=RuntimeError("queue unavailable"))
+        direct_executor = AsyncMock(spec=ActionExecutor)
+        direct_executor.execute = AsyncMock(
+            return_value=ActionResult(action=action, success=True, message="executed")
+        )
+        direct_fallback_scheduler = HeartbeatScheduler(
+            queue_manager=direct_fallback_queue,
+            action_executor=direct_executor,
+        )
+
+        with patch.object(
+            direct_fallback_scheduler,
+            "_is_quiet_hours_for_user",
+            new=AsyncMock(return_value=False),
+        ):
+            direct_fallback = await direct_fallback_scheduler._execute_actions([action])
+
+        assert len(direct_fallback) == 1
+        assert direct_fallback[0].message == "executed"
+        direct_executor.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_run_once_respects_max_actions(self) -> None:
         """run_once should limit actions per beat."""
         mock_client = AsyncMock()
@@ -338,6 +665,53 @@ class TestHeartbeatScheduler:
         stats = scheduler.stats
         assert stats.total_actions >= 1
         assert stats.successful_actions >= 1
+
+    @pytest.mark.asyncio
+    async def test_run_once_tracks_rate_limited_and_failed_results(self) -> None:
+        """run_once should update rate-limited and failed counters from execution results."""
+        rate_limited_action = HeartbeatAction(
+            skill_name="gmail",
+            action_type="send_message",
+            user_id="user1",
+            priority=5,
+        )
+        failed_action = HeartbeatAction(
+            skill_name="gmail",
+            action_type="send_message",
+            user_id="user2",
+            priority=4,
+        )
+        mock_client = AsyncMock()
+        mock_client.trigger_heartbeat = AsyncMock(return_value=[rate_limited_action, failed_action])
+        mock_executor = AsyncMock(spec=ActionExecutor)
+        mock_executor.execute = AsyncMock(
+            side_effect=[
+                ActionResult(
+                    action=rate_limited_action,
+                    success=False,
+                    error="Rate limit exceeded",
+                ),
+                ActionResult(
+                    action=failed_action,
+                    success=False,
+                    error="Execution failed",
+                ),
+            ]
+        )
+
+        scheduler = HeartbeatScheduler(skills_client=mock_client, action_executor=mock_executor)
+        scheduler.set_user_ids(["user1", "user2"])
+
+        with patch.object(
+            scheduler,
+            "_is_quiet_hours_for_user",
+            new=AsyncMock(return_value=False),
+        ):
+            results = await scheduler.run_once()
+
+        assert len(results) == 2
+        assert scheduler.stats.rate_limited == 1
+        assert scheduler.stats.failed_actions == 1
 
     @pytest.mark.asyncio
     async def test_process_scheduled_events(self) -> None:
@@ -490,6 +864,20 @@ class TestHeartbeatScheduler:
         await scheduler._run_heartbeat()
 
         mock_client.trigger_heartbeat.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_run_heartbeat_returns_when_no_actions(self) -> None:
+        """_run_heartbeat should return quietly when the client has no actions."""
+        mock_client = AsyncMock()
+        mock_client.trigger_heartbeat = AsyncMock(return_value=[])
+        scheduler = HeartbeatScheduler(skills_client=mock_client)
+        scheduler.set_user_ids(["user1"])
+
+        await scheduler._run_heartbeat()
+
+        mock_client.trigger_heartbeat.assert_awaited_once_with(["user1"])
+        assert scheduler.stats.total_beats == 1
+        assert scheduler.stats.total_actions == 0
 
     @pytest.mark.asyncio
     async def test_run_loop_exception_handling(self) -> None:

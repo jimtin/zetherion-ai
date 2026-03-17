@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -389,6 +389,51 @@ async def test_list_helpers_and_audit_reader() -> None:
 
 
 @pytest.mark.asyncio
+async def test_secret_helper_missing_and_no_decrypt_cache_branches() -> None:
+    conn = _FakeConn()
+    conn.fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "name": "OPENAI_API_KEY",
+            "version": 2,
+            "updated_by": "operator-1",
+            "updated_at": datetime.now(UTC),
+            "description": "rollback",
+        }
+    )
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {"value_enc": "enc-1", "description": "rollback"},
+            None,
+            None,
+        ]
+    )
+    manager._decrypt = MagicMock(return_value=None)  # type: ignore[method-assign]
+
+    rolled_back = await manager.rollback_secret_to_version(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        name="OPENAI_API_KEY",
+        version=1,
+        actor=_actor(),
+    )
+    assert rolled_back["version"] == 2
+    assert (
+        manager.get_secret_cached("11111111-1111-1111-1111-111111111111", "OPENAI_API_KEY") is None
+    )
+
+    assert (
+        await manager._load_tenant_secret_value(
+            "11111111-1111-1111-1111-111111111111",
+            "MISSING_SECRET",
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
 async def test_secret_encryption_path_round_trip() -> None:
     encryptor = FieldEncryptor(key=b"a" * 32)
     conn = _FakeConn()
@@ -663,6 +708,77 @@ async def test_resolve_tenant_paths_include_no_match() -> None:
     assert await manager.resolve_tenant_for_discord(guild_id=10, channel_id=20) == "t-channel"
     assert await manager.resolve_tenant_for_discord(guild_id=10, channel_id=None) == "t-guild"
     assert await manager.resolve_tenant_for_discord(guild_id=None, channel_id=None) is None
+
+
+@pytest.mark.asyncio
+async def test_discord_setting_secret_false_paths_cover_fallback_and_non_delete() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {"tenant_id": "t1", "discord_user_id": 9, "role": "user"},
+            None,
+            None,
+            {"tenant_id": "t1"},
+            {
+                "tenant_id": "t1",
+                "namespace": "models",
+                "key": "default_provider",
+                "value": "groq",
+                "data_type": "string",
+            },
+            {
+                "tenant_id": "t1",
+                "name": "OPENAI_API_KEY",
+                "value_enc": "enc",
+                "version": 1,
+                "description": None,
+            },
+        ]
+    )
+    manager._execute = AsyncMock(side_effect=["DELETE 0", "DELETE 0"])  # type: ignore[method-assign]
+    manager._fetchval = AsyncMock(return_value=4)  # type: ignore[method-assign]
+
+    assert (
+        await manager.update_discord_user_role(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            discord_user_id=9,
+            role="admin",
+            actor=_actor(),
+        )
+        is False
+    )
+    manager._write_audit.assert_not_awaited()
+
+    assert (
+        await manager.resolve_tenant_for_discord(
+            guild_id=10,
+            channel_id=20,
+        )
+        == "t1"
+    )
+
+    assert (
+        await manager.delete_setting(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            namespace="models",
+            key="default_provider",
+            actor=_actor(),
+        )
+        is False
+    )
+    assert (
+        await manager.delete_secret(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            name="OPENAI_API_KEY",
+            actor=_actor(),
+        )
+        is False
+    )
+    manager._write_audit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1107,6 +1223,295 @@ async def test_email_oauth_start_consume_and_exchange_paths(
 
 
 @pytest.mark.asyncio
+async def test_email_oauth_and_provider_guard_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    manager._fetchrow = AsyncMock(return_value={"value_enc": "enc-missing"})  # type: ignore[method-assign]
+    manager._decrypt = MagicMock(return_value=None)  # type: ignore[method-assign]
+    assert (
+        await manager._load_tenant_secret_value(
+            "11111111-1111-1111-1111-111111111111",
+            "email.google.oauth_client_id",
+        )
+        is None
+    )
+    assert manager.get_secret_cached(
+        "11111111-1111-1111-1111-111111111111",
+        "email.google.oauth_client_id",
+    ) is None
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "provider": "google",
+            "client_id_ref": "email.google.oauth_client_id",
+            "client_secret_ref": "email.google.oauth_client_secret",
+            "redirect_uri": "https://example.com/oauth/callback",
+            "enabled": False,
+        }
+    )
+    with pytest.raises(ValueError, match="disabled"):
+        await manager._resolve_provider_oauth_credentials(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="google",
+        )
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "provider": "google",
+            "client_id_ref": "email.google.oauth_client_id",
+            "client_secret_ref": "email.google.oauth_client_secret",
+            "redirect_uri": "https://example.com/oauth/callback",
+            "enabled": True,
+        }
+    )
+    manager._load_tenant_secret_value = AsyncMock(  # type: ignore[method-assign]
+        side_effect=["client-id", None]
+    )
+    with pytest.raises(ValueError, match="client secret"):
+        await manager._resolve_provider_oauth_credentials(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="google",
+        )
+
+    manager._load_tenant_secret_value = AsyncMock(  # type: ignore[method-assign]
+        side_effect=["client-id", "client-secret"]
+    )
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "provider": "google",
+            "client_id_ref": "email.google.oauth_client_id",
+            "client_secret_ref": "email.google.oauth_client_secret",
+            "redirect_uri": "   ",
+            "enabled": True,
+        }
+    )
+    with pytest.raises(ValueError, match="redirect URI is missing"):
+        await manager._resolve_provider_oauth_credentials(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="google",
+        )
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    assert (
+        await manager.get_email_provider_config(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="google",
+        )
+        is None
+    )
+
+    manager.get_email_provider_config = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._load_tenant_secret_value = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="client_id must be provided"):
+        await manager.put_email_provider_config(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="google",
+            client_id=None,
+            client_secret=None,
+            redirect_uri="https://example.com/oauth/callback",
+            enabled=True,
+            actor=_actor(),
+        )
+
+    manager._load_tenant_secret_value = AsyncMock(  # type: ignore[method-assign]
+        side_effect=["client-id", None]
+    )
+    with pytest.raises(ValueError, match="client_secret must be provided"):
+        await manager.put_email_provider_config(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="google",
+            client_id=None,
+            client_secret=None,
+            redirect_uri="https://example.com/oauth/callback",
+            enabled=True,
+            actor=_actor(),
+        )
+
+    manager._load_tenant_secret_value = AsyncMock(  # type: ignore[method-assign]
+        side_effect=["client-id", "client-secret"]
+    )
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to store tenant email provider config"):
+        await manager.put_email_provider_config(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="google",
+            client_id=None,
+            client_secret=None,
+            redirect_uri="https://example.com/oauth/callback",
+            enabled=True,
+            actor=_actor(),
+        )
+
+    class _MissingAccessTokenAuth:
+        def __init__(self, *, client_id: str, client_secret: str, redirect_uri: str) -> None:
+            self.client_id = client_id
+            self.client_secret = client_secret
+            self.redirect_uri = redirect_uri
+
+        async def exchange_code(self, code: str) -> dict[str, Any]:
+            return {"refresh_token": "refresh-token"}
+
+        async def get_user_email(self, access_token: str) -> str:
+            return "owner@example.com"
+
+    import zetherion_ai.skills.gmail.auth as gmail_auth_mod
+
+    monkeypatch.setattr(gmail_auth_mod, "GmailAuth", _MissingAccessTokenAuth)
+    manager.consume_email_oauth_state = AsyncMock(  # type: ignore[method-assign]
+        return_value={"state": "email_state", "account_hint": "owner@example.com"}
+    )
+    manager._resolve_provider_oauth_credentials = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "provider": "google",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "redirect_uri": "https://example.com/oauth/callback",
+        }
+    )
+    with pytest.raises(ValueError, match="access token"):
+        await manager.exchange_google_oauth_code(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            code="abc123",
+            state="email_state",
+            actor=_actor(),
+        )
+
+    class _MissingEmailAuth(_MissingAccessTokenAuth):
+        async def exchange_code(self, code: str) -> dict[str, Any]:
+            return {"access_token": "access-token", "refresh_token": "refresh-token"}
+
+        async def get_user_email(self, access_token: str) -> str:
+            return ""
+
+    monkeypatch.setattr(gmail_auth_mod, "GmailAuth", _MissingEmailAuth)
+    with pytest.raises(ValueError, match="account email"):
+        await manager.exchange_google_oauth_code(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            code="abc123",
+            state="email_state",
+            actor=_actor(),
+        )
+
+    class _MissingRefreshTokenAuth(_MissingAccessTokenAuth):
+        async def exchange_code(self, code: str) -> dict[str, Any]:
+            return {"access_token": "access-token"}
+
+    monkeypatch.setattr(gmail_auth_mod, "GmailAuth", _MissingRefreshTokenAuth)
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="refresh_token"):
+        await manager.exchange_google_oauth_code(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            code="abc123",
+            state="email_state",
+            actor=_actor(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_email_oauth_exchange_reuses_existing_refresh_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    class _ReuseRefreshTokenAuth:
+        def __init__(self, *, client_id: str, client_secret: str, redirect_uri: str) -> None:
+            self.client_id = client_id
+            self.client_secret = client_secret
+            self.redirect_uri = redirect_uri
+
+        async def exchange_code(self, code: str) -> dict[str, Any]:
+            return {"access_token": f"access-{code}", "expires_in": 900, "scope": "email"}
+
+        async def get_user_email(self, access_token: str) -> str:
+            return "owner@example.com"
+
+    import zetherion_ai.skills.gmail.auth as gmail_auth_mod
+
+    monkeypatch.setattr(gmail_auth_mod, "GmailAuth", _ReuseRefreshTokenAuth)
+    manager.consume_email_oauth_state = AsyncMock(  # type: ignore[method-assign]
+        return_value={"state": "email_state", "account_hint": "owner@example.com"}
+    )
+    manager._resolve_provider_oauth_credentials = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "provider": "google",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "redirect_uri": "https://example.com/oauth/callback",
+        }
+    )
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={"account_id": "acc-1", "refresh_token_enc": "enc-refresh"}
+    )
+    manager._decrypt = MagicMock(return_value="refresh-from-existing")  # type: ignore[method-assign]
+    manager._upsert_email_account = AsyncMock(  # type: ignore[method-assign]
+        return_value={"account_id": "acc-1", "email_address": "owner@example.com"}
+    )
+    manager._emit_email_event = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    exchanged = await manager.exchange_google_oauth_code(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        code="abc123",
+        state="email_state",
+        actor=_actor(),
+    )
+
+    assert exchanged["account_id"] == "acc-1"
+    assert (
+        manager._upsert_email_account.await_args.kwargs["refresh_token"]
+        == "refresh-from-existing"
+    )
+
+
+@pytest.mark.asyncio
+async def test_email_account_upsert_guard_branches() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="Invalid account status"):
+        await manager._upsert_email_account(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="google",
+            email_address="owner@example.com",
+            access_token="access-token",
+            refresh_token="refresh-token",
+            scopes=["email"],
+            token_expiry=datetime.now(UTC) + timedelta(hours=1),
+            actor=_actor(),
+            external_account_id="owner@example.com",
+            oauth_subject="owner@example.com",
+            status="not-valid",
+            metadata=None,
+        )
+
+    manager._fetchval = AsyncMock(return_value="acc-1")  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(side_effect=[None, None])  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to upsert tenant email account"):
+        await manager._upsert_email_account(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="google",
+            email_address="owner@example.com",
+            access_token="access-token",
+            refresh_token="refresh-token",
+            scopes=["email"],
+            token_expiry=datetime.now(UTC) + timedelta(hours=1),
+            actor=_actor(),
+            external_account_id="owner@example.com",
+            oauth_subject="owner@example.com",
+            status="connected",
+            metadata={"source": "test"},
+        )
+
+
+@pytest.mark.asyncio
 async def test_email_account_mutation_and_refresh_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1251,6 +1656,269 @@ async def test_email_account_mutation_and_refresh_paths(
         await manager._get_email_account_record(
             tenant_id="11111111-1111-1111-1111-111111111111",
             account_id="missing",
+        )
+
+
+@pytest.mark.asyncio
+async def test_email_account_guard_branches_cover_patch_delete_refresh_and_sync_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._emit_email_event = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    undecryptable_conn = _FakeConn()
+    undecryptable_conn.fetch.side_effect = [
+        [],
+        [{"tenant_id": "t1", "name": "OPENAI_API_KEY", "value_enc": "enc"}],
+    ]
+    undecryptable_manager = TenantAdminManager(pool=_FakePool(undecryptable_conn))  # type: ignore[arg-type]
+    undecryptable_manager._decrypt = MagicMock(return_value=None)  # type: ignore[method-assign]
+    await undecryptable_manager.refresh()
+    assert undecryptable_manager.get_secret_cached("t1", "OPENAI_API_KEY") is None
+
+    before_account = {
+        "account_id": "acc-1",
+        "tenant_id": "11111111-1111-1111-1111-111111111111",
+        "provider": "google",
+        "external_account_id": "owner@example.com",
+        "email_address": "owner@example.com",
+        "oauth_subject": "owner@example.com",
+        "status": "connected",
+        "scopes": ["email"],
+        "token_expiry": datetime.now(UTC) + timedelta(hours=1),
+        "sync_cursor": "cursor-1",
+        "primary_calendar_id": None,
+        "metadata": {"existing": True},
+        "created_by": "op",
+        "updated_by": "op",
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
+    }
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="Email account not found"):
+        await manager.patch_email_account(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            actor=_actor(),
+        )
+
+    manager._fetchrow = AsyncMock(return_value=before_account)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="Invalid account status"):
+        await manager.patch_email_account(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            actor=_actor(),
+            status="bad-status",
+        )
+
+    manager._fetchrow = AsyncMock(side_effect=[before_account, None])  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to patch email account"):
+        await manager.patch_email_account(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            actor=_actor(),
+            metadata={"note": "x"},
+        )
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    assert (
+        await manager.delete_email_account(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            actor=_actor(),
+        )
+        is False
+    )
+
+    manager._fetchrow = AsyncMock(return_value=before_account)  # type: ignore[method-assign]
+    manager._execute = AsyncMock(return_value="DELETE 0")  # type: ignore[method-assign]
+    assert (
+        await manager.delete_email_account(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            actor=_actor(),
+        )
+        is False
+    )
+    manager._write_audit.assert_not_awaited()
+    manager._emit_email_event.assert_not_awaited()
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            before_account,
+            {**before_account, "sync_cursor": "cursor-2", "metadata": {"existing": True}},
+        ]
+    )
+    patched_cursor = await manager.patch_email_account(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        account_id="acc-1",
+        actor=_actor(),
+        metadata={},
+        sync_cursor="cursor-2",
+    )
+    assert patched_cursor["sync_cursor"] == "cursor-2"
+    patch_args = manager._fetchrow.await_args_list[-1].args
+    assert json.loads(patch_args[4]) == {"existing": True}
+    assert patch_args[5] == "cursor-2"
+
+    manager._get_email_account_record = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            **before_account,
+            "access_token_enc": "",
+            "refresh_token_enc": "refresh-token",
+            "token_expiry": datetime.now(UTC) - timedelta(minutes=5),
+        }
+    )
+    with pytest.raises(ValueError, match="access token is missing"):
+        await manager._refresh_google_access_token_if_needed(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+        )
+
+    manager._get_email_account_record = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            **before_account,
+            "access_token_enc": "expired-access-token",
+            "refresh_token_enc": "",
+            "token_expiry": datetime.now(UTC) - timedelta(minutes=5),
+        }
+    )
+    with pytest.raises(ValueError, match="refresh token is missing"):
+        await manager._refresh_google_access_token_if_needed(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+        )
+
+    class _MissingRefreshAccessAuth:
+        def __init__(self, *, client_id: str, client_secret: str, redirect_uri: str) -> None:
+            self.client_id = client_id
+            self.client_secret = client_secret
+            self.redirect_uri = redirect_uri
+
+        async def refresh_access_token(self, refresh_token: str) -> dict[str, Any]:
+            return {"refresh_token": refresh_token, "expires_in": 900}
+
+    import zetherion_ai.skills.gmail.auth as gmail_auth_mod
+
+    monkeypatch.setattr(gmail_auth_mod, "GmailAuth", _MissingRefreshAccessAuth)
+    manager._get_email_account_record = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            **before_account,
+            "access_token_enc": "expired-access-token",
+            "refresh_token_enc": "refresh-token",
+            "token_expiry": datetime.now(UTC) - timedelta(minutes=5),
+            "scopes": ["email"],
+        }
+    )
+    manager._resolve_provider_oauth_credentials = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "provider": "google",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "redirect_uri": "https://example.com/oauth/callback",
+        }
+    )
+    manager._execute = AsyncMock(return_value="UPDATE 1")  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="did not return access token"):
+        await manager._refresh_google_access_token_if_needed(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+        )
+
+    class _FakeResponse:
+        def __init__(self, payload: Any, status_code: int = 200) -> None:
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self) -> Any:
+            return self._payload
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError("http error")
+
+    class _CalendarHttpClient:
+        async def __aenter__(self) -> _CalendarHttpClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def get(self, url: str, **kwargs: Any) -> _FakeResponse:
+            if "calendar/v3/users/me/calendarList" in url:
+                return _FakeResponse({"items": ["bad", {"id": "primary", "summary": "Main"}]})
+            raise AssertionError(f"unexpected url: {url}")
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _CalendarHttpClient())
+    manager._refresh_google_access_token_if_needed = AsyncMock(  # type: ignore[method-assign]
+        return_value={"access_token": "token"}
+    )
+    calendars = await manager.list_google_calendars(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        account_id="acc-1",
+    )
+    assert calendars == [
+        {
+            "id": "primary",
+            "summary": "Main",
+            "primary": False,
+            "time_zone": None,
+            "access_role": None,
+        }
+    ]
+
+    manager._get_email_account_record = AsyncMock(return_value=before_account)  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to set primary calendar"):
+        await manager.set_email_primary_calendar(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            calendar_id="primary",
+            actor=_actor(),
+        )
+
+    class _CalendarItemsShapeHttpClient:
+        async def __aenter__(self) -> _CalendarItemsShapeHttpClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def get(self, url: str, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse({"items": "not-a-list"})
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: _CalendarItemsShapeHttpClient(),
+    )
+    assert (
+        await manager.list_google_calendars(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+        )
+        == []
+    )
+
+    with pytest.raises(ValueError, match="Invalid sync direction"):
+        await manager._create_sync_job(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            direction="sideways",
+            actor=_actor(),
+            idempotency_key=None,
+        )
+
+    with pytest.raises(ValueError, match="Invalid sync status"):
+        await manager._complete_sync_job(
+            job_id="11111111-1111-1111-1111-111111111111",
+            status="sideways",
         )
 
 
@@ -1408,6 +2076,343 @@ async def test_email_http_and_scoring_helpers(
 
 
 @pytest.mark.asyncio
+async def test_email_http_and_calendar_helper_additional_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._emit_email_event = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    before_account = {
+        "account_id": "acc-1",
+        "primary_calendar_id": None,
+    }
+    after_account = {"account_id": "acc-1", "primary_calendar_id": "primary"}
+    manager._get_email_account_record = AsyncMock(return_value=before_account)  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(return_value=after_account)  # type: ignore[method-assign]
+
+    updated = await manager.set_email_primary_calendar(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        account_id="acc-1",
+        calendar_id="primary",
+        actor=_actor(),
+    )
+    assert updated["primary_calendar_id"] == "primary"
+    manager._write_audit.assert_awaited()
+
+    class _FakeResponse:
+        def __init__(self, payload: Any, status_code: int = 200) -> None:
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self) -> Any:
+            return self._payload
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError("http error")
+
+    class _UnreadHttpClient:
+        async def __aenter__(self) -> _UnreadHttpClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def get(self, url: str, **kwargs: Any) -> _FakeResponse:
+            if "gmail/v1/users/me/messages/" in url:
+                msg_id = url.rsplit("/", 1)[-1]
+                if msg_id == "m1":
+                    return _FakeResponse(["bad-detail"])
+                return _FakeResponse(
+                    {
+                        "id": "m2",
+                        "threadId": "thread-2",
+                        "snippet": "Heads up",
+                        "internalDate": "1730000000000",
+                        "payload": {
+                            "headers": [
+                                {"name": "X-Test", "value": "skip"},
+                                {"name": "Date", "value": "Tue, 01 Jan 2026 00:00:00 +0000"},
+                            ]
+                        },
+                    }
+                )
+            return _FakeResponse({"messages": [{"id": "m1"}, {"id": "m2"}]})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _UnreadHttpClient())
+    unread = await manager._google_list_unread_messages(access_token="token", max_results=5)
+    assert unread == [
+        {
+            "message_id": "m2",
+            "thread_id": "thread-2",
+            "subject": "",
+            "from_email": "",
+            "body_preview": "Heads up",
+            "received_at": datetime.fromtimestamp(1730000000, tz=UTC).isoformat(),
+            "date_header": "Tue, 01 Jan 2026 00:00:00 +0000",
+        }
+    ]
+
+    manager.set_critical_scorer(  # type: ignore[arg-type]
+        AsyncMock(return_value={"score": "0.9", "reason_codes": ["", "trusted_sender", "custom"]})
+    )
+    severity, score, reasons, _ = await manager._criticality_score(
+        subject="Routine follow up",
+        body_preview="Just checking in",
+        sender="alerts@github.com",
+    )
+    assert severity == "normal"
+    assert score > 0
+    assert "model_score" in reasons
+    assert "custom" in reasons
+    assert reasons.count("trusted_sender") == 1
+
+    assert (
+        await manager._apply_calendar_operations(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            access_token="token",
+            source="cgs-admin",
+            operations=[],
+        )
+        == 0
+    )
+
+    class _CalendarHttpClient:
+        async def __aenter__(self) -> _CalendarHttpClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def post(self, url: str, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse({"id": "event-1"})
+
+        async def patch(self, url: str, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse({"id": "event-1"})
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _CalendarHttpClient())
+    with pytest.raises(ValueError, match="idempotency_key"):
+        await manager._apply_calendar_operations(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            access_token="token",
+            source="cgs-admin",
+            operations=[{"action": "create", "calendar_id": "primary", "event": {"summary": "x"}}],
+        )
+    with pytest.raises(ValueError, match="requires source"):
+        await manager._apply_calendar_operations(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            access_token="token",
+            source="",
+            operations=[
+                {
+                    "action": "create",
+                    "idempotency_key": "idem-1",
+                    "calendar_id": "primary",
+                    "event": {"summary": "x"},
+                }
+            ],
+        )
+    with pytest.raises(ValueError, match="requires calendar_id"):
+        await manager._apply_calendar_operations(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            access_token="token",
+            source="cgs-admin",
+            operations=[
+                {
+                    "action": "create",
+                    "idempotency_key": "idem-1",
+                    "event": {"summary": "x"},
+                }
+            ],
+        )
+    with pytest.raises(ValueError, match="requires event object"):
+        await manager._apply_calendar_operations(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            access_token="token",
+            source="cgs-admin",
+            operations=[
+                {
+                    "action": "create",
+                    "idempotency_key": "idem-1",
+                    "calendar_id": "primary",
+                    "event": "bad",
+                }
+            ],
+        )
+    with pytest.raises(ValueError, match="requires event_id"):
+        await manager._apply_calendar_operations(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            access_token="token",
+            source="cgs-admin",
+            operations=[
+                {
+                    "action": "update",
+                    "idempotency_key": "idem-1",
+                    "calendar_id": "primary",
+                    "event": {"summary": "x"},
+                }
+            ],
+        )
+    with pytest.raises(ValueError, match="Unsupported calendar operation action"):
+        await manager._apply_calendar_operations(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            access_token="token",
+            source="cgs-admin",
+            operations=[
+                {
+                    "action": "archive",
+                    "idempotency_key": "idem-1",
+                    "calendar_id": "primary",
+                    "event": {"summary": "x"},
+                }
+            ],
+        )
+
+
+@pytest.mark.asyncio
+async def test_email_http_and_scoring_guard_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Invalid role"):
+        await manager.update_discord_user_role(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            discord_user_id=1,
+            role="bad-role",
+            actor=_actor(),
+        )
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    assert await manager.resolve_tenant_for_discord(guild_id=10, channel_id=20) is None
+
+    class _FakeResponse:
+        def __init__(self, payload: Any, status_code: int = 200) -> None:
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self) -> Any:
+            return self._payload
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError("http error")
+
+    class _GuardHttpClient:
+        def __init__(self) -> None:
+            self._detail_calls = 0
+
+        async def __aenter__(self) -> _GuardHttpClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def get(self, url: str, **kwargs: Any) -> _FakeResponse:
+            if "gmail/v1/users/me/messages/" in url:
+                self._detail_calls += 1
+                if self._detail_calls == 1:
+                    return _FakeResponse({}, status_code=404)
+                return _FakeResponse(
+                    {
+                        "id": "m2",
+                        "threadId": "thread-2",
+                        "snippet": "Heads up",
+                        "internalDate": "not-a-timestamp",
+                        "payload": {
+                            "headers": [
+                                "bad",
+                                {"name": "Subject", "value": "Follow up"},
+                                {"name": "From", "value": "team@example.com"},
+                            ]
+                        },
+                    }
+                )
+            return _FakeResponse({"messages": [{"id": "m1"}, {"id": "m2"}]})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _GuardHttpClient())
+    unread = await manager._google_list_unread_messages(access_token="token", max_results=5)
+    assert unread == [
+        {
+            "message_id": "m2",
+            "thread_id": "thread-2",
+            "subject": "Follow up",
+            "from_email": "team@example.com",
+            "body_preview": "Heads up",
+            "received_at": None,
+            "date_header": "",
+        }
+    ]
+
+    class _BadListingHttpClient:
+        async def __aenter__(self) -> _BadListingHttpClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def get(self, url: str, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse({"messages": "bad-shape"})
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _BadListingHttpClient())
+    assert await manager._google_list_unread_messages(access_token="token", max_results=5) == []
+
+    manager.set_critical_scorer(AsyncMock(side_effect=RuntimeError("boom")))  # type: ignore[arg-type]
+    severity, score, reasons, entities = await manager._criticality_score(
+        subject="Critical invoice due today",
+        body_preview="Security team needs payment immediately",
+        sender="alerts@github.com",
+    )
+    assert severity in {"critical", "high"}
+    assert "urgent_keywords" in reasons
+    assert "finance_keywords" in reasons
+    assert "security_keywords" in reasons
+    assert "trusted_sender" in reasons
+    assert isinstance(entities["emails"], list)
+    assert entities["has_deadline_hint"] is True
+
+    manager.set_critical_scorer(  # type: ignore[arg-type]
+        AsyncMock(return_value={"score": "0.8", "reason_codes": ["trusted_sender", "extra_code"]})
+    )
+    severity, score, reasons, _ = await manager._criticality_score(
+        subject="Routine follow up",
+        body_preview="Just checking in",
+        sender="ops@example.com",
+    )
+    assert severity == "normal"
+    assert "model_score" in reasons
+    assert "extra_code" in reasons
+    assert reasons.count("trusted_sender") <= 1
+
+    manager.set_critical_scorer(  # type: ignore[arg-type]
+        AsyncMock(return_value={"score": "not-a-number", "reason_codes": "bad"})
+    )
+    severity, score, reasons, _ = await manager._criticality_score(
+        subject="Routine follow up",
+        body_preview="Just checking in",
+        sender="ops@example.com",
+    )
+    assert severity == "normal"
+    assert "model_score" not in reasons
+
+
+@pytest.mark.asyncio
 async def test_email_sync_and_listing_paths_cover_success_failure_and_reindex() -> None:
     conn = _FakeConn()
     pool = _FakePool(conn)
@@ -1525,6 +2530,317 @@ async def test_email_sync_and_listing_paths_cover_success_failure_and_reindex() 
         limit=5,
     )
     assert events[0]["event_id"] == "evt-1"
+
+
+@pytest.mark.asyncio
+async def test_email_sync_direction_specific_branches_and_vector_failures() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._fetchval = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._execute = AsyncMock(return_value="UPDATE 1")  # type: ignore[method-assign]
+    manager._refresh_google_access_token_if_needed = AsyncMock(  # type: ignore[method-assign]
+        return_value={"access_token": "token"}
+    )
+    manager._apply_retention_policies = AsyncMock(return_value={"deleted": 0})  # type: ignore[method-assign]
+    manager._create_sync_job = AsyncMock(return_value="job-1")  # type: ignore[method-assign]
+    manager._complete_sync_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._emit_email_event = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    class _BrokenVectorMemory:
+        async def store_memory(self, *args: Any, **kwargs: Any) -> str:
+            raise RuntimeError("vector unavailable")
+
+    manager.set_vector_memory(_BrokenVectorMemory())  # type: ignore[arg-type]
+    assert (
+        await manager._store_insight_vector(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="acc-1",
+            insight_type="critical_email",
+            summary="summary",
+            metadata={},
+        )
+        is None
+    )
+
+    manager._google_list_unread_messages = AsyncMock(  # type: ignore[method-assign]
+        return_value=[
+            {
+                "message_id": "m1",
+                "subject": "Routine update",
+                "from_email": "team@example.com",
+                "body_preview": "Nothing urgent",
+                "received_at": "not-a-date",
+                "thread_id": "t1",
+                "date_header": "",
+            }
+        ]
+    )
+    manager._criticality_score = AsyncMock(  # type: ignore[method-assign]
+        return_value=("normal", 0.1, ["routine"], {"emails": [], "has_deadline_hint": False})
+    )
+    email_only = await manager.sync_email_account(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        account_id="22222222-2222-2222-2222-222222222222",
+        actor=_actor(),
+        direction="email",
+        source="cgs-admin",
+    )
+    assert email_only["counts"]["messages_scanned"] == 1
+    assert email_only["counts"]["critical_created"] == 0
+    assert manager._fetchval.await_count == 0
+
+    manager.list_google_calendars = AsyncMock(  # type: ignore[method-assign]
+        return_value=[{"id": "primary"}, {"id": "secondary"}]
+    )
+    calendar_read = await manager.sync_email_account(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        account_id="22222222-2222-2222-2222-222222222222",
+        actor=_actor(),
+        direction="calendar_read",
+        source="cgs-admin",
+    )
+    assert calendar_read["counts"]["calendar_reads"] == 2
+    assert calendar_read["counts"]["calendar_writes"] == 0
+
+    manager._apply_calendar_operations = AsyncMock(return_value=0)  # type: ignore[method-assign]
+    calendar_write = await manager.sync_email_account(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        account_id="22222222-2222-2222-2222-222222222222",
+        actor=_actor(),
+        direction="calendar_write",
+        source="cgs-admin",
+        calendar_operations=[],
+    )
+    assert calendar_write["counts"]["calendar_reads"] == 0
+    assert calendar_write["counts"]["calendar_writes"] == 0
+
+    manager._google_list_unread_messages = AsyncMock(  # type: ignore[method-assign]
+        return_value=[
+            {
+                "message_id": "m2",
+                "subject": "Routine update",
+                "from_email": "team@example.com",
+                "body_preview": "Nothing urgent",
+                "received_at": "",
+                "thread_id": "t2",
+                "date_header": "",
+            }
+        ]
+    )
+    email_blank_received = await manager.sync_email_account(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        account_id="22222222-2222-2222-2222-222222222222",
+        actor=_actor(),
+        direction="email",
+        source="cgs-admin",
+    )
+    assert email_blank_received["counts"]["messages_scanned"] == 1
+
+    with pytest.raises(ValueError, match="Invalid sync direction"):
+        await manager.sync_email_account(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            account_id="22222222-2222-2222-2222-222222222222",
+            actor=_actor(),
+            direction="sideways",
+            source="cgs-admin",
+        )
+
+
+@pytest.mark.asyncio
+async def test_email_admin_listing_and_reindex_branch_variants() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._execute = AsyncMock(return_value="UPDATE 1")  # type: ignore[method-assign]
+
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            [{"item_id": "crit-1", "severity": "critical", "status": "open"}],
+            [{"insight_id": "ins-1", "payload_json": {"summary": "hello"}}],
+            [{"event_id": "evt-2", "event_type": "email.synced"}],
+        ]
+    )
+
+    listed_critical = await manager.list_email_critical_items(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        severity="CRITICAL",
+        limit=0,
+    )
+    assert listed_critical[0]["item_id"] == "crit-1"
+
+    with pytest.raises(ValueError, match="Invalid critical severity"):
+        await manager.list_email_critical_items(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            severity="urgent",
+        )
+
+    listed_insights = await manager.list_email_insights(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        limit=999,
+    )
+    assert listed_insights[0]["insight_id"] == "ins-1"
+
+    listed_events = await manager.list_email_events(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        limit=999,
+    )
+    assert listed_events[0]["event_type"] == "email.synced"
+
+    manager.set_vector_memory(MagicMock())  # type: ignore[arg-type]
+    manager.list_email_insights = AsyncMock(  # type: ignore[method-assign]
+        return_value=[
+            {
+                "insight_id": "skip-1",
+                "account_id": "acc-1",
+                "insight_type": "critical_email",
+                "payload_json": "not-a-dict",
+            },
+            {
+                "insight_id": "skip-2",
+                "account_id": "acc-2",
+                "insight_type": "critical_email",
+                "payload_json": {"alpha": 1, "summary": "   "},
+            },
+            {
+                "insight_id": "keep-1",
+                "account_id": "",
+                "insight_type": "",
+                "payload_json": {"beta": 2},
+            },
+        ]
+    )
+    manager._store_insight_vector = AsyncMock(side_effect=[None, "vec-2"])  # type: ignore[method-assign]
+
+    reindexed = await manager.reindex_email_insights(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        actor=_actor(),
+    )
+    assert reindexed == {"reindexed": 1, "scanned": 3}
+    assert manager._execute.await_count == 1
+    first_summary = manager._store_insight_vector.await_args_list[0].kwargs["summary"]
+    second_summary = manager._store_insight_vector.await_args_list[1].kwargs["summary"]
+    assert first_summary == '{"alpha": 1, "summary": "   "}'
+    assert second_summary == '{"beta": 2}'
+
+
+@pytest.mark.asyncio
+async def test_email_helper_remaining_branch_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._emit_email_event = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "account_id": "acc-1",
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "provider": "google",
+            "external_account_id": "owner@example.com",
+            "email_address": "owner@example.com",
+            "oauth_subject": "owner@example.com",
+            "status": "connected",
+            "scopes": ["email"],
+            "access_token_enc": "access-token",
+            "refresh_token_enc": "refresh-token",
+            "token_expiry": datetime.now(UTC),
+            "sync_cursor": None,
+            "primary_calendar_id": None,
+            "metadata": {},
+            "created_by": "op",
+            "updated_by": "op",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        }
+    )
+    record = await manager._get_email_account_record(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        account_id="acc-1",
+    )
+    assert record["account_id"] == "acc-1"
+
+    class _FakeResponse:
+        def __init__(self, payload: Any, status_code: int = 200) -> None:
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self) -> Any:
+            return self._payload
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError("http error")
+
+    class _HeadersShapeHttpClient:
+        async def __aenter__(self) -> _HeadersShapeHttpClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def get(self, url: str, **kwargs: Any) -> _FakeResponse:
+            if "gmail/v1/users/me/messages/" in url:
+                return _FakeResponse(
+                    {
+                        "id": "m3",
+                        "threadId": "thread-3",
+                        "snippet": "Quiet update",
+                        "internalDate": "1730000000000",
+                        "payload": {"headers": {"name": "Date", "value": "ignored"}},
+                    }
+                )
+            return _FakeResponse({"messages": [{"id": "m3"}]})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _HeadersShapeHttpClient())
+    unread = await manager._google_list_unread_messages(access_token="token", max_results=5)
+    assert unread == [
+        {
+            "message_id": "m3",
+            "thread_id": "thread-3",
+            "subject": "",
+            "from_email": "",
+            "body_preview": "Quiet update",
+            "received_at": datetime.fromtimestamp(1730000000, tz=UTC).isoformat(),
+            "date_header": "",
+        }
+    ]
+
+    manager.set_critical_scorer(AsyncMock(return_value={"score": None, "reason_codes": []}))  # type: ignore[arg-type]
+    severity, score, reasons, _ = await manager._criticality_score(
+        subject="Routine follow up",
+        body_preview="Just checking in",
+        sender="ops@example.com",
+    )
+    assert severity == "normal"
+    assert score > 0
+    assert "model_score" not in reasons
+
+    class _CalendarNoopHttpClient:
+        async def __aenter__(self) -> _CalendarNoopHttpClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def post(self, url: str, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse({"id": "event-1"})
+
+        async def patch(self, url: str, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse({"id": "event-1"})
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _CalendarNoopHttpClient())
+    write_count = await manager._apply_calendar_operations(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        account_id="acc-1",
+        access_token="token",
+        source="cgs-admin",
+        operations=["skip-me"],
+    )
+    assert write_count == 0
 
 
 @pytest.mark.asyncio
@@ -2157,6 +3473,313 @@ async def test_security_event_record_list_and_dashboard_paths() -> None:
 
 
 @pytest.mark.asyncio
+async def test_security_and_messaging_helper_branch_variants(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Missing event_type"):
+        await manager.record_security_event(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            event_type="",
+        )
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to record tenant security event"):
+        await manager.record_security_event(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            event_type="auth.denied",
+            severity="critical",
+        )
+
+    warnings: list[dict[str, Any]] = []
+
+    def _capture_warning(event: str, **kwargs: Any) -> None:
+        warnings.append({"event": event, **kwargs})
+
+    monkeypatch.setattr("zetherion_ai.admin.tenant_admin_manager.log.warning", _capture_warning)
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "event_id": 10,
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "event_type": "auth.denied",
+            "severity": "critical",
+            "action": "login",
+            "source": "gateway",
+            "payload_json": {},
+            "created_at": datetime.now(UTC),
+        }
+    )
+    created = await manager.record_security_event(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        event_type=" AUTH.DENIED ",
+        severity="CRITICAL",
+        action=" Login ",
+        source=" Gateway ",
+    )
+    assert created["event_type"] == "auth.denied"
+    assert warnings and warnings[0]["severity"] == "critical"
+
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            [
+                {
+                    "event_id": 1,
+                    "event_type": "auth.denied",
+                    "severity": "critical",
+                    "action": "login",
+                }
+            ],
+            [{"severity": "critical", "count": 2}],
+            [{"event_type": "auth.denied", "count": 2}],
+            [
+                {
+                    "event_id": 3,
+                    "tenant_id": "11111111-1111-1111-1111-111111111111",
+                    "event_type": "auth.denied",
+                    "severity": "critical",
+                    "action": "login",
+                    "source": "gateway",
+                    "payload_json": {},
+                    "created_at": "2026-03-17T00:00:00+00:00",
+                }
+            ],
+        ]
+    )
+    listed = await manager.list_security_events(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        event_type=" AUTH.DENIED ",
+        severity="critical",
+        action=" LOGIN ",
+        limit=5000,
+    )
+    assert listed[0]["action"] == "login"
+
+    dashboard = await manager.get_security_dashboard(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        window_hours=99999,
+        recent_limit=999,
+    )
+    assert dashboard["window_hours"] == 24 * 30
+    assert dashboard["recent_events"][0]["created_at"] == "2026-03-17T00:00:00+00:00"
+
+    assert TenantAdminManager._normalize_worker_messaging_provider(" email ") == "email"
+    with pytest.raises(ValueError, match="Unsupported worker messaging provider"):
+        TenantAdminManager._normalize_worker_messaging_provider("sms")
+
+    assert TenantAdminManager._coerce_retention_days("not-a-number", default=14) == 14
+    assert TenantAdminManager._coerce_retention_days(0, default=14) == 1
+    assert TenantAdminManager._coerce_retention_days(9999, default=14) == 365
+    assert manager._resolve_messaging_retention_days(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        policy_days="45",  # type: ignore[arg-type]
+    ) == 45
+    manager._settings_cache[
+        ("11111111-1111-1111-1111-111111111111", "security", "messaging_retention_days")
+    ] = "18"
+    assert manager._resolve_messaging_retention_days(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+    ) == 18
+
+    with pytest.raises(ValueError, match="Missing chat_id"):
+        await manager.put_messaging_chat_policy(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="",
+            read_enabled=True,
+            send_enabled=True,
+            actor=_actor(),
+        )
+
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        return_value=[
+            {
+                "message_id": "11111111-1111-1111-1111-111111111111",
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "direction": "outbound",
+                "sender_id": "sender-1",
+                "sender_name": "Sender",
+                "body_enc": "hello",
+                "metadata": {},
+                "action_id": None,
+                "event_type": "whatsapp.message.outbound",
+                "observed_at": datetime.now(UTC),
+                "expires_at": datetime.now(UTC) + timedelta(days=1),
+                "created_at": datetime.now(UTC),
+            }
+        ]
+    )
+    exported = await manager.export_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        sender_id=" sender-1 ",
+        direction=" OUTBOUND ",
+        include_expired=True,
+        limit=99999,
+    )
+    assert exported[0]["direction"] == "outbound"
+
+    with pytest.raises(ValueError, match="Invalid direction"):
+        await manager.export_messaging_messages(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            sender_id="sender-1",
+            direction="sideways",
+        )
+
+
+@pytest.mark.asyncio
+async def test_security_and_messaging_list_filter_optional_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    warnings: list[dict[str, Any]] = []
+
+    def _capture_warning(event: str, **kwargs: Any) -> None:
+        warnings.append({"event": event, **kwargs})
+
+    monkeypatch.setattr("zetherion_ai.admin.tenant_admin_manager.log.warning", _capture_warning)
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "event_id": 11,
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "event_type": "auth.allowed",
+            "severity": "low",
+            "action": "login",
+            "source": "gateway",
+            "payload_json": {},
+            "created_at": datetime.now(UTC),
+        }
+    )
+
+    created = await manager.record_security_event(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        event_type="AUTH.ALLOWED",
+        severity="low",
+        action="Login",
+        source="Gateway",
+    )
+    assert created["severity"] == "low"
+    assert warnings == []
+
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            [{"item_id": "item-1", "status": "open", "severity": "high"}],
+            [{"event_id": 1, "event_type": "auth.allowed", "action": "login"}],
+            [],
+        ]
+    )
+
+    critical = await manager.list_email_critical_items(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        status=" OPEN ",
+        severity=" HIGH ",
+        limit=9999,
+    )
+    assert critical[0]["status"] == "open"
+    critical_args = manager._fetch.await_args_list[0].args
+    assert "status = $2" in critical_args[0]
+    assert "severity = $3" in critical_args[0]
+    assert critical_args[1:] == (
+        "11111111-1111-1111-1111-111111111111",
+        "open",
+        "high",
+        500,
+    )
+
+    listed = await manager.list_security_events(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        action=" LOGIN ",
+        limit=0,
+    )
+    assert listed[0]["action"] == "login"
+    security_args = manager._fetch.await_args_list[1].args
+    assert "event_type =" not in security_args[0]
+    assert "severity =" not in security_args[0]
+    assert "action = $2" in security_args[0]
+    assert security_args[1:] == ("11111111-1111-1111-1111-111111111111", "login", 1)
+
+    messages = await manager.list_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider=None,
+        chat_id=" chat-1 ",
+        direction=" OUTBOUND ",
+        include_expired=True,
+        limit=0,
+    )
+    assert messages == []
+    message_args = manager._fetch.await_args_list[2].args
+    assert "provider =" not in message_args[0]
+    assert "chat_id = $2" in message_args[0]
+    assert "direction = $3" in message_args[0]
+    assert "expires_at > now()" not in message_args[0]
+    assert message_args[1:] == (
+        "11111111-1111-1111-1111-111111111111",
+        "chat-1",
+        "outbound",
+        1,
+    )
+
+
+@pytest.mark.asyncio
+async def test_email_and_messaging_filter_false_paths_and_allowlist_refresh() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            [{"item_id": "item-2", "status": "open", "severity": "critical"}],
+            [],
+            [{"chat_id": "chat-2"}],
+        ]
+    )
+    manager.set_setting = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    critical = await manager.list_email_critical_items(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        status=" OPEN ",
+        limit=0,
+    )
+    assert critical[0]["item_id"] == "item-2"
+    critical_args = manager._fetch.await_args_list[0].args
+    assert "status = $2" in critical_args[0]
+    assert "severity =" not in critical_args[0]
+    assert critical_args[1:] == ("11111111-1111-1111-1111-111111111111", "open", 1)
+
+    messages = await manager.list_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        direction=None,
+        include_expired=False,
+        limit=600,
+    )
+    assert messages == []
+    message_args = manager._fetch.await_args_list[1].args
+    assert "provider = $2" in message_args[0]
+    assert "chat_id =" not in message_args[0]
+    assert "direction =" not in message_args[0]
+    assert "expires_at > now()" in message_args[0]
+    assert message_args[1:] == (
+        "11111111-1111-1111-1111-111111111111",
+        "whatsapp",
+        500,
+    )
+
+    manager._settings_cache[
+        ("11111111-1111-1111-1111-111111111111", "security", "messaging_allowlisted_chats")
+    ] = "   "
+    await manager._sync_messaging_allowlist_setting(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        actor=_actor(),
+    )
+    manager.set_setting.assert_awaited_once()
+    assert manager.set_setting.await_args.kwargs["value"] == ["chat-2"]
+
+
+@pytest.mark.asyncio
 async def test_messaging_export_and_delete_paths() -> None:
     conn = _FakeConn()
     pool = _FakePool(conn)
@@ -2233,6 +3856,170 @@ async def test_messaging_export_and_delete_paths() -> None:
             chat_id="chat-1",
             message_ids=["not-a-uuid"],
         )
+
+
+@pytest.mark.asyncio
+async def test_delete_messaging_messages_normalizes_optional_filters_and_blank_ids() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._fetch = AsyncMock(return_value=[])  # type: ignore[method-assign]
+
+    cutoff = datetime(2026, 3, 16, 8, 30)
+    deleted = await manager.delete_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        actor=_actor(),
+        provider="whatsapp",
+        chat_id=" chat-1 ",
+        sender_id=" sender-1 ",
+        before_created_at=cutoff,
+        message_ids=[
+            "",
+            "11111111-1111-1111-1111-111111111111",
+            "   ",
+        ],
+        limit=999999,
+    )
+
+    assert deleted["deleted_count"] == 0
+    assert deleted["filters"]["chat_id"] == "chat-1"
+    assert deleted["filters"]["sender_id"] == "sender-1"
+    assert deleted["filters"]["before_created_at"].tzinfo == UTC
+    assert deleted["filters"]["message_ids"] == ["11111111-1111-1111-1111-111111111111"]
+
+    fetch_args = manager._fetch.await_args.args
+    assert "chat_id = $3" in fetch_args[0]
+    assert "sender_id = $4" in fetch_args[0]
+    assert "created_at <= $5" in fetch_args[0]
+    assert "message_id = ANY($6::uuid[])" in fetch_args[0]
+    assert fetch_args[1:] == (
+        "11111111-1111-1111-1111-111111111111",
+        "whatsapp",
+        "chat-1",
+        "sender-1",
+        deleted["filters"]["before_created_at"],
+        ["11111111-1111-1111-1111-111111111111"],
+        20000,
+    )
+    manager._write_audit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_messaging_messages_skips_optional_chat_and_message_id_filters() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._fetch = AsyncMock(return_value=[])  # type: ignore[method-assign]
+
+    cutoff = datetime(2026, 3, 16, 8, 30)
+    deleted = await manager.delete_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        actor=_actor(),
+        provider="whatsapp",
+        sender_id=" sender-2 ",
+        before_created_at=cutoff,
+        limit=5,
+    )
+
+    assert deleted["deleted_count"] == 0
+    fetch_args = manager._fetch.await_args.args
+    assert "chat_id =" not in fetch_args[0]
+    assert "sender_id = $3" in fetch_args[0]
+    assert "created_at <= $4" in fetch_args[0]
+    assert "message_id = ANY(" not in fetch_args[0]
+    assert fetch_args[1:] == (
+        "11111111-1111-1111-1111-111111111111",
+        "whatsapp",
+        "sender-2",
+        cutoff.replace(tzinfo=UTC),
+        5,
+    )
+
+
+def test_execution_target_and_worker_result_helper_paths() -> None:
+    assert TenantAdminManager._normalize_execution_target(None) == "windows_local"
+    assert TenantAdminManager._normalize_execution_target("any_worker") == "any_worker"
+    assert TenantAdminManager._normalize_execution_target("worker:node-1") == "worker:node-1"
+
+    with pytest.raises(ValueError, match="missing node id"):
+        TenantAdminManager._normalize_execution_target("worker:")
+    with pytest.raises(ValueError, match="must match"):
+        TenantAdminManager._normalize_execution_target("worker:Node!")
+    with pytest.raises(ValueError, match="execution_target must be one of"):
+        TenantAdminManager._normalize_execution_target("moon-base")
+
+    assert TenantAdminManager._coerce_execution_runtime_seconds(None) is None
+    assert TenantAdminManager._coerce_execution_runtime_seconds("") is None
+    assert TenantAdminManager._coerce_execution_runtime_seconds("15") == 30
+    assert TenantAdminManager._coerce_execution_runtime_seconds("999999") == 86_400
+    with pytest.raises(ValueError, match="max_runtime_seconds must be an integer"):
+        TenantAdminManager._coerce_execution_runtime_seconds(object())
+
+    assert TenantAdminManager._execution_target_node_id("worker:node-1") == "node-1"
+    assert TenantAdminManager._execution_target_node_id("windows_local") is None
+
+    assert TenantAdminManager._worker_result_outcome("ok") == ("succeeded", True)
+    assert TenantAdminManager._worker_result_outcome("cancelled") == ("failed", False)
+    assert TenantAdminManager._worker_result_outcome("mystery") == ("failed", False)
+
+    assert (
+        TenantAdminManager._worker_result_failure_category(
+            output={"message": "Execution timeout waiting on dependency"},
+        )
+        == "timeout"
+    )
+    assert (
+        TenantAdminManager._worker_result_failure_category(
+            error={"detail": "Hit rate limit from provider"},
+        )
+        == "rate_limit"
+    )
+    assert (
+        TenantAdminManager._worker_result_failure_category(
+            output={"failure_category": "dependency unavailable"},
+        )
+        == "dependency"
+    )
+    assert (
+        TenantAdminManager._worker_result_failure_category(
+            error={"code": "job_cancelled_due_to_interrupt"},
+        )
+        == "interrupted"
+    )
+    assert (
+        TenantAdminManager._worker_result_failure_category(output={"message": "boom"})
+        == "transient"
+    )
+
+
+@pytest.mark.asyncio
+async def test_queue_messaging_send_missing_chat_and_insert_failure_paths() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager.is_messaging_chat_allowed = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    manager.ingest_messaging_message = AsyncMock()  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="Missing chat_id"):
+        await manager.queue_messaging_send(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="",
+            body_text="hello",
+            actor=_actor(),
+        )
+
+    with pytest.raises(RuntimeError, match="Failed to queue messaging send action"):
+        await manager.queue_messaging_send(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            body_text="hello",
+            actor=_actor(),
+        )
+    manager.ingest_messaging_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -2389,6 +4176,129 @@ async def test_create_execution_plan_persists_step_metadata() -> None:
     assert created["steps"][0]["metadata"] == {"executor": "automerge"}
     assert created["plan"]["execution_mode"] == "test"
     assert created["steps"][0]["execution_mode"] == "test"
+
+
+@pytest.mark.asyncio
+async def test_create_and_list_execution_plan_optional_branches() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager.schedule_execution_continuation = AsyncMock(return_value="queue-1")  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="Missing non-empty title"):
+        await manager.create_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            title="   ",
+            goal="Ship overnight",
+            steps=["Design schema"],
+            actor=_actor(),
+        )
+    with pytest.raises(ValueError, match="Missing non-empty goal"):
+        await manager.create_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            title="Night Build",
+            goal="   ",
+            steps=["Design schema"],
+            actor=_actor(),
+        )
+
+    plan_id = "11111111-1111-1111-1111-111111111111"
+    step_id = "22222222-2222-2222-2222-222222222222"
+    conn.fetchrow.side_effect = [
+        {
+            "plan_id": plan_id,
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "title": "Night Build",
+            "goal": "Ship overnight",
+            "execution_mode": "live",
+            "status": "queued",
+            "current_step_index": 0,
+            "total_steps": 1,
+            "max_step_attempts": 3,
+            "continuation_interval_seconds": 60,
+            "next_run_at": datetime.now(UTC),
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "metadata": {},
+            "last_error_category": None,
+            "last_error_detail": None,
+            "created_by": "operator-1",
+            "updated_by": "operator-1",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+        {
+            "step_id": step_id,
+            "plan_id": plan_id,
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "execution_mode": "live",
+            "step_index": 0,
+            "title": "Step 1",
+            "prompt_text": "Design schema",
+            "idempotency_key": "step-1",
+            "status": "pending",
+            "attempt_count": 0,
+            "max_attempts": 3,
+            "next_retry_at": None,
+            "last_error_category": None,
+            "last_error_detail": None,
+            "output_json": {},
+            "metadata": {},
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+    ]
+
+    created = await manager.create_execution_plan(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        title="Night Build",
+        goal="Ship overnight",
+        steps=["Design schema"],
+        actor=_actor(),
+        start_at=datetime(2026, 3, 17, 8, 30),
+    )
+    assert created["plan"]["plan_id"] == plan_id
+    inserted_plan_args = conn.fetchrow.await_args_list[0].args
+    assert inserted_plan_args[9].tzinfo == UTC
+
+    manager._fetch = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    plans = await manager.list_execution_plans(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        status="   ",
+        limit=0,
+    )
+    assert plans == []
+    list_args = manager._fetch.await_args.args
+    assert "status =" not in list_args[0]
+    assert list_args[1:] == ("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1)
+
+
+@pytest.mark.asyncio
+async def test_create_execution_plan_insert_failure_paths() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager.schedule_execution_continuation = AsyncMock(return_value="queue-1")  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    conn.fetchrow.side_effect = [None]
+    with pytest.raises(RuntimeError, match="Failed to create execution plan"):
+        await manager.create_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            title="Night Build",
+            goal="Ship overnight",
+            steps=["Design schema"],
+            actor=_actor(),
+        )
+
+    conn.fetchrow.side_effect = [_execution_plan_row(), None]
+    with pytest.raises(RuntimeError, match="Failed to create execution step"):
+        await manager.create_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            title="Night Build",
+            goal="Ship overnight",
+            steps=["Design schema"],
+            actor=_actor(),
+        )
 
 
 @pytest.mark.asyncio
@@ -2745,7 +4655,9 @@ def test_worker_rollout_and_coercion_helper_paths() -> None:
     assert TenantAdminManager._coerce_worker_health_score(-10) == 0
 
     assert TenantAdminManager._coerce_setting_bool("true") is True
+    assert TenantAdminManager._coerce_setting_bool(1) is True
     assert TenantAdminManager._coerce_setting_bool("0") is False
+    assert TenantAdminManager._coerce_setting_bool(0.0, default=True) is False
     assert TenantAdminManager._coerce_setting_bool(None, default=True) is True
 
     assert TenantAdminManager._coerce_setting_int("bad", default=7, minimum=1, maximum=10) == 7
@@ -2756,8 +4668,10 @@ def test_worker_rollout_and_coercion_helper_paths() -> None:
         "node-1",
         "node-2",
     }
+    assert TenantAdminManager._coerce_setting_string_set("") == set()
     assert TenantAdminManager._coerce_setting_string_set("node-1,node-2") == {"node-1", "node-2"}
     assert TenantAdminManager._coerce_setting_string_set('["g-1","g-2"]') == {"g-1", "g-2"}
+    assert TenantAdminManager._coerce_setting_string_set("[not-json]") == {"[not-json]"}
 
     manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "invalid"
     assert manager._worker_rollout_stage(tenant_id) == "general"
@@ -2830,6 +4744,33 @@ def test_worker_rollout_and_coercion_helper_paths() -> None:
         )
         == "consecutive_failures_threshold"
     )
+    manager._settings_cache[(tenant_id, "security", "worker_auto_quarantine_enabled")] = False
+    assert (
+        manager._worker_quarantine_reason(
+            tenant_id=tenant_id,
+            health_score=10,
+            consecutive_failures=10,
+        )
+        is None
+    )
+
+    assert TenantAdminManager._normalize_worker_messaging_ttl_seconds("bad") == 3600
+    assert TenantAdminManager._normalize_worker_messaging_ttl_seconds(99999999) == 60 * 60 * 24 * 14
+    assert TenantAdminManager._normalize_worker_messaging_permission(" READ ") == "read"
+    with pytest.raises(ValueError, match="permission must be one of"):
+        TenantAdminManager._normalize_worker_messaging_permission("bogus")
+
+    assert TenantAdminManager._normalize_worker_messaging_scope(
+        provider="whatsapp",
+        allow_draft=True,
+    ) == (False, True, False)
+    with pytest.raises(ValueError, match="At least one of allow_read"):
+        TenantAdminManager._normalize_worker_messaging_scope(provider="whatsapp")
+    with pytest.raises(ValueError, match="does not support worker messaging permissions"):
+        TenantAdminManager._normalize_worker_messaging_scope(
+            provider="email",
+            allow_read=True,
+        )
 
 
 @pytest.mark.asyncio
@@ -2956,6 +4897,35 @@ async def test_worker_dispatch_helper_eligibility_and_selection_paths() -> None:
         )
         is False
     )
+    assert (
+        await manager._worker_node_meets_dispatch_requirements(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_row={**eligible_row, "last_heartbeat_at": "not-a-datetime"},
+            required_capabilities=[],
+            require_canary=False,
+            min_health_score=70,
+            stale_seconds=120,
+            now=now,
+        )
+        is False
+    )
+    assert (
+        await manager._worker_node_meets_dispatch_requirements(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_row={
+                **eligible_row,
+                "last_heartbeat_at": datetime.now().replace(microsecond=0),
+            },
+            required_capabilities=[],
+            require_canary=False,
+            min_health_score=70,
+            stale_seconds=120,
+            now=now,
+        )
+        is True
+    )
 
     manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "disabled"
     assert (
@@ -3049,6 +5019,34 @@ async def test_worker_dispatch_helper_eligibility_and_selection_paths() -> None:
     )
     assert selected == "node-1"
 
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[True, True]
+    )
+    conn.fetch.return_value = [
+        {
+            "node_id": "",
+            "status": "active",
+            "health_status": "healthy",
+            "health_score": 90,
+            "metadata": {},
+            "last_heartbeat_at": now,
+        },
+        {
+            "node_id": "node-2",
+            "status": "active",
+            "health_status": "healthy",
+            "health_score": 85,
+            "metadata": {},
+            "last_heartbeat_at": now,
+        },
+    ]
+    selected = await manager._select_worker_dispatch_target_node(
+        conn=conn,
+        tenant_id=tenant_id,
+        required_capabilities=[],
+    )
+    assert selected == "node-2"
+
 
 @pytest.mark.asyncio
 async def test_schedule_execution_continuation_success_and_failure_paths() -> None:
@@ -3125,6 +5123,14 @@ async def test_execution_plan_listing_get_and_steps_paths() -> None:
         include_prompt=False,
     )
     assert "prompt_text" not in steps[0]
+
+    manager._fetch = AsyncMock(return_value=[_execution_step_row(prompt_text="visible prompt")])  # type: ignore[method-assign]
+    steps_with_prompt = await manager.list_execution_plan_steps(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        include_prompt=True,
+    )
+    assert steps_with_prompt[0]["prompt_text"] == "visible prompt"
 
 
 @pytest.mark.asyncio
@@ -3500,6 +5506,34 @@ async def test_fail_execution_step_terminal_and_error_paths() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fail_execution_step_blank_category_defaults_to_transient() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+
+    conn.fetchrow.side_effect = [
+        {"status": "running"},
+        {"status": "running", "attempt_count": 1, "max_attempts": 3},
+        _execution_step_row(status="failed", attempt_count=1, max_attempts=3),
+        _execution_plan_row(status="running"),
+    ]
+
+    failed = await manager.fail_execution_step(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        step_id="22222222-2222-2222-2222-222222222222",
+        retry_id="33333333-3333-3333-3333-333333333333",
+        worker_id="worker-1",
+        failure_category="   ",
+        failure_detail="  temporary issue  ",
+    )
+
+    assert failed["retry_scheduled"] is True
+    assert failed["failure_category"] == "transient"
+    assert conn.fetchrow.await_args_list[2].args[6] == "transient"
+    assert conn.fetchrow.await_args_list[3].args[5] == "transient"
+
+
+@pytest.mark.asyncio
 async def test_dispatch_execution_step_to_worker_and_claim_paths() -> None:
     conn = _FakeConn()
     manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
@@ -3784,12 +5818,16 @@ def test_worker_delegation_helper_methods() -> None:
         TenantAdminManager._normalize_worker_delegation_permission("bogus")
     with pytest.raises(ValueError, match="permissions must be one of"):
         TenantAdminManager._normalize_worker_delegation_permissions(["bogus"])
+    with pytest.raises(ValueError, match="permissions must be a non-empty array"):
+        TenantAdminManager._normalize_worker_delegation_permissions([])
     with pytest.raises(ValueError, match="worker delegation scope must start"):
         TenantAdminManager._normalize_worker_delegation_scope("worker_artifact:tenant:plan")
     with pytest.raises(ValueError, match="worker artifact scope must start"):
         TenantAdminManager._normalize_worker_artifact_scope("repo:/workspace/repo")
     with pytest.raises(ValueError, match="execution_mode must be one of"):
         TenantAdminManager._normalize_execution_mode("preview")
+    with pytest.raises(ValueError, match="capabilities must be an array of strings"):
+        TenantAdminManager._normalize_worker_capabilities(["repo.patch", 123])  # type: ignore[list-item]
 
     artifacts = TenantAdminManager._build_worker_artifacts(
         artifact_scope="worker_artifact:tenant-a:plan-1:step-1:retry-1",
@@ -3803,15 +5841,22 @@ def test_worker_delegation_helper_methods() -> None:
                     "resource_scope": "bad-scope",
                     "approved": False,
                 },
+                {
+                    "artifact_id": "context-2",
+                    "content": {"markdown": "## Context"},
+                    "metadata": "skip-me",
+                },
                 "skip-me",
             ]
         },
     )
-    assert len(artifacts) == 2
+    assert len(artifacts) == 3
     assert artifacts[0]["artifact_type"] == "instruction"
     assert artifacts[1]["artifact_id"] == "context-1"
     assert artifacts[1]["resource_scope"] == "worker_artifact:tenant-a:plan-1:step-1:retry-1"
     assert artifacts[1]["content"]["text"] == "approved excerpt"
+    assert artifacts[2]["artifact_id"] == "context-2"
+    assert artifacts[2]["metadata"] == {}
     sanitized = TenantAdminManager._sanitize_worker_control_payload(
         {
             "prompt_text": "secret",
@@ -3864,10 +5909,63 @@ def test_worker_delegation_helper_methods() -> None:
         )
         is None
     )
+    assert TenantAdminManager._resolve_worker_messaging_scope_for_job(
+        action="messaging.draft.open",
+        payload_json={"provider": "WHATSAPP", "thread_id": "thread-1"},
+    ) == {
+        "permission": "draft",
+        "provider": "whatsapp",
+        "chat_id": "thread-1",
+    }
+    assert TenantAdminManager._resolve_worker_messaging_scope_for_job(
+        action="messaging.send",
+        payload_json={"provider": "sms", "conversation_id": "conv-1"},
+    ) == {
+        "permission": "send",
+        "provider": "sms",
+        "chat_id": "conv-1",
+    }
+    assert TenantAdminManager._resolve_worker_messaging_scope_for_job(
+        action="email.draft.reply",
+        payload_json={"account_id": "acct-1"},
+    ) == {
+        "permission": "draft",
+        "provider": "email",
+        "chat_id": "acct-1",
+    }
+    assert TenantAdminManager._redact_worker_messaging_payload(
+        ["hello", {"body": "secret"}]
+    ) == ["hello", {"body": "[REDACTED]"}]
+    assert TenantAdminManager._worker_delegation_scope_matches(
+        "repo:/workspace/repo", "repo:/workspace/repo"
+    )
     assert TenantAdminManager._worker_delegation_scope_matches("repo:*", "repo:/workspace/repo")
     assert not TenantAdminManager._worker_delegation_scope_matches(
         "repo:/workspace/other", "repo:/workspace/repo"
     )
+
+
+@pytest.mark.asyncio
+async def test_get_trust_storage_initializes_once_and_caches() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+
+    class _FakeTrustStorage:
+        def __init__(self, *, schema: str) -> None:
+            self.schema = schema
+            self.initialize = AsyncMock(return_value=None)
+
+    settings = type("Settings", (), {"postgres_control_plane_schema": "tenant_ci"})()
+
+    with (
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch("zetherion_ai.trust.storage.TrustStorage", _FakeTrustStorage),
+    ):
+        storage_one = await manager._get_trust_storage()
+        storage_two = await manager._get_trust_storage()
+
+    assert storage_one is storage_two
+    assert storage_one.schema == "tenant_ci"
+    storage_one.initialize.assert_awaited_once_with(manager._pool)
 
 
 @pytest.mark.asyncio
@@ -4094,6 +6192,264 @@ async def test_claim_worker_job_enforces_messaging_grants_and_redaction() -> Non
     assert payload["nested"]["body"] == "[REDACTED]"
     assert payload["worker_messaging_access"]["redacted_payload"] is True
 
+    plain_candidate = _worker_job_row(
+        status="queued",
+        action="messaging.read",
+        payload_json="not-a-dict",
+    )
+    plain_candidate["required_capabilities"] = []
+    claimed_plain_row = _worker_job_row(
+        status="running",
+        action="messaging.read",
+        payload_json="not-a-dict",
+    )
+    claimed_plain_row["required_capabilities"] = []
+    conn.fetch.return_value = [plain_candidate]
+    conn.fetchrow.side_effect = [
+        {"node_id": "node-1"},
+        claimed_plain_row,
+    ]
+    manager.get_active_worker_messaging_grant = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "grant_id": "66666666-6666-6666-6666-666666666666",
+            "redacted_payload": False,
+        }
+    )
+    with (
+        patch.object(
+            TenantAdminManager,
+            "_resolve_worker_delegation_scope_for_job",
+            return_value=None,
+        ),
+        patch.object(
+            TenantAdminManager,
+            "_resolve_worker_messaging_scope_for_job",
+            return_value={"permission": "read", "provider": "whatsapp", "chat_id": "chat-1"},
+        ),
+    ):
+        granted_plain = await manager.claim_worker_dispatch_job(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            required_capabilities=["repo.patch"],
+            denied_reasons=[],
+        )
+    assert granted_plain is not None
+    plain_payload = granted_plain["payload_json"]
+    assert plain_payload["worker_messaging_access"]["grant_id"] == (
+        "66666666-6666-6666-6666-666666666666"
+    )
+    assert plain_payload["worker_messaging_access"]["redacted_payload"] is False
+    assert "text" not in plain_payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("delegation_scope", "messaging_scope", "expected_reason"),
+    [
+        (
+            {"permission": "bogus", "resource_scope": "repo:/workspace/repo"},
+            None,
+            "invalid_permission",
+        ),
+        (
+            {"permission": "repo.patch", "resource_scope": ""},
+            None,
+            "missing_resource_scope",
+        ),
+        (
+            None,
+            {"permission": "bogus", "provider": "whatsapp", "chat_id": "chat-1"},
+            "invalid_permission",
+        ),
+        (
+            None,
+            {"permission": "read", "provider": "sms", "chat_id": "chat-1"},
+            "invalid_provider",
+        ),
+        (
+            None,
+            {"permission": "send", "provider": "whatsapp", "chat_id": "chat-1"},
+            "unsupported_permission",
+        ),
+        (
+            None,
+            {"permission": "read", "provider": "whatsapp", "chat_id": ""},
+            "missing_chat_id",
+        ),
+    ],
+)
+async def test_claim_worker_dispatch_job_collects_scope_validation_denials(
+    delegation_scope: dict[str, Any] | None,
+    messaging_scope: dict[str, Any] | None,
+    expected_reason: str,
+) -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    manager.get_active_worker_delegation_grant = AsyncMock(return_value={})  # type: ignore[method-assign]
+    manager.get_active_worker_messaging_grant = AsyncMock(return_value={})  # type: ignore[method-assign]
+
+    conn.fetchrow.return_value = {"node_id": "node-1"}
+    conn.fetchval.return_value = 1
+    conn.fetch.return_value = [
+        _worker_job_row(
+            status="queued",
+            required_capabilities=[],
+            action="worker.noop",
+            payload_json={},
+        )
+    ]
+
+    denied_reasons: list[dict[str, Any]] = []
+    with (
+        patch.object(
+            TenantAdminManager,
+            "_resolve_worker_delegation_scope_for_job",
+            return_value=delegation_scope,
+        ),
+        patch.object(
+            TenantAdminManager,
+            "_resolve_worker_messaging_scope_for_job",
+            return_value=messaging_scope,
+        ),
+    ):
+        claimed = await manager.claim_worker_dispatch_job(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            required_capabilities=["repo.patch"],
+            denied_reasons=denied_reasons,
+        )
+
+    assert claimed is None
+    assert denied_reasons
+    assert denied_reasons[0]["reason"] == expected_reason
+    if delegation_scope is not None:
+        assert denied_reasons[0]["kind"] == "delegation_grant"
+    else:
+        assert "kind" not in denied_reasons[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("delegation_scope", "messaging_scope", "delegation_grant", "messaging_grant"),
+    [
+        (
+            {"permission": "bogus", "resource_scope": "repo:/workspace/repo"},
+            None,
+            {},
+            {},
+        ),
+        (
+            {"permission": "repo.patch", "resource_scope": ""},
+            None,
+            {},
+            {},
+        ),
+        (
+            {"permission": "repo.patch", "resource_scope": "repo:/workspace/repo"},
+            None,
+            None,
+            {},
+        ),
+        (
+            None,
+            {"permission": "read", "provider": "sms", "chat_id": "chat-1"},
+            {},
+            {},
+        ),
+        (
+            None,
+            {"permission": "send", "provider": "whatsapp", "chat_id": "chat-1"},
+            {},
+            {},
+        ),
+        (
+            None,
+            {"permission": "read", "provider": "whatsapp", "chat_id": ""},
+            {},
+            {},
+        ),
+        (
+            None,
+            {"permission": "read", "provider": "whatsapp", "chat_id": "chat-1"},
+            {},
+            None,
+        ),
+    ],
+)
+async def test_claim_worker_dispatch_job_skips_invalid_scopes_without_denied_reason_collection(
+    delegation_scope: dict[str, Any] | None,
+    messaging_scope: dict[str, Any] | None,
+    delegation_grant: dict[str, Any] | None,
+    messaging_grant: dict[str, Any] | None,
+) -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    manager.get_active_worker_delegation_grant = AsyncMock(  # type: ignore[method-assign]
+        return_value=delegation_grant
+    )
+    manager.get_active_worker_messaging_grant = AsyncMock(  # type: ignore[method-assign]
+        return_value=messaging_grant
+    )
+
+    conn.fetchrow.return_value = {"node_id": "node-1"}
+    conn.fetchval.return_value = 1
+    conn.fetch.return_value = [
+        _worker_job_row(
+            status="queued",
+            required_capabilities=[],
+            action="worker.noop",
+            payload_json={},
+        )
+    ]
+
+    with (
+        patch.object(
+            TenantAdminManager,
+            "_resolve_worker_delegation_scope_for_job",
+            return_value=delegation_scope,
+        ),
+        patch.object(
+            TenantAdminManager,
+            "_resolve_worker_messaging_scope_for_job",
+            return_value=messaging_scope,
+        ),
+    ):
+        claimed = await manager.claim_worker_dispatch_job(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            required_capabilities=["repo.patch"],
+        )
+
+    assert claimed is None
+
+
+@pytest.mark.asyncio
+async def test_claim_worker_dispatch_job_returns_none_for_missing_or_ineligible_node_record(
+) -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(side_effect=[False])  # type: ignore[method-assign]
+
+    conn.fetchrow.return_value = None
+    assert (
+        await manager.claim_worker_dispatch_job(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+        )
+        is None
+    )
+
+    conn.fetchrow.return_value = {"node_id": "node-1"}
+    assert (
+        await manager.claim_worker_dispatch_job(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+        )
+        is None
+    )
+
 
 @pytest.mark.asyncio
 async def test_claim_worker_dispatch_job_handles_lease_collision_between_nodes() -> None:
@@ -4130,6 +6486,30 @@ async def test_claim_worker_dispatch_job_handles_lease_collision_between_nodes()
     assert node_1_claim is None
     assert node_2_claim is not None
     assert node_2_claim["claimed_by_node_id"] == "node-2"
+
+
+@pytest.mark.asyncio
+async def test_select_worker_dispatch_target_node_returns_none_for_blank_eligible_nodes() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    conn.fetch.return_value = [
+        {
+            "node_id": "",
+            "status": "active",
+            "health_status": "healthy",
+            "health_score": 90,
+            "metadata": {},
+            "last_heartbeat_at": datetime.now(UTC),
+        }
+    ]
+    blank_only = await manager._select_worker_dispatch_target_node(
+        conn=conn,
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        required_capabilities=[],
+    )
+    assert blank_only is None
 
 
 @pytest.mark.asyncio
@@ -4602,6 +6982,75 @@ async def test_submit_worker_job_result_success_failure_and_idempotent() -> None
 
 
 @pytest.mark.asyncio
+async def test_submit_worker_job_result_skips_scheduling_without_next_run() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._apply_worker_job_health_signal = AsyncMock(  # type: ignore[method-assign]
+        return_value={"node_id": "node-1", "health_score": 90}
+    )
+    manager.complete_execution_step = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "plan": _execution_plan_row(status="running"),
+            "step": _execution_step_row(status="completed"),
+            "has_more": True,
+            "next_run_at": None,
+        }
+    )
+    manager.fail_execution_step = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "plan": _execution_plan_row(status="running"),
+            "step": _execution_step_row(status="failed"),
+            "retry_scheduled": True,
+            "next_run_at": None,
+            "failure_category": "transient",
+        }
+    )
+    manager.schedule_execution_continuation = AsyncMock(return_value="q-1")  # type: ignore[method-assign]
+
+    conn.fetchrow.side_effect = [
+        {
+            "job_id": "44444444-4444-4444-4444-444444444444",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "retry_id": "33333333-3333-3333-3333-333333333333",
+            "status": "running",
+            "claimed_by_node_id": "node-1",
+        },
+        _worker_job_row(status="succeeded", claimed_by_node_id="node-1"),
+        {
+            "job_id": "44444444-4444-4444-4444-444444444444",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "retry_id": "33333333-3333-3333-3333-333333333333",
+            "status": "running",
+            "claimed_by_node_id": "node-1",
+        },
+        _worker_job_row(status="failed", claimed_by_node_id="node-1"),
+    ]
+
+    success = await manager.submit_worker_job_result(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        job_id="44444444-4444-4444-4444-444444444444",
+        completion_status="succeeded",
+        output={"message": "ok"},
+    )
+    failure = await manager.submit_worker_job_result(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        job_id="44444444-4444-4444-4444-444444444444",
+        completion_status="failed",
+        error={"message": "dependency unavailable"},
+    )
+
+    assert success["status"] == "succeeded"
+    assert failure["status"] == "failed"
+    manager.schedule_execution_continuation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_submit_worker_job_result_error_paths() -> None:
     manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
 
@@ -4796,6 +7245,44 @@ async def test_apply_worker_job_health_signal_updates_and_auto_quarantine() -> N
     assert failure_snapshot["auto_quarantined"] is True
     conn.execute.assert_awaited_once()
 
+    conn.execute.reset_mock()
+    conn.fetchrow.side_effect = [
+        {
+            "node_id": "node-1",
+            "status": "active",
+            "health_status": "healthy",
+            "health_score": 40,
+            "consecutive_job_failures": 0,
+            "metadata": {},
+        },
+        {
+            "node_id": "node-1",
+            "tenant_id": tenant_id,
+            "node_name": "laptop",
+            "status": "quarantined",
+            "health_status": "degraded",
+            "health_score": 40,
+            "consecutive_job_failures": 0,
+            "metadata": {"auto_quarantine": {"reason": "health_score_threshold"}},
+            "last_heartbeat_at": now,
+            "created_by": "seed",
+            "updated_by": "worker:node-1",
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+    healthy_but_quarantined = await manager._apply_worker_job_health_signal(
+        conn=conn,
+        tenant_id=tenant_id,
+        node_id="node-1",
+        succeeded=True,
+        actor_sub="worker:node-1",
+    )
+    assert healthy_but_quarantined is not None
+    assert healthy_but_quarantined["status"] == "quarantined"
+    assert healthy_but_quarantined["health_status"] == "degraded"
+    conn.execute.assert_awaited_once()
+
 
 @pytest.mark.asyncio
 async def test_heartbeat_worker_node_respects_health_score_hint_and_quarantine() -> None:
@@ -4850,7 +7337,11 @@ async def test_heartbeat_worker_node_respects_health_score_hint_and_quarantine()
 async def test_record_execution_artifact_validation_and_failure_paths() -> None:
     manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
     manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
-        side_effect=[None, {"artifact_id": "a1", "artifact_type": "step_prompt"}]
+        side_effect=[
+            None,
+            {"artifact_id": "a1", "artifact_type": "step_prompt"},
+            {"artifact_id": "a2", "artifact_type": "step_prompt", "execution_mode": "test"},
+        ]
     )
 
     with pytest.raises(ValueError, match="Missing artifact_type"):
@@ -4874,6 +7365,14 @@ async def test_record_execution_artifact_validation_and_failure_paths() -> None:
         artifact_json={"k": "v"},
     )
     assert recorded["artifact_id"] == "a1"
+
+    recorded_test = await manager.record_execution_artifact(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        artifact_type="STEP_PROMPT",
+        execution_mode="TEST",
+    )
+    assert recorded_test["execution_mode"] == "test"
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 """Unit tests for InferenceBroker and provider capability matrix."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -727,6 +728,45 @@ class TestInferenceBrokerInfer:
 
         assert result.latency_ms > 0
 
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_infer_forced_provider_validation_and_failure_paths(self, mock_get_settings):
+        """Forced-provider branches should reject unavailable providers and re-raise failures."""
+        mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
+        mock_settings.anthropic_api_key = None
+        mock_settings.openai_api_key = None
+        mock_settings.gemini_api_key = MagicMock()
+        mock_settings.gemini_api_key.get_secret_value.return_value = "test"
+        mock_settings.ollama_router_model = "llama3.1:8b"
+        mock_settings.ollama_url = "http://localhost:11434"
+        mock_settings.router_model = "gemini-2.0-flash"
+        mock_get_settings.return_value = mock_settings
+
+        with patch("zetherion_ai.agent.inference.genai.Client"):
+            broker = InferenceBroker()
+
+        with pytest.raises(RuntimeError, match="Forced provider is not available: openai"):
+            await broker.infer(
+                prompt="hello",
+                task_type=TaskType.SIMPLE_QA,
+                forced_provider=Provider.OPENAI,
+            )
+
+        broker._record_provider_issue = AsyncMock()
+        broker._try_fallbacks = AsyncMock()
+        broker._call_provider = AsyncMock(side_effect=RuntimeError("forced failure"))
+
+        with pytest.raises(RuntimeError, match="forced failure"):
+            await broker.infer(
+                prompt="hello",
+                task_type=TaskType.SUMMARIZATION,
+                forced_provider=Provider.GEMINI,
+            )
+
+        broker._record_provider_issue.assert_awaited_once()
+        broker._try_fallbacks.assert_not_awaited()
+
 
 class TestInferenceBrokerHealthCheck:
     """Tests for InferenceBroker health checks."""
@@ -1283,3 +1323,178 @@ class TestProviderIssueAlerts:
         )
 
         handler.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_provider_issue_helper_paths_cover_classification_logging_and_disable(
+        self,
+        mock_get_settings,
+    ):
+        """Cover auth/rate-limit classification plus helper early-return paths."""
+        mock_get_settings.return_value = self._settings_with_paid_providers()
+
+        with (
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic"),
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            broker = InferenceBroker()
+
+        assert broker._classify_provider_issue("invalid api key provided") == "auth"
+        assert broker._classify_provider_issue("Too many requests (status code 429)") == (
+            "rate_limit"
+        )
+
+        with patch("zetherion_ai.agent.inference.log.warning") as mock_warning:
+            await broker._record_provider_issue(
+                Provider.CLAUDE,
+                RuntimeError("authentication failed"),
+                task_type=TaskType.CODE_GENERATION,
+            )
+
+        assert Provider.CLAUDE in broker._provider_issue_state
+        mock_warning.assert_called_once()
+
+        broker._clear_provider_issue(Provider.CLAUDE)
+        assert Provider.CLAUDE not in broker._provider_issue_state
+
+        broker._provider_issue_alerts_enabled = False
+        await broker._record_provider_issue(
+            Provider.OPENAI,
+            RuntimeError("invalid api key"),
+            task_type=TaskType.SIMPLE_QA,
+        )
+        assert Provider.OPENAI not in broker._provider_issue_state
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_rate_limit_issue_uses_async_handler_without_discarding_provider(
+        self,
+        mock_get_settings,
+    ):
+        """Rate-limit issues should notify but keep the provider available."""
+        mock_get_settings.return_value = self._settings_with_paid_providers()
+        observed_alerts = []
+
+        async def handler(alert):
+            observed_alerts.append(alert)
+
+        with (
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic"),
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            broker = InferenceBroker(provider_issue_handler=handler)
+
+        await broker._record_provider_issue(
+            Provider.OPENAI,
+            RuntimeError("rate limit exceeded"),
+            task_type=TaskType.SIMPLE_QA,
+        )
+
+        assert len(observed_alerts) == 1
+        assert observed_alerts[0].issue_type == "rate_limit"
+        assert Provider.OPENAI in broker.available_providers
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_probe_provider_branches_cover_missing_and_successful_clients(
+        self,
+        mock_get_settings,
+    ):
+        """Each paid-provider probe should cover both missing-client and success paths."""
+        settings = self._settings_with_paid_providers()
+        settings.groq_api_key = MagicMock()
+        settings.groq_api_key.get_secret_value.return_value = "gsk-test"
+        settings.groq_model = "groq-probe-model"
+        mock_get_settings.return_value = settings
+
+        with (
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic"),
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            broker = InferenceBroker()
+
+        broker._provider_issue_state[Provider.CLAUDE] = object()
+        broker._claude_client = None
+        with pytest.raises(RuntimeError, match="Claude client not initialized"):
+            await broker._probe_provider(Provider.CLAUDE)
+
+        class FakeClaudeMessages:
+            async def create(self, **_: object) -> MagicMock:
+                return MagicMock()
+
+        claude_client = SimpleNamespace(messages=FakeClaudeMessages())
+        broker._claude_client = claude_client
+        await broker._probe_provider(Provider.CLAUDE)
+        assert Provider.CLAUDE not in broker._provider_issue_state
+
+        broker._provider_issue_state[Provider.OPENAI] = object()
+        broker._openai_client = None
+        with pytest.raises(RuntimeError, match="OpenAI client not initialized"):
+            await broker._probe_provider(Provider.OPENAI)
+        openai_client = MagicMock()
+        openai_client.chat.completions.create = AsyncMock(return_value=MagicMock())
+        broker._openai_client = openai_client
+        await broker._probe_provider(Provider.OPENAI)
+        assert Provider.OPENAI not in broker._provider_issue_state
+
+        broker._provider_issue_state[Provider.GROQ] = object()
+        broker._groq_client = None
+        with pytest.raises(RuntimeError, match="Groq client not initialized"):
+            await broker._probe_provider(Provider.GROQ)
+        groq_client = MagicMock()
+        groq_client.chat.completions.create = AsyncMock(return_value=MagicMock())
+        broker._groq_client = groq_client
+        await broker._probe_provider(Provider.GROQ)
+        assert Provider.GROQ not in broker._provider_issue_state
+
+        broker._provider_issue_state[Provider.GEMINI] = object()
+        broker._gemini_client = None
+        with pytest.raises(RuntimeError, match="Gemini client not initialized"):
+            await broker._probe_provider(Provider.GEMINI)
+        gemini_client = MagicMock()
+        gemini_client.models.generate_content = MagicMock(return_value=MagicMock())
+        broker._gemini_client = gemini_client
+        with patch(
+            "zetherion_ai.agent.inference.asyncio.to_thread",
+            AsyncMock(side_effect=lambda fn: fn()),
+        ):
+            await broker._probe_provider(Provider.GEMINI)
+        assert Provider.GEMINI not in broker._provider_issue_state
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_probe_paid_providers_skips_unavailable_clients_and_records_failures(
+        self,
+        mock_get_settings,
+    ):
+        """Probe-all should skip unavailable clients and record failed available probes."""
+        mock_get_settings.return_value = self._settings_with_paid_providers()
+
+        with (
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic"),
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            broker = InferenceBroker()
+
+        broker._claude_client = None
+        broker._openai_client = object()
+        broker._groq_client = None
+        broker._gemini_client = object()
+
+        with (
+            patch.object(
+                broker,
+                "_probe_provider",
+                AsyncMock(side_effect=[None, RuntimeError("probe failed")]),
+            ) as mock_probe,
+            patch.object(broker, "_record_provider_issue", AsyncMock()) as mock_record,
+        ):
+            results = await broker.probe_paid_providers()
+
+        assert results == {"openai": True, "gemini": False}
+        assert mock_probe.await_count == 2
+        mock_record.assert_awaited_once()

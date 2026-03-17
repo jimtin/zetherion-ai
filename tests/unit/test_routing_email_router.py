@@ -88,6 +88,50 @@ class _TaskCalendarStub:
         )
 
 
+class _HTTPResponse:
+    def __init__(self, payload: Any, *, raise_exc: Exception | None = None) -> None:
+        self._payload = payload
+        self._raise_exc = raise_exc
+
+    def raise_for_status(self) -> None:
+        if self._raise_exc is not None:
+            raise self._raise_exc
+
+    def json(self) -> Any:
+        return self._payload
+
+
+class _HTTPClient:
+    def __init__(
+        self,
+        response: _HTTPResponse | None = None,
+        *,
+        exc: Exception | None = None,
+    ) -> None:
+        self._response = response
+        self._exc = exc
+
+    async def __aenter__(self) -> _HTTPClient:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    async def get(self, url: str) -> _HTTPResponse:
+        del url
+        if self._exc is not None:
+            raise self._exc
+        assert self._response is not None
+        return self._response
+
+    async def post(self, url: str, json: Any) -> _HTTPResponse:
+        del url, json
+        if self._exc is not None:
+            raise self._exc
+        assert self._response is not None
+        return self._response
+
+
 def _email() -> NormalizedEmail:
     return NormalizedEmail(
         external_id="m1",
@@ -557,6 +601,756 @@ async def test_ingest_unread_queues_all_and_errors_when_router_unhealthy() -> No
     storage.enqueue_ingestion_batch.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_ingest_unread_queues_messages_when_drain_hits_model_unavailable() -> None:
+    storage = _StorageStub()
+    storage.enqueue_ingestion_batch = AsyncMock(return_value=("batch-drain", 2))
+    messages = [
+        {
+            "account_ref": "default",
+            "external_id": "m-1",
+            "subject": "hello",
+            "from_email": "a@example.com",
+            "to_emails": ["b@example.com"],
+            "body_preview": "test",
+        },
+        {
+            "account_ref": "default",
+            "external_id": "m-2",
+            "subject": "hello again",
+            "from_email": "a@example.com",
+            "to_emails": ["b@example.com"],
+            "body_preview": "test2",
+        },
+    ]
+    router = EmailRouter(
+        storage=storage,
+        providers=_ProvidersWithEmailStub(messages),  # type: ignore[arg-type]
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+    router._check_pipeline_readiness = AsyncMock(return_value=(True, None, None))  # type: ignore[assignment]
+    router._drain_ingestion_queue = AsyncMock(  # type: ignore[assignment]
+        side_effect=ModelUnavailableError(
+            error_code="LOCAL_MODEL_UNAVAILABLE",
+            message="router unavailable",
+        )
+    )
+
+    with pytest.raises(EmailRoutingUnavailableError) as exc_info:
+        await router.ingest_unread(user_id=123, provider="google", limit=10)
+
+    assert exc_info.value.error_code == "LOCAL_MODEL_UNAVAILABLE"
+    assert exc_info.value.queued_count == 2
+    assert exc_info.value.queue_batch_id == "batch-drain"
+    assert exc_info.value.processed_count == 0
+    storage.enqueue_ingestion_batch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_unread_queues_remaining_messages_when_processing_fails_mid_loop() -> None:
+    storage = _StorageStub()
+    storage.enqueue_ingestion_batch = AsyncMock(return_value=("batch-mid", 1))
+    messages = [
+        {
+            "account_ref": "default",
+            "external_id": "m-1",
+            "thread_id": "t-1",
+            "subject": "hello",
+            "from_email": "a@example.com",
+            "to_emails": ["b@example.com"],
+            "body_text": "one",
+            "received_at": datetime.now().isoformat(),
+        },
+        {
+            "account_ref": "default",
+            "external_id": "m-2",
+            "thread_id": "t-2",
+            "subject": "hello again",
+            "from_email": "a@example.com",
+            "to_emails": ["b@example.com"],
+            "body_text": "two",
+            "received_at": datetime.now().isoformat(),
+        },
+    ]
+    router = EmailRouter(
+        storage=storage,
+        providers=_ProvidersWithEmailStub(messages),  # type: ignore[arg-type]
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+    router._check_pipeline_readiness = AsyncMock(return_value=(True, None, None))  # type: ignore[assignment]
+    router._drain_ingestion_queue = AsyncMock(return_value=[])  # type: ignore[assignment]
+    router.process_email = AsyncMock(  # type: ignore[assignment]
+        side_effect=[
+            RouteDecision(
+                mode=RouteMode.AUTO,
+                route_tag=RouteTag.TASK_CANDIDATE,
+                reason="ok",
+                provider="google",
+            ),
+            ModelUnavailableError(
+                error_code="LOCAL_MODEL_UNAVAILABLE",
+                message="router unavailable",
+            ),
+        ]
+    )
+
+    with pytest.raises(EmailRoutingUnavailableError) as exc_info:
+        await router.ingest_unread(user_id=123, provider="google", limit=10)
+
+    assert exc_info.value.error_code == "LOCAL_MODEL_UNAVAILABLE"
+    assert exc_info.value.queued_count == 1
+    assert exc_info.value.queue_batch_id == "batch-mid"
+    assert exc_info.value.processed_count == 1
+    storage.enqueue_ingestion_batch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_resume_queue_raises_when_pipeline_unhealthy() -> None:
+    storage = _StorageStub()
+    router = EmailRouter(
+        storage=storage,
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+    router._check_pipeline_readiness = AsyncMock(  # type: ignore[assignment]
+        return_value=(False, ERROR_ROUTER_UNAVAILABLE, "router unavailable")
+    )
+
+    with pytest.raises(EmailRoutingUnavailableError) as exc_info:
+        await router.resume_queue(user_id=123, provider="google")
+
+    assert exc_info.value.error_code == ERROR_ROUTER_UNAVAILABLE
+    assert exc_info.value.processed_count == 0
+
+
+@pytest.mark.asyncio
+async def test_resume_queue_drains_when_pipeline_is_ready() -> None:
+    router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+    decision = RouteDecision(
+        mode=RouteMode.AUTO,
+        route_tag=RouteTag.TASK_CANDIDATE,
+        reason="ok",
+        provider="google",
+    )
+    router._check_pipeline_readiness = AsyncMock(return_value=(True, None, None))  # type: ignore[assignment]
+    router._drain_ingestion_queue = AsyncMock(return_value=[decision])  # type: ignore[assignment]
+
+    decisions = await router.resume_queue(user_id=123, provider="google", limit=7)
+
+    assert decisions == [decision]
+    router._drain_ingestion_queue.assert_awaited_once_with(  # type: ignore[attr-defined]
+        user_id=123,
+        provider="google",
+        limit=7,
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_email_skips_security_gate_when_disabled() -> None:
+    storage = _StorageStub()
+    security = _allow_security()
+    inference = MagicMock()
+    local_result = MagicMock()
+    local_result.content = '{"kind":"none"}'
+    local_result.provider.value = "ollama"
+    inference._call_ollama = AsyncMock(return_value=local_result)
+    router = EmailRouter(
+        storage=storage,
+        providers=_ProvidersStub(),
+        security=security,
+        task_calendar_router=_TaskCalendarStub(),
+        inference=inference,
+        email_security_gate_enabled=False,
+    )
+    router._classify_email = AsyncMock(return_value=ClassificationOutput())  # type: ignore[assignment]
+    router._extract_personality = AsyncMock(return_value=PersonalityOutput())  # type: ignore[assignment]
+    router._triage_route_tag = AsyncMock(return_value=RouteTag.IGNORE)  # type: ignore[assignment]
+
+    decision = await router.process_email(
+        user_id=123,
+        provider="google",
+        account_ref="default",
+        email=_email(),
+    )
+
+    assert decision.route_tag == RouteTag.IGNORE
+    security.analyze.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_email_routes_event_extractions_to_calendar_router() -> None:
+    storage = _StorageStub()
+    task_calendar = _TaskCalendarStub()
+    router = EmailRouter(
+        storage=storage,
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=task_calendar,
+        inference=MagicMock(),
+    )
+    router._classify_email = AsyncMock(return_value=ClassificationOutput())  # type: ignore[assignment]
+    router._extract_personality = AsyncMock(return_value=PersonalityOutput())  # type: ignore[assignment]
+    router._triage_route_tag = AsyncMock(return_value=RouteTag.CALENDAR_CANDIDATE)  # type: ignore[assignment]
+    router._extract_for_route = AsyncMock(  # type: ignore[assignment]
+        return_value=MagicMock(event=MagicMock(), task=None, metadata={"kind": "event"})
+    )
+
+    decision = await router.process_email(
+        user_id=123,
+        provider="google",
+        account_ref="default",
+        email=_email(),
+    )
+
+    assert decision.route_tag == RouteTag.CALENDAR_CANDIDATE
+    task_calendar.route_event.assert_awaited_once()
+    task_calendar.route_task.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_extract_for_route_event_paths_cover_missing_and_present_times() -> None:
+    router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+    router._extract_with_fallback = AsyncMock(  # type: ignore[assignment]
+        side_effect=[
+            (
+                '{"kind":"event","title":"Missing times"}',
+                "groq",
+                "llama",
+                12.0,
+            ),
+            (
+                json.dumps(
+                    {
+                        "kind": "event",
+                        "title": "Planning Session",
+                        "start": "2026-03-18T09:00:00+00:00",
+                        "end": "2026-03-18T10:00:00+00:00",
+                        "attendees": ["a@example.com"],
+                    }
+                ),
+                "groq",
+                "llama",
+                14.0,
+            ),
+        ]
+    )
+
+    missing = await router._extract_for_route(  # noqa: SLF001
+        123,
+        _email(),
+        RouteTag.CALENDAR_CANDIDATE,
+    )
+    present = await router._extract_for_route(  # noqa: SLF001
+        123,
+        _email(),
+        RouteTag.CALENDAR_CANDIDATE,
+    )
+
+    assert missing.event is None
+    assert missing.metadata["error"] == "missing_times"
+    assert present.event is not None
+    assert present.event.title == "Planning Session"
+
+
+@pytest.mark.asyncio
+async def test_extract_for_route_handles_provider_failures_and_parse_failures() -> None:
+    router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+    router._extract_with_fallback = AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[assignment]
+
+    with pytest.raises(
+        ModelUnavailableError,
+        match="Email extraction unavailable: boom",
+    ) as exc_info:
+        await router._extract_for_route(123, _email(), RouteTag.TASK_CANDIDATE)  # noqa: SLF001
+
+    assert exc_info.value.error_code == email_router_module.ERROR_LOCAL_MODEL_UNAVAILABLE
+
+    router._extract_with_fallback = AsyncMock(  # type: ignore[assignment]
+        return_value=("definitely not json", "groq", "llama", 12.0)
+    )
+    parsed = await router._extract_for_route(123, _email(), RouteTag.TASK_CANDIDATE)  # noqa: SLF001
+
+    assert parsed.task is None
+    assert parsed.metadata["error"] == "parse_failed"
+    assert parsed.metadata["extractor_provider"] == "groq"
+
+
+@pytest.mark.asyncio
+async def test_extract_with_fallback_covers_missing_local_client_and_empty_results() -> None:
+    router_without_ollama = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=object(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ModelUnavailableError, match="Ollama client is unavailable"):
+        await router_without_ollama._extract_with_fallback("prompt")  # noqa: SLF001
+
+    empty_local = MagicMock()
+    empty_local.content = ""
+    empty_local.provider.value = "ollama"
+    empty_local.model = "llama"
+    empty_local.latency_ms = 1.0
+    local_inference = MagicMock()
+    local_inference._call_ollama = AsyncMock(return_value=empty_local)
+    router_empty_local = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=local_inference,
+    )
+    with pytest.raises(ModelUnavailableError, match="empty response"):
+        await router_empty_local._extract_with_fallback("prompt")  # noqa: SLF001
+
+    cloud_result = MagicMock()
+    cloud_result.content = ""
+    cloud_result.provider = Provider.GROQ
+    cloud_result.model = "llama-3.3"
+    cloud_result.latency_ms = 2.0
+    cloud_inference = MagicMock()
+    cloud_inference.infer = AsyncMock(return_value=cloud_result)
+    router_empty_cloud = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=cloud_inference,
+        local_extraction_required=False,
+    )
+    with pytest.raises(RuntimeError, match="empty content"):
+        await router_empty_cloud._extract_with_fallback("prompt")  # noqa: SLF001
+
+
+def test_provider_available_covers_set_and_client_branches() -> None:
+    router_from_set = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(available_providers={Provider.GROQ}),
+        local_extraction_required=False,
+    )
+    assert router_from_set._provider_available(Provider.GROQ) is True  # noqa: SLF001
+    assert router_from_set._provider_available(Provider.GEMINI) is False  # noqa: SLF001
+
+    inference = MagicMock()
+    inference.available_providers = None
+    inference._gemini_client = object()
+    inference._claude_client = lambda: None
+    inference._openai_client = object()
+    inference._groq_client = None
+    router_from_clients = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=inference,
+        local_extraction_required=False,
+    )
+
+    assert router_from_clients._provider_available(Provider.GEMINI) is True  # noqa: SLF001
+    assert router_from_clients._provider_available(Provider.CLAUDE) is False  # noqa: SLF001
+    assert router_from_clients._provider_available(Provider.OPENAI) is True  # noqa: SLF001
+    assert router_from_clients._provider_available(Provider.GROQ) is False  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_check_pipeline_readiness_uses_local_mode_and_reports_missing_providers() -> None:
+    local_router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+        local_extraction_required=True,
+    )
+    local_router._check_local_pipeline_readiness = AsyncMock(  # type: ignore[assignment]
+        side_effect=[
+            (False, ERROR_ROUTER_UNAVAILABLE, "router down"),
+            (True, None, None),
+        ]
+    )
+
+    ready, error_code, detail = await local_router._check_pipeline_readiness()  # noqa: SLF001
+    assert (ready, error_code, detail) == (False, ERROR_ROUTER_UNAVAILABLE, "router down")
+
+    ready, error_code, detail = await local_router._check_pipeline_readiness()  # noqa: SLF001
+    assert (ready, error_code, detail) == (True, None, None)
+
+    no_provider_router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(available_providers=None),
+        local_extraction_required=False,
+    )
+    ready, detail = await no_provider_router._check_cloud_pipeline_readiness()  # noqa: SLF001
+    assert (ready, detail) == (False, "No cloud providers configured")
+
+
+@pytest.mark.asyncio
+async def test_check_pipeline_readiness_and_cloud_readiness_cover_fallback_paths() -> None:
+    no_health_router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(available_providers=None, _groq_client=object()),
+        local_extraction_required=False,
+    )
+    ready, detail = await no_health_router._check_cloud_pipeline_readiness()  # noqa: SLF001
+    assert ready is True
+    assert detail is None
+
+    unhealthy_inference = MagicMock()
+    unhealthy_inference.available_providers = {Provider.GROQ}
+    unhealthy_inference.health_check = AsyncMock(return_value=False)
+    unhealthy_router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=unhealthy_inference,
+        local_extraction_required=False,
+    )
+    ready, detail = await unhealthy_router._check_cloud_pipeline_readiness()  # noqa: SLF001
+    assert ready is False
+    assert detail == "groq unhealthy"
+
+    fallback_router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+        local_extraction_required=False,
+    )
+    fallback_router._check_cloud_pipeline_readiness = AsyncMock(  # type: ignore[assignment]
+        return_value=(False, "groq unhealthy")
+    )
+    fallback_router._check_local_pipeline_readiness = AsyncMock(  # type: ignore[assignment]
+        return_value=(True, None, None)
+    )
+    ready, error_code, detail = await fallback_router._check_pipeline_readiness()  # noqa: SLF001
+    assert (ready, error_code, detail) == (True, None, None)
+
+    blocked_router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+        local_extraction_required=False,
+    )
+    blocked_router._check_cloud_pipeline_readiness = AsyncMock(  # type: ignore[assignment]
+        return_value=(False, "groq unhealthy")
+    )
+    blocked_router._check_local_pipeline_readiness = AsyncMock(  # type: ignore[assignment]
+        return_value=(False, "LOCAL_MODEL_UNAVAILABLE", "router model missing")
+    )
+    ready, error_code, detail = await blocked_router._check_pipeline_readiness()  # noqa: SLF001
+    assert ready is False
+    assert error_code == "LOCAL_MODEL_UNAVAILABLE"
+    assert detail == "groq unhealthy | router model missing"
+
+
+@pytest.mark.asyncio
+async def test_check_local_pipeline_readiness_and_ollama_model_ready_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    readiness_router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+    readiness_router._check_ollama_model_ready = AsyncMock(  # type: ignore[assignment]
+        return_value=(False, "router down")
+    )
+    ready, error_code, detail = await readiness_router._check_local_pipeline_readiness()  # noqa: SLF001
+    assert (ready, error_code, detail) == (False, ERROR_ROUTER_UNAVAILABLE, "router down")
+
+    readiness_router._check_ollama_model_ready = AsyncMock(  # type: ignore[assignment]
+        side_effect=[(True, None), (False, "extractor missing")]
+    )
+    ready, error_code, detail = await readiness_router._check_local_pipeline_readiness()  # noqa: SLF001
+    assert (ready, error_code, detail) == (
+        False,
+        "LOCAL_MODEL_UNAVAILABLE",
+        "extractor missing",
+    )
+
+    readiness_router._check_ollama_model_ready = AsyncMock(  # type: ignore[assignment]
+        side_effect=[(True, None), (True, None)]
+    )
+    ready, error_code, detail = await readiness_router._check_local_pipeline_readiness()  # noqa: SLF001
+    assert (ready, error_code, detail) == (True, None, None)
+
+    router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+
+    def unreachable_client(timeout: float) -> _HTTPClient:
+        del timeout
+        return _HTTPClient(exc=RuntimeError("offline"))
+
+    monkeypatch.setattr(email_router_module.httpx, "AsyncClient", unreachable_client)
+    ready, detail = await router._check_ollama_model_ready(  # noqa: SLF001
+        base_url="http://ollama",
+        model_name="llama",
+        purpose="router",
+    )
+    assert ready is False
+    assert "endpoint unreachable" in str(detail)
+
+    def malformed_client(timeout: float) -> _HTTPClient:
+        del timeout
+        return _HTTPClient(_HTTPResponse({"models": "bad"}))
+
+    monkeypatch.setattr(email_router_module.httpx, "AsyncClient", malformed_client)
+    ready, detail = await router._check_ollama_model_ready(  # noqa: SLF001
+        base_url="http://ollama",
+        model_name="llama",
+        purpose="router",
+    )
+    assert (ready, detail) == (False, "router returned malformed /api/tags payload")
+
+    def missing_model_client(timeout: float) -> _HTTPClient:
+        del timeout
+        return _HTTPClient(_HTTPResponse({"models": ["skip-me", {"name": "other-model"}]}))
+
+    monkeypatch.setattr(email_router_module.httpx, "AsyncClient", missing_model_client)
+    ready, detail = await router._check_ollama_model_ready(  # noqa: SLF001
+        base_url="http://ollama",
+        model_name="llama",
+        purpose="router",
+    )
+    assert (ready, detail) == (False, "router model 'llama' is not loaded")
+
+    def healthy_client(timeout: float) -> _HTTPClient:
+        del timeout
+        return _HTTPClient(_HTTPResponse({"models": [{"model": "llama"}]}))
+
+    monkeypatch.setattr(email_router_module.httpx, "AsyncClient", healthy_client)
+    ready, detail = await router._check_ollama_model_ready(  # noqa: SLF001
+        base_url="http://ollama",
+        model_name="llama",
+        purpose="router",
+    )
+    assert (ready, detail) == (True, None)
+
+
+@pytest.mark.asyncio
+async def test_enqueue_and_drain_queue_cover_empty_blocked_and_dead_letter_paths() -> None:
+    storage = _StorageStub()
+    router = EmailRouter(
+        storage=storage,
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+
+    assert await router._enqueue_messages(  # noqa: SLF001
+        user_id=123,
+        provider="google",
+        messages=[],
+        error_code=ERROR_ROUTER_UNAVAILABLE,
+        error_detail="offline",
+    ) == (None, 0)
+
+    storage.claim_ingestion_queue_items = AsyncMock(return_value=[])
+    assert await router._drain_ingestion_queue(user_id=123, provider="google") == []  # noqa: SLF001
+
+    payload = {
+        "external_id": "m1",
+        "thread_id": "t1",
+        "subject": "Please do this task",
+        "body_text": "Please follow up on the roadmap by Friday.",
+        "from_email": "boss@example.com",
+        "to_emails": ["me@example.com"],
+        "received_at": datetime.now().isoformat(),
+    }
+    queued = [
+        MagicMock(id=1, payload=payload, account_ref="default"),
+        MagicMock(id=2, payload=payload, account_ref="default"),
+    ]
+    storage.claim_ingestion_queue_items = AsyncMock(return_value=queued)
+    router.process_email = AsyncMock(  # type: ignore[assignment]
+        side_effect=[
+            RouteDecision(
+                mode=RouteMode.AUTO,
+                route_tag=RouteTag.TASK_CANDIDATE,
+                reason="ok",
+                provider="google",
+            ),
+            ModelUnavailableError(
+                error_code="LOCAL_MODEL_UNAVAILABLE",
+                message="router unavailable",
+            ),
+        ]
+    )
+
+    with pytest.raises(ModelUnavailableError):
+        await router._drain_ingestion_queue(user_id=123, provider="google")  # noqa: SLF001
+
+    storage.mark_ingestion_items_done.assert_awaited_once_with([1])
+    storage.mark_ingestion_items_blocked_unhealthy.assert_awaited_once()
+
+    queued = [
+        MagicMock(id=3, payload=payload, account_ref="default"),
+        MagicMock(id=4, payload=payload, account_ref="default"),
+    ]
+    storage.claim_ingestion_queue_items = AsyncMock(return_value=queued)
+    storage.mark_ingestion_items_done = AsyncMock()
+    storage.move_ingestion_item_to_dead_letter = AsyncMock()
+    router.process_email = AsyncMock(  # type: ignore[assignment]
+        side_effect=[
+            RuntimeError("boom"),
+            RouteDecision(
+                mode=RouteMode.AUTO,
+                route_tag=RouteTag.TASK_CANDIDATE,
+                reason="ok",
+                provider="google",
+            ),
+        ]
+    )
+
+    decisions = await router._drain_ingestion_queue(user_id=123, provider="google")  # noqa: SLF001
+
+    assert len(decisions) == 1
+    storage.move_ingestion_item_to_dead_letter.assert_awaited_once()
+    storage.mark_ingestion_items_done.assert_awaited_once_with([4])
+
+
+@pytest.mark.asyncio
+async def test_queue_status_and_triage_failure_paths() -> None:
+    storage = _StorageStub()
+    storage.get_ingestion_queue_counts = AsyncMock(
+        return_value={
+            "pending": 2,
+            "blocked_unhealthy": 3,
+            "processing": 1,
+            "done": 9,
+        }
+    )
+    router = EmailRouter(
+        storage=storage,
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+    router._check_pipeline_readiness = AsyncMock(  # type: ignore[assignment]
+        return_value=(False, ERROR_ROUTER_UNAVAILABLE, "router missing")
+    )
+
+    status = await router.queue_status(user_id=123, provider="google")
+
+    assert status["pending_total"] == 6
+    assert status["counts"]["done"] == 9
+    assert status["error_code"] == ERROR_ROUTER_UNAVAILABLE
+
+    def failing_post_client(timeout: float) -> _HTTPClient:
+        del timeout
+        return _HTTPClient(exc=RuntimeError("router down"))
+
+    original_client = email_router_module.httpx.AsyncClient
+    email_router_module.httpx.AsyncClient = failing_post_client
+    try:
+        with pytest.raises(ModelUnavailableError, match="AI router is unavailable") as exc_info:
+            await router._triage_route_tag(_email())  # noqa: SLF001
+    finally:
+        email_router_module.httpx.AsyncClient = original_client
+
+    assert exc_info.value.error_code == ERROR_ROUTER_UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_timezone_attachment_and_parsing_helpers_cover_fallback_paths() -> None:
+    router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+        user_context_resolver=AsyncMock(
+            side_effect=[RuntimeError("boom"), {"timezone": ""}, {"timezone": "Australia/Sydney"}]
+        ),
+        attachment_handling_enabled=False,
+    )
+
+    assert await router._resolve_user_timezone(123) == "UTC"  # noqa: SLF001
+    assert await router._resolve_user_timezone(123) == "UTC"  # noqa: SLF001
+    assert await router._resolve_user_timezone(123) == "Australia/Sydney"  # noqa: SLF001
+
+    no_attachment_email = _email()
+    no_attachment_email.metadata = {"attachment_count": 0, "attachment_filenames": []}
+    assert router._has_attachments(no_attachment_email) is False  # noqa: SLF001
+    assert router._attachment_filter_metadata(no_attachment_email) == {}  # noqa: SLF001
+
+    attachment_email = _email()
+    attachment_email.metadata = {
+        "has_attachments": True,
+        "attachment_count": "2",
+        "attachment_filenames": "agenda.pdf",
+    }
+    assert router._has_attachments(attachment_email) is True  # noqa: SLF001
+    assert router._attachment_filter_metadata(attachment_email) == {  # noqa: SLF001
+        "has_attachments": True,
+        "attachment_count": 0,
+        "attachment_filenames": [],
+        "attachment_filtered": True,
+    }
+
+    fenced = router._extract_json('```json\n{"route_tag":"ignore"}\n```')  # noqa: SLF001
+    embedded = router._extract_json('prefix {"kind":"task"} suffix')  # noqa: SLF001
+    assert fenced == {"route_tag": "ignore"}
+    assert embedded == {"kind": "task"}
+    with pytest.raises(ValueError, match="Could not parse JSON response"):
+        router._extract_json("still not json")  # noqa: SLF001
+
+    assert router._parse_datetime(None) is None  # noqa: SLF001
+    assert router._parse_datetime(123) is None  # noqa: SLF001
+    assert router._parse_datetime("   ") is None  # noqa: SLF001
+    assert router._parse_datetime("not-a-date") is None  # noqa: SLF001
+    parsed = router._parse_datetime("2026-03-18T09:00:00Z")  # noqa: SLF001
+    assert parsed == datetime(2026, 3, 18, 9, 0, 0)
+
+
 def test_extraction_context_falls_back_to_builtin_utc_without_tzdata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -586,6 +1380,27 @@ def test_extraction_context_falls_back_to_builtin_utc_without_tzdata(
     assert context["current_date"]
     assert context["current_time"]
     assert context["current_datetime"]
+
+
+@pytest.mark.asyncio
+async def test_enrich_owner_profile_returns_early_without_storage_or_profile() -> None:
+    router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=_allow_security(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+    await router._enrich_owner_profile(123, MagicMock())  # noqa: SLF001
+
+    personal_storage = _make_personal_storage()
+    personal_storage.get_profile.return_value = None
+    router.set_personal_storage(personal_storage)
+
+    await router._enrich_owner_profile(123, MagicMock())  # noqa: SLF001
+
+    personal_storage.get_profile.assert_awaited_once_with(123)
+    personal_storage.upsert_profile.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

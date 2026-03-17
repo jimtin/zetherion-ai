@@ -52,10 +52,10 @@ def _utc_now_iso() -> str:
 
 
 def _relative_artifact(path: str) -> str:
-    candidate = Path(str(path or "").strip())
-    if not str(candidate):
+    candidate_text = str(path or "").strip()
+    if not candidate_text:
         return ""
-    return str(candidate)
+    return str(Path(candidate_text))
 
 
 def _log_excerpt(logs: list[dict[str, Any]], limit: int = 10) -> str:

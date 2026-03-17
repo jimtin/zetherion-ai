@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -15,6 +15,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
+from zetherion_ai.admin.tenant_admin_manager import AdminActorContext
 from zetherion_ai.announcements.policy import AnnouncementPolicyDecision
 from zetherion_ai.announcements.storage import (
     AnnouncementDelivery,
@@ -34,6 +35,8 @@ from zetherion_ai.skills.server import (
     SkillsServer,
     _build_google_oauth_authorize_handler,
     _build_google_oauth_handler,
+    _coerce_json_list,
+    _coerce_json_object,
     _extract_json_object,
     _isoformat_if_datetime,
     _resolve_google_oauth,
@@ -126,6 +129,35 @@ class TestSkillsServerHelpers:
     def test_extract_json_object(self, raw, expected):
         assert _extract_json_object(raw) == expected
 
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ({"ok": True}, {"ok": True}),
+            ('{"k": 1}', {"k": 1}),
+            ("[]", {}),
+            ("{bad-json", {}),
+            ("", {}),
+            (None, {}),
+        ],
+    )
+    def test_coerce_json_object(self, raw, expected):
+        assert _coerce_json_object(raw) == expected
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (["a", "b"], ["a", "b"]),
+            (("a", "b"), ["a", "b"]),
+            ('["a", "b"]', ["a", "b"]),
+            ("{}", []),
+            ("[bad-json", []),
+            ("", []),
+            (None, []),
+        ],
+    )
+    def test_coerce_json_list(self, raw, expected):
+        assert _coerce_json_list(raw) == expected
+
     def test_isoformat_if_datetime(self):
         now = datetime.now(UTC)
         assert _isoformat_if_datetime(now) == now.isoformat()
@@ -175,6 +207,43 @@ class TestSkillsServerHelpers:
             SkillsServer._parse_string_list("not-a-list", "caps")
         with pytest.raises(ValueError, match="caps must be an array of strings"):
             SkillsServer._parse_string_list(["ok", 42], "caps")
+
+    @pytest.mark.asyncio
+    async def test_runtime_pool_helpers_cover_missing_components_and_cached_store(
+        self,
+        mock_registry,
+    ):
+        class SlotBackedPool:
+            __slots__ = ("_pool",)
+
+            def __init__(self, pool):
+                self._pool = pool
+
+        pooled_component = SimpleNamespace(_pool="pool-1")
+        slot_component = SlotBackedPool("slot-pool")
+        server = SkillsServer(registry=mock_registry, user_manager=pooled_component)
+
+        assert server._component_pool(None) is None
+        assert server._component_pool(SimpleNamespace(other="value")) is None
+        assert server._component_pool(slot_component) is None
+        assert server._component_pool(pooled_component) == "pool-1"
+        assert server._runtime_pool() == "pool-1"
+
+        no_pool_server = SkillsServer(registry=mock_registry)
+        assert no_pool_server._runtime_pool() is None
+        assert await no_pool_server._get_runtime_status_store() is None
+
+        with patch("zetherion_ai.skills.server.RuntimeStatusStore") as mock_store_cls:
+            store = mock_store_cls.return_value
+            store.initialize = AsyncMock()
+
+            first = await server._get_runtime_status_store()
+            second = await server._get_runtime_status_store()
+
+        assert first is store
+        assert second is store
+        mock_store_cls.assert_called_once_with("pool-1")
+        store.initialize.assert_awaited_once()
 
     def test_init_env_fallbacks_for_invalid_values(self, mock_registry):
         with patch.dict(
@@ -226,6 +295,679 @@ class TestSkillsServerHelpers:
         ):
             await server._messaging_ttl_cleanup_loop()
 
+    @pytest.mark.asyncio
+    async def test_messaging_ttl_cleanup_loop_covers_no_manager_and_sync_grant_paths(
+        self,
+        mock_registry,
+    ):
+        no_manager_server = SkillsServer(registry=mock_registry)
+        with (
+            patch(
+                "zetherion_ai.skills.server.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await no_manager_server._messaging_ttl_cleanup_loop()
+
+        manager = MagicMock()
+        manager.purge_expired_messaging_messages = AsyncMock(return_value=0)
+        manager.purge_expired_worker_messaging_grants = MagicMock(return_value=0)
+        sync_server = SkillsServer(registry=mock_registry, tenant_admin_manager=manager)
+        with (
+            patch(
+                "zetherion_ai.skills.server.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await sync_server._messaging_ttl_cleanup_loop()
+        manager.purge_expired_worker_messaging_grants.assert_called_once_with(limit=2000)
+
+    @pytest.mark.asyncio
+    async def test_messaging_ttl_cleanup_loop_handles_missing_grant_cleanup_callable(
+        self,
+        mock_registry,
+    ):
+        manager = MagicMock()
+        manager.purge_expired_messaging_messages = AsyncMock(return_value=3)
+        manager.purge_expired_worker_messaging_grants = 123
+        server = SkillsServer(registry=mock_registry, tenant_admin_manager=manager)
+
+        with (
+            patch(
+                "zetherion_ai.skills.server.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            patch("zetherion_ai.skills.server.log.info") as mock_info,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await server._messaging_ttl_cleanup_loop()
+
+        mock_info.assert_called_once()
+
+    def test_nonce_pruning_and_secret_resolution_helpers(self, mock_registry):
+        tenant_admin_manager = MagicMock()
+        tenant_admin_manager.get_secret_cached.side_effect = lambda tenant_id, key, default="": {
+            ("tenant-1", "WHATSAPP_BRIDGE_SIGNING_SECRET"): "tenant-bridge-secret",
+            ("tenant-1", "WORKER_BRIDGE_BOOTSTRAP_SECRET"): "tenant-worker-secret",
+        }.get((tenant_id, key), default)
+        server = SkillsServer(
+            registry=mock_registry,
+            tenant_admin_manager=tenant_admin_manager,
+        )
+        server._bridge_signing_secret = "fallback-bridge"
+        server._worker_bootstrap_secret = "fallback-worker"
+        now = datetime.now(UTC)
+        server._admin_nonce_cache = {
+            "expired": now - timedelta(seconds=1),
+            "fresh": now + timedelta(seconds=5),
+        }
+        server._bridge_nonce_cache = {
+            "expired": now - timedelta(seconds=1),
+            "fresh": now + timedelta(seconds=5),
+        }
+        server._worker_nonce_cache = {
+            "expired": now - timedelta(seconds=1),
+            "fresh": now + timedelta(seconds=5),
+        }
+
+        server._prune_admin_nonce_cache(now)
+        server._prune_bridge_nonce_cache(now)
+        server._prune_worker_nonce_cache(now)
+
+        assert server._admin_nonce_cache == {"fresh": server._admin_nonce_cache["fresh"]}
+        assert server._bridge_nonce_cache == {"fresh": server._bridge_nonce_cache["fresh"]}
+        assert server._worker_nonce_cache == {"fresh": server._worker_nonce_cache["fresh"]}
+        assert server._resolve_bridge_signing_secret("tenant-1") == "tenant-bridge-secret"
+        assert server._resolve_bridge_signing_secret("tenant-2") == "fallback-bridge"
+        assert server._resolve_worker_bootstrap_secret("tenant-1") == "tenant-worker-secret"
+        assert server._resolve_worker_bootstrap_secret("tenant-2") == "fallback-worker"
+        no_manager_server = SkillsServer(registry=mock_registry)
+        no_manager_server._bridge_signing_secret = "bridge-only"
+        no_manager_server._worker_bootstrap_secret = "worker-only"
+        assert no_manager_server._resolve_bridge_signing_secret("tenant-1") == "bridge-only"
+        assert no_manager_server._resolve_worker_bootstrap_secret("tenant-1") == "worker-only"
+
+    def test_resolve_worker_auth_token_paths(self):
+        bearer_request = SimpleNamespace(headers={"Authorization": "Bearer bearer-token"})
+        header_request = SimpleNamespace(headers={"X-Worker-Token": "header-token"})
+        blank_bearer_request = SimpleNamespace(
+            headers={"Authorization": "Bearer   ", "X-Worker-Token": "fallback-token"}
+        )
+
+        assert SkillsServer._resolve_worker_auth_token(bearer_request) == "bearer-token"
+        assert SkillsServer._resolve_worker_auth_token(header_request) == "header-token"
+        assert SkillsServer._resolve_worker_auth_token(blank_bearer_request) == "fallback-token"
+
+    def test_decode_actor_payload_and_verify_admin_actor_paths(self, mock_registry):
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="api-secret",
+            admin_actor_secret="admin-secret",
+        )
+
+        with pytest.raises(ValueError, match="Missing admin actor envelope"):
+            server._decode_actor_payload("")
+        with pytest.raises(ValueError, match="Invalid admin actor envelope"):
+            server._decode_actor_payload("not-base64")
+        encoded_list = base64.urlsafe_b64encode(b"[]").decode("ascii").rstrip("=")
+        with pytest.raises(ValueError, match="Invalid admin actor envelope"):
+            server._decode_actor_payload(encoded_list)
+
+        with pytest.raises(ValueError, match="Missing admin actor signature headers"):
+            server._verify_admin_actor(SimpleNamespace(headers={}))
+
+        no_secret_server = SkillsServer(registry=mock_registry, admin_actor_secret="")
+        with pytest.raises(ValueError, match="Admin actor secret is not configured"):
+            no_secret_server._verify_admin_actor(SimpleNamespace(headers={"X-Admin-Actor": "a"}))
+
+        bad_headers = _admin_headers(signing_secret="wrong-secret")
+        with pytest.raises(ValueError, match="Invalid admin actor signature"):
+            server._verify_admin_actor(SimpleNamespace(headers=bad_headers))
+
+        stale_payload = {
+            "actor_sub": "operator-1",
+            "actor_roles": ["operator"],
+            "request_id": "req-test",
+            "timestamp": (datetime.now(UTC) - timedelta(minutes=15)).isoformat(),
+            "nonce": uuid4().hex,
+        }
+        stale_canonical = json.dumps(stale_payload, sort_keys=True, separators=(",", ":"))
+        stale_encoded = (
+            base64.urlsafe_b64encode(stale_canonical.encode("utf-8")).decode("ascii").rstrip("=")
+        )
+        stale_signature = hmac.new(
+            b"admin-secret",
+            stale_encoded.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        with pytest.raises(ValueError, match="Expired admin actor envelope"):
+            server._verify_admin_actor(
+                SimpleNamespace(
+                    headers={
+                        "X-Admin-Actor": stale_encoded,
+                        "X-Admin-Signature": stale_signature,
+                    }
+                )
+            )
+
+        valid_headers = _admin_headers(signing_secret="admin-secret", actor_sub="operator-2")
+        actor = server._verify_admin_actor(SimpleNamespace(headers=valid_headers))
+        assert actor.actor_sub == "operator-2"
+        with pytest.raises(ValueError, match="Replayed admin actor envelope"):
+            server._verify_admin_actor(SimpleNamespace(headers=valid_headers))
+
+    def test_admin_actor_and_record_security_event_helpers(self, mock_registry):
+        server = SkillsServer(registry=mock_registry)
+        with pytest.raises(ValueError, match="Missing admin actor context"):
+            server._admin_actor({})
+
+        actor = AdminActorContext(
+            actor_sub="operator-1",
+            actor_roles=("operator",),
+            request_id="req-1",
+            timestamp=datetime.now(UTC),
+            nonce=uuid4().hex,
+            change_ticket_id=None,
+        )
+        request = {"admin_actor": actor}
+        assert server._admin_actor(request) is actor
+
+    @pytest.mark.asyncio
+    async def test_record_security_event_covers_missing_and_available_manager_paths(
+        self,
+        mock_registry,
+    ):
+        no_manager_server = SkillsServer(registry=mock_registry)
+        await no_manager_server._record_security_event(
+            tenant_id="tenant-1",
+            event_type="security.test",
+        )
+
+        manager_without_method = MagicMock(spec=[])
+        no_method_server = SkillsServer(
+            registry=mock_registry,
+            tenant_admin_manager=manager_without_method,
+        )
+        await no_method_server._record_security_event(
+            tenant_id="tenant-1",
+            event_type="security.test",
+        )
+
+        manager = MagicMock()
+        manager.record_security_event = AsyncMock()
+        server = SkillsServer(registry=mock_registry, tenant_admin_manager=manager)
+        await server._record_security_event(
+            tenant_id="tenant-1",
+            event_type="security.test",
+            payload={"scope": "admin"},
+        )
+        manager.record_security_event.assert_awaited_once()
+
+    def test_verify_bridge_signature_covers_validation_and_replay_paths(self, mock_registry):
+        tenant_admin_manager = MagicMock()
+        tenant_admin_manager.get_secret_cached.return_value = "bridge-secret"
+        server = SkillsServer(
+            registry=mock_registry,
+            tenant_admin_manager=tenant_admin_manager,
+        )
+        tenant_id = "tenant-1"
+        raw_body = json.dumps({"event_type": "whatsapp.message.inbound"}, separators=(",", ":"))
+        nonce = uuid4().hex
+        timestamp = str(int(datetime.now(UTC).timestamp()))
+        signature = hmac.new(
+            b"bridge-secret",
+            f"{tenant_id}.{timestamp}.{nonce}.{raw_body}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        request = SimpleNamespace(
+            headers={
+                "X-Bridge-Timestamp": timestamp,
+                "X-Bridge-Nonce": nonce,
+                "X-Bridge-Signature": signature,
+            }
+        )
+
+        missing_header_request = SimpleNamespace(headers={})
+        with pytest.raises(ValueError, match="Missing bridge signature headers"):
+            server._verify_bridge_signature(
+                request=missing_header_request,
+                tenant_id=tenant_id,
+                raw_body=raw_body,
+            )
+
+        with pytest.raises(ValueError, match="Expired bridge signature timestamp"):
+            server._verify_bridge_signature(
+                request=SimpleNamespace(
+                    headers={
+                        "X-Bridge-Timestamp": str(
+                            int((datetime.now(UTC) - timedelta(hours=1)).timestamp())
+                        ),
+                        "X-Bridge-Nonce": uuid4().hex,
+                        "X-Bridge-Signature": signature,
+                    }
+                ),
+                tenant_id=tenant_id,
+                raw_body=raw_body,
+            )
+
+        tenant_admin_manager.get_secret_cached.return_value = ""
+        with pytest.raises(ValueError, match="Bridge signing secret is not configured"):
+            server._verify_bridge_signature(
+                request=request,
+                tenant_id=tenant_id,
+                raw_body=raw_body,
+            )
+
+        tenant_admin_manager.get_secret_cached.return_value = "bridge-secret"
+        with pytest.raises(ValueError, match="Invalid bridge signature"):
+            server._verify_bridge_signature(
+                request=SimpleNamespace(
+                    headers={
+                        "X-Bridge-Timestamp": timestamp,
+                        "X-Bridge-Nonce": uuid4().hex,
+                        "X-Bridge-Signature": "bad-signature",
+                    }
+                ),
+                tenant_id=tenant_id,
+                raw_body=raw_body,
+            )
+
+        server._verify_bridge_signature(request=request, tenant_id=tenant_id, raw_body=raw_body)
+        with pytest.raises(RuntimeError, match="Bridge nonce replay detected"):
+            server._verify_bridge_signature(request=request, tenant_id=tenant_id, raw_body=raw_body)
+
+    @pytest.mark.asyncio
+    async def test_verify_worker_signature_covers_validation_and_success_paths(self, mock_registry):
+        tenant_admin_manager = MagicMock()
+        tenant_admin_manager.get_worker_session_auth = AsyncMock()
+        tenant_admin_manager.touch_worker_session = AsyncMock()
+        server = SkillsServer(
+            registry=mock_registry,
+            tenant_admin_manager=tenant_admin_manager,
+        )
+        tenant_id = "tenant-1"
+        node_id = "node-1"
+        session_id = "sess-1"
+        raw_body = json.dumps({"scope": "tenant"}, separators=(",", ":"))
+        token = "worker-token"
+        token_hash = server._hash_worker_token(token)
+        signing_secret = "worker-signing-secret"
+        nonce = uuid4().hex
+        timestamp = str(int(datetime.now(UTC).timestamp()))
+        signature = hmac.new(
+            signing_secret.encode("utf-8"),
+            f"{tenant_id}.{node_id}.{session_id}.{timestamp}.{nonce}.{raw_body}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        request = SimpleNamespace(
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Worker-Session-Id": session_id,
+                "X-Worker-Timestamp": timestamp,
+                "X-Worker-Nonce": nonce,
+                "X-Worker-Signature": signature,
+            }
+        )
+
+        no_manager_server = SkillsServer(registry=mock_registry)
+        with pytest.raises(ValueError, match="Tenant admin is not configured"):
+            await no_manager_server._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        with pytest.raises(ValueError, match="Missing worker bearer token"):
+            await server._verify_worker_signature(
+                request=SimpleNamespace(
+                    headers={
+                        "X-Worker-Session-Id": session_id,
+                        "X-Worker-Timestamp": timestamp,
+                        "X-Worker-Nonce": nonce,
+                        "X-Worker-Signature": signature,
+                    }
+                ),
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        with pytest.raises(ValueError, match="Missing worker signature headers"):
+            await server._verify_worker_signature(
+                request=SimpleNamespace(headers={"Authorization": f"Bearer {token}"}),
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        with pytest.raises(ValueError, match="Expired worker signature timestamp"):
+            await server._verify_worker_signature(
+                request=SimpleNamespace(
+                    headers={
+                        **request.headers,
+                        "X-Worker-Timestamp": str(
+                            int((datetime.now(UTC) - timedelta(hours=1)).timestamp())
+                        ),
+                        "X-Worker-Nonce": uuid4().hex,
+                    }
+                ),
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        tenant_admin_manager.get_worker_session_auth.return_value = None
+        with pytest.raises(ValueError, match="Worker session not found"):
+            await server._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        tenant_admin_manager.get_worker_session_auth.return_value = {
+            "token_hash": token_hash,
+            "signing_secret": signing_secret,
+            "revoked_at": datetime.now(UTC),
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Worker session is revoked"):
+            await server._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        tenant_admin_manager.get_worker_session_auth.return_value = {
+            "token_hash": token_hash,
+            "signing_secret": signing_secret,
+            "expires_at": datetime.now(UTC) - timedelta(minutes=1),
+        }
+        with pytest.raises(ValueError, match="Worker session is expired"):
+            await server._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        tenant_admin_manager.get_worker_session_auth.return_value = {
+            "token_hash": "",
+            "signing_secret": signing_secret,
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Worker session token hash is unavailable"):
+            await server._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        tenant_admin_manager.get_worker_session_auth.return_value = {
+            "token_hash": server._hash_worker_token("different-token"),
+            "signing_secret": signing_secret,
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Invalid worker token"):
+            await server._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        tenant_admin_manager.get_worker_session_auth.return_value = {
+            "token_hash": token_hash,
+            "signing_secret": "",
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Worker signing secret is unavailable"):
+            await server._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        tenant_admin_manager.get_worker_session_auth.return_value = {
+            "token_hash": token_hash,
+            "signing_secret": signing_secret,
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Invalid worker signature"):
+            await server._verify_worker_signature(
+                request=SimpleNamespace(
+                    headers={
+                        **request.headers,
+                        "X-Worker-Signature": "bad-signature",
+                    }
+                ),
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        session = await server._verify_worker_signature(
+            request=request,
+            tenant_id=tenant_id,
+            node_id=node_id,
+            raw_body=raw_body,
+        )
+        assert session["session_id"] == session_id
+        tenant_admin_manager.touch_worker_session.assert_awaited_once_with(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+        )
+        with pytest.raises(RuntimeError, match="Worker nonce replay detected"):
+            await server._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+    @pytest.mark.asyncio
+    async def test_verify_owner_ci_worker_signature_covers_validation_and_success_paths(
+        self,
+        mock_registry,
+    ):
+        storage = MagicMock()
+        storage.get_worker_session_auth = AsyncMock()
+        storage.touch_worker_session = AsyncMock()
+        server = SkillsServer(
+            registry=mock_registry,
+            owner_ci_storage=storage,
+        )
+        scope_id = "owner:owner-1"
+        node_id = "node-1"
+        session_id = "sess-1"
+        raw_body = json.dumps({"scope": "owner"}, separators=(",", ":"))
+        token = "owner-worker-token"
+        token_hash = server._hash_worker_token(token)
+        signing_secret = "owner-signing-secret"
+        nonce = uuid4().hex
+        timestamp = str(int(datetime.now(UTC).timestamp()))
+        signature = hmac.new(
+            signing_secret.encode("utf-8"),
+            f"{scope_id}.{node_id}.{session_id}.{timestamp}.{nonce}.{raw_body}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        request = SimpleNamespace(
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Worker-Session-Id": session_id,
+                "X-Worker-Timestamp": timestamp,
+                "X-Worker-Nonce": nonce,
+                "X-Worker-Signature": signature,
+            }
+        )
+
+        no_storage_server = SkillsServer(registry=mock_registry)
+        with pytest.raises(ValueError, match="Owner CI storage is not configured"):
+            await no_storage_server._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        with pytest.raises(ValueError, match="Missing worker bearer token"):
+            await server._verify_owner_ci_worker_signature(
+                request=SimpleNamespace(
+                    headers={
+                        "X-Worker-Session-Id": session_id,
+                        "X-Worker-Timestamp": timestamp,
+                        "X-Worker-Nonce": nonce,
+                        "X-Worker-Signature": signature,
+                    }
+                ),
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        with pytest.raises(ValueError, match="Missing worker signature headers"):
+            await server._verify_owner_ci_worker_signature(
+                request=SimpleNamespace(headers={"Authorization": f"Bearer {token}"}),
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        with pytest.raises(ValueError, match="Expired worker signature timestamp"):
+            await server._verify_owner_ci_worker_signature(
+                request=SimpleNamespace(
+                    headers={
+                        **request.headers,
+                        "X-Worker-Timestamp": str(
+                            int((datetime.now(UTC) - timedelta(hours=1)).timestamp())
+                        ),
+                        "X-Worker-Nonce": uuid4().hex,
+                    }
+                ),
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        storage.get_worker_session_auth.return_value = None
+        with pytest.raises(ValueError, match="Worker session not found"):
+            await server._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        storage.get_worker_session_auth.return_value = {
+            "token_hash": token_hash,
+            "signing_secret": signing_secret,
+            "revoked_at": datetime.now(UTC),
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Worker session is revoked"):
+            await server._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        storage.get_worker_session_auth.return_value = {
+            "token_hash": token_hash,
+            "signing_secret": signing_secret,
+            "expires_at": datetime.now(UTC) - timedelta(minutes=1),
+        }
+        with pytest.raises(ValueError, match="Worker session is expired"):
+            await server._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        storage.get_worker_session_auth.return_value = {
+            "token_hash": "",
+            "signing_secret": signing_secret,
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Worker session token hash is unavailable"):
+            await server._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        storage.get_worker_session_auth.return_value = {
+            "token_hash": server._hash_worker_token("different-token"),
+            "signing_secret": signing_secret,
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Invalid worker token"):
+            await server._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        storage.get_worker_session_auth.return_value = {
+            "token_hash": token_hash,
+            "signing_secret": "",
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Worker signing secret is unavailable"):
+            await server._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        storage.get_worker_session_auth.return_value = {
+            "token_hash": token_hash,
+            "signing_secret": signing_secret,
+            "expires_at": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        with pytest.raises(ValueError, match="Invalid worker signature"):
+            await server._verify_owner_ci_worker_signature(
+                request=SimpleNamespace(
+                    headers={
+                        **request.headers,
+                        "X-Worker-Signature": "bad-signature",
+                    }
+                ),
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+
+        session = await server._verify_owner_ci_worker_signature(
+            request=request,
+            scope_id=scope_id,
+            node_id=node_id,
+            raw_body=raw_body,
+        )
+        assert session["session_id"] == session_id
+        storage.touch_worker_session.assert_awaited_once_with(
+            scope_id=scope_id,
+            node_id=node_id,
+            session_id=session_id,
+        )
+        with pytest.raises(RuntimeError, match="Worker nonce replay detected"):
+            await server._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
 
 class TestSkillsServerEndpoints:
     """Tests for SkillsServer HTTP endpoints using aiohttp TestClient."""
@@ -740,6 +1482,120 @@ class TestSkillsServerAnnouncements:
                 }
             )
 
+        parsed_payload_json = server._parse_announcement_event(
+            {
+                "source": "owner-ci",
+                "category": "deploy.failed",
+                "title": "Deploy failed",
+                "body": "Release verification failed.",
+                "target_user_id": 7,
+                "payload_json": {"from": "payload_json"},
+            }
+        )
+        assert parsed_payload_json.payload == {"from": "payload_json"}
+
+    @pytest.mark.parametrize(
+        ("payload", "message"),
+        [
+            (
+                {
+                    "source": "owner-ci",
+                    "category": "",
+                    "title": "x",
+                    "body": "y",
+                    "target_user_id": 1,
+                },
+                "Missing category",
+            ),
+            (
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "",
+                    "body": "y",
+                    "target_user_id": 1,
+                },
+                "Missing title",
+            ),
+            (
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "x",
+                    "body": "",
+                    "target_user_id": 1,
+                },
+                "Missing body",
+            ),
+            (
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "x",
+                    "body": "y",
+                    "target_user_id": "not-a-number",
+                },
+                "Invalid target_user_id",
+            ),
+            (
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "x",
+                    "body": "y",
+                    "recipient": {"target_user_id": "not-a-number"},
+                },
+                "Invalid recipient target_user_id",
+            ),
+            (
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "x",
+                    "body": "y",
+                },
+                "Invalid target_user_id",
+            ),
+        ],
+    )
+    def test_parse_announcement_event_additional_validation_paths(
+        self,
+        mock_registry,
+        payload,
+        message,
+    ):
+        server = SkillsServer(registry=mock_registry)
+        with pytest.raises(ValueError, match=message):
+            server._parse_announcement_event(payload)
+
+    def test_parse_announcement_event_preserves_aware_timestamps_and_blank_recipient_targets(
+        self,
+        mock_registry,
+    ):
+        server = SkillsServer(registry=mock_registry)
+        parsed = server._parse_announcement_event(
+            {
+                "source": "owner-ci",
+                "category": "deploy.failed",
+                "title": "Deploy failed",
+                "body": "Release verification failed.",
+                "target_user_id": 7,
+                "occurred_at": "2026-03-13T14:00:00+11:00",
+                "payload": ["ignored"],
+                "recipient": {
+                    "channel": "discord_dm",
+                    "target_user_id": "   ",
+                    "metadata": "not-a-dict",
+                },
+            }
+        )
+        assert parsed.occurred_at is not None
+        assert parsed.occurred_at.utcoffset() == timedelta(hours=11)
+        assert parsed.payload == {}
+        assert parsed.recipient is not None
+        assert parsed.recipient.target_user_id is None
+        assert parsed.recipient.metadata == {}
+
     def test_announcement_dependencies_raise_when_unconfigured(self, mock_registry):
         server = SkillsServer(registry=mock_registry)
         with pytest.raises(RuntimeError, match="Announcements are not configured"):
@@ -815,6 +1671,7 @@ class TestSkillsServerAnnouncements:
                     reason_code="deduped",
                 ),
                 AnnouncementReceipt(status="accepted", event_id="evt-deferred"),
+                AnnouncementReceipt(status="accepted", event_id="evt-scheduled-pass-through"),
             ]
         )
         repository.create_delivery = AsyncMock()
@@ -835,6 +1692,13 @@ class TestSkillsServerAnnouncements:
                     severity=AnnouncementSeverity.NORMAL,
                     scheduled_for=deferred_time,
                     reason_code="digest_window",
+                ),
+                AnnouncementPolicyDecision(
+                    status="scheduled",
+                    delivery_mode="webhook",
+                    severity=AnnouncementSeverity.NORMAL,
+                    scheduled_for=deferred_time,
+                    reason_code="webhook_delivery",
                 ),
             ]
         )
@@ -862,6 +1726,15 @@ class TestSkillsServerAnnouncements:
                 "target_user_id": 7,
             }
         )
+        scheduled_passthrough = await server._emit_announcement_event(
+            {
+                "source": "owner-ci",
+                "category": "deploy.failed",
+                "title": "Webhook dispatch",
+                "body": "This stays accepted without creating a delivery.",
+                "target_user_id": 7,
+            }
+        )
 
         repository.create_delivery.assert_not_awaited()
         assert deduped["receipt"]["status"] == "deduped"
@@ -869,6 +1742,9 @@ class TestSkillsServerAnnouncements:
         assert deferred["receipt"]["status"] == "deferred"
         assert deferred["receipt"]["scheduled_for"] == deferred_time.isoformat()
         assert deferred["receipt"]["reason_code"] == "digest_window"
+        assert scheduled_passthrough["receipt"]["status"] == "accepted"
+        assert scheduled_passthrough["receipt"]["scheduled_for"] == deferred_time.isoformat()
+        assert scheduled_passthrough["receipt"]["reason_code"] == "webhook_delivery"
 
     @pytest.mark.asyncio
     async def test_announcement_emit_handlers_map_success_and_errors(self, mock_registry):
@@ -1027,6 +1903,109 @@ class TestSkillsServerAnnouncements:
         repository.list_due_deliveries.assert_awaited_once_with(limit=1000)
         assert flush_data["count"] == 1
         assert flush_data["deliveries"][0]["delivery_id"] == 1
+
+    @pytest.mark.asyncio
+    async def test_announcement_validation_error_branches(self, mock_registry):
+        repository = MagicMock()
+        repository.list_due_deliveries = AsyncMock(return_value=[])
+
+        batch_server = SkillsServer(registry=mock_registry, announcement_repository=repository)
+        batch_server._read_json_object = AsyncMock(return_value={"events": "bad"})  # type: ignore[method-assign]
+        batch_request = MagicMock()
+        batch_resp = await batch_server.handle_announcement_emit_batch(batch_request)
+        assert batch_resp.status == 400
+        assert json.loads(batch_resp.text)["error"] == "events must be an array"
+
+        no_repo_server = SkillsServer(registry=mock_registry, announcement_repository=None)
+        missing_repo_request = MagicMock()
+        missing_repo_resp = await no_repo_server.handle_announcement_dispatch_flush(
+            missing_repo_request
+        )
+        assert missing_repo_resp.status == 501
+        assert json.loads(missing_repo_resp.text)["error"] == "Announcements are not configured"
+
+        flush_server = SkillsServer(registry=mock_registry, announcement_repository=repository)
+
+        none_payload_request = MagicMock()
+        none_payload_request.json = AsyncMock(return_value=None)
+        none_payload_resp = await flush_server.handle_announcement_dispatch_flush(
+            none_payload_request
+        )
+        assert none_payload_resp.status == 200
+        repository.list_due_deliveries.assert_awaited_once_with(limit=100)
+
+        invalid_payload_request = MagicMock()
+        invalid_payload_request.json = AsyncMock(return_value=["bad"])
+        invalid_payload_resp = await flush_server.handle_announcement_dispatch_flush(
+            invalid_payload_request
+        )
+        assert invalid_payload_resp.status == 400
+        assert json.loads(invalid_payload_resp.text)["error"] == "JSON body must be an object"
+
+    @pytest.mark.asyncio
+    async def test_announcement_runtime_and_generic_failure_paths(self, mock_registry):
+        batch_server = SkillsServer(registry=mock_registry, announcement_repository=MagicMock())
+        batch_server._read_json_object = AsyncMock(  # type: ignore[method-assign]
+            return_value={"events": [{"source": "owner-ci"}]}
+        )
+        batch_server._emit_announcement_event = AsyncMock(  # type: ignore[method-assign]
+            side_effect=Exception("boom")
+        )
+
+        batch_resp = await batch_server.handle_announcement_emit_batch(MagicMock())
+        batch_data = json.loads(batch_resp.text)
+        assert batch_resp.status == 200
+        assert batch_data["ok"] is False
+        assert batch_data["errors"] == [{"index": 0, "error": "Failed to emit announcement"}]
+
+        runtime_server = SkillsServer(registry=mock_registry, announcement_repository=MagicMock())
+        runtime_server._announcement_dependencies = MagicMock(  # type: ignore[method-assign]
+            side_effect=RuntimeError("not configured")
+        )
+        runtime_request = MagicMock()
+        runtime_request.match_info = {"user_id": "42"}
+        runtime_resp = await runtime_server.handle_announcement_get_preferences(runtime_request)
+        assert runtime_resp.status == 501
+        assert json.loads(runtime_resp.text)["error"] == "not configured"
+
+        failing_repo = MagicMock()
+        failing_repo.get_user_preferences = AsyncMock(side_effect=Exception("boom"))
+        failing_server = SkillsServer(registry=mock_registry, announcement_repository=failing_repo)
+        failing_request = MagicMock()
+        failing_request.match_info = {"user_id": "42"}
+        failing_resp = await failing_server.handle_announcement_get_preferences(failing_request)
+        assert failing_resp.status == 500
+        assert json.loads(failing_resp.text)["error"] == "Failed to read preferences"
+
+        runtime_put_repo = MagicMock()
+        runtime_put_repo.upsert_user_preferences = AsyncMock(side_effect=RuntimeError("offline"))
+        runtime_put_server = SkillsServer(
+            registry=mock_registry,
+            announcement_repository=runtime_put_repo,
+        )
+        runtime_put_server._read_json_object = AsyncMock(return_value={})  # type: ignore[method-assign]
+        runtime_put_request = MagicMock()
+        runtime_put_request.match_info = {"user_id": "42"}
+        runtime_put_resp = await runtime_put_server.handle_announcement_put_preferences(
+            runtime_put_request
+        )
+        assert runtime_put_resp.status == 501
+        assert json.loads(runtime_put_resp.text)["error"] == "offline"
+
+        failing_put_repo = MagicMock()
+        failing_put_repo.upsert_user_preferences = AsyncMock(side_effect=Exception("boom"))
+        failing_put_server = SkillsServer(
+            registry=mock_registry,
+            announcement_repository=failing_put_repo,
+        )
+        failing_put_server._read_json_object = AsyncMock(return_value={})  # type: ignore[method-assign]
+        failing_put_request = MagicMock()
+        failing_put_request.match_info = {"user_id": "42"}
+        failing_put_resp = await failing_put_server.handle_announcement_put_preferences(
+            failing_put_request
+        )
+        assert failing_put_resp.status == 500
+        assert json.loads(failing_put_resp.text)["error"] == "Failed to update preferences"
 
 
 class TestSkillsServerWorkerBridge:
@@ -1192,9 +2171,424 @@ class TestSkillsServerWorkerBridge:
         tenant_admin_manager.record_worker_job_event.assert_awaited()
         server._emit_worker_lifecycle_announcement.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_worker_bridge_handler_error_paths(self, mock_registry):
+        tenant_admin_manager = MagicMock()
+        tenant_admin_manager.bootstrap_worker_node_session = AsyncMock(
+            side_effect=RuntimeError("boom")
+        )
+        tenant_admin_manager.register_worker_node = AsyncMock(
+            return_value={"node_id": "node-1", "status": "registered"}
+        )
+        tenant_admin_manager.rotate_worker_session_credentials = AsyncMock()
+        tenant_admin_manager.heartbeat_worker_node = AsyncMock(
+            return_value={"node_id": "node-1", "health_status": "healthy"}
+        )
+        tenant_admin_manager.has_worker_capabilities = AsyncMock(return_value=True)
+        tenant_admin_manager.is_worker_node_canary_enabled = MagicMock(return_value=False)
+        tenant_admin_manager.claim_worker_dispatch_job = AsyncMock(return_value=None)
+        tenant_admin_manager.submit_worker_job_result = AsyncMock(
+            return_value={"status": "completed", "idempotent": False}
+        )
+        tenant_admin_manager.record_worker_job_event = AsyncMock()
+
+        server = SkillsServer(registry=mock_registry, tenant_admin_manager=tenant_admin_manager)
+        allowed = SimpleNamespace(
+            allowed=True,
+            approval_required=False,
+            status=200,
+            code="AI_OK",
+            message="Allowed",
+            details={},
+            requires_two_person=False,
+        )
+        denied = SimpleNamespace(
+            allowed=False,
+            approval_required=False,
+            status=403,
+            code="AI_TRUST_POLICY_DENIED",
+            message="Denied",
+            details={"action": "worker.register"},
+            requires_two_person=False,
+        )
+        evaluate = MagicMock(return_value=allowed)
+        server._trust_policy_evaluator = SimpleNamespace(evaluate=evaluate)
+        server._resolve_worker_bootstrap_secret = MagicMock(  # type: ignore[method-assign]
+            return_value="bootstrap-secret"
+        )
+        server._record_security_event = AsyncMock()  # type: ignore[method-assign]
+        server._verify_worker_signature = AsyncMock(  # type: ignore[method-assign]
+            return_value={"session_id": "sess-1", "request_nonce": "nonce-1"}
+        )
+
+        invalid_bootstrap_request = MagicMock()
+        invalid_bootstrap_request.text = AsyncMock(return_value="[]")
+        invalid_bootstrap_request.headers = {}
+        invalid_bootstrap_resp = await server.handle_worker_bootstrap(invalid_bootstrap_request)
+        assert invalid_bootstrap_resp.status == 400
+
+        blank_node_request = MagicMock()
+        blank_node_request.text = AsyncMock(
+            return_value=json.dumps({"tenant_id": "tenant-1", "node_id": "   "})
+        )
+        blank_node_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+        blank_node_resp = await server.handle_worker_bootstrap(blank_node_request)
+        assert blank_node_resp.status == 400
+        assert json.loads(blank_node_resp.text)["error"] == "Missing node_id"
+
+        invalid_secret_request = MagicMock()
+        invalid_secret_request.text = AsyncMock(
+            return_value=json.dumps({"tenant_id": "tenant-1", "node_id": "node-1"})
+        )
+        invalid_secret_request.headers = {"X-Worker-Bootstrap-Secret": "wrong-secret"}
+        invalid_secret_resp = await server.handle_worker_bootstrap(invalid_secret_request)
+        assert invalid_secret_resp.status == 401
+        assert json.loads(invalid_secret_resp.text)["error"] == "Invalid worker bootstrap secret"
+
+        evaluate.return_value = denied
+        denied_bootstrap_request = MagicMock()
+        denied_bootstrap_request.text = AsyncMock(
+            return_value=json.dumps({"tenant_id": "tenant-1", "node_id": "node-1"})
+        )
+        denied_bootstrap_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+        denied_bootstrap_resp = await server.handle_worker_bootstrap(denied_bootstrap_request)
+        assert denied_bootstrap_resp.status == 403
+        assert json.loads(denied_bootstrap_resp.text)["code"] == "AI_TRUST_POLICY_DENIED"
+
+        evaluate.return_value = allowed
+        metadata_error_request = MagicMock()
+        metadata_error_request.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "tenant_id": "tenant-1",
+                    "node_id": "node-1",
+                    "metadata": "bad",
+                }
+            )
+        )
+        metadata_error_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+        metadata_error_resp = await server.handle_worker_bootstrap(metadata_error_request)
+        assert metadata_error_resp.status == 400
+        assert (
+            json.loads(metadata_error_resp.text)["error"]
+            == "metadata must be an object when provided"
+        )
+
+        bootstrap_failure_request = MagicMock()
+        bootstrap_failure_request.text = AsyncMock(
+            return_value=json.dumps({"tenant_id": "tenant-1", "node_id": "node-1"})
+        )
+        bootstrap_failure_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+        bootstrap_failure_resp = await server.handle_worker_bootstrap(bootstrap_failure_request)
+        assert bootstrap_failure_resp.status == 502
+        assert json.loads(bootstrap_failure_resp.text)["error"] == "Failed to bootstrap worker node"
+
+        invalid_register_request = MagicMock()
+        invalid_register_request.text = AsyncMock(return_value="[]")
+        invalid_register_resp = await server.handle_worker_register_node(invalid_register_request)
+        assert invalid_register_resp.status == 400
+
+        missing_register_request = MagicMock()
+        missing_register_request.text = AsyncMock(
+            return_value=json.dumps({"tenant_id": "tenant-1"})
+        )
+        missing_register_resp = await server.handle_worker_register_node(missing_register_request)
+        assert missing_register_resp.status == 400
+        assert json.loads(missing_register_resp.text)["error"] == "Missing tenant_id or node_id"
+
+        server._verify_worker_signature = AsyncMock(  # type: ignore[method-assign]
+            return_value={"session_id": "sess-1"}
+        )
+        evaluate.return_value = denied
+        denied_register_request = MagicMock()
+        denied_register_request.text = AsyncMock(
+            return_value=json.dumps({"tenant_id": "tenant-1", "node_id": "node-1"})
+        )
+        denied_register_resp = await server.handle_worker_register_node(denied_register_request)
+        assert denied_register_resp.status == 403
+        assert json.loads(denied_register_resp.text)["code"] == "AI_TRUST_POLICY_DENIED"
+
+        evaluate.return_value = allowed
+        metadata_register_request = MagicMock()
+        metadata_register_request.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "tenant_id": "tenant-1",
+                    "node_id": "node-1",
+                    "metadata": "bad",
+                }
+            )
+        )
+        metadata_register_resp = await server.handle_worker_register_node(metadata_register_request)
+        assert metadata_register_resp.status == 400
+        assert (
+            json.loads(metadata_register_resp.text)["error"]
+            == "metadata must be an object when provided"
+        )
+
+        tenant_admin_manager.rotate_worker_session_credentials.reset_mock()
+        rotate_false_request = MagicMock()
+        rotate_false_request.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "tenant_id": "tenant-1",
+                    "node_id": "node-1",
+                    "rotate_credentials": False,
+                }
+            )
+        )
+        rotate_false_resp = await server.handle_worker_register_node(rotate_false_request)
+        rotate_false_data = json.loads(rotate_false_resp.text)
+        assert rotate_false_resp.status == 200
+        assert rotate_false_data["session"] == {"session_id": "sess-1"}
+        tenant_admin_manager.rotate_worker_session_credentials.assert_not_awaited()
+
+        blank_heartbeat_request = MagicMock()
+        blank_heartbeat_request.match_info = {"node_id": " "}
+        blank_heartbeat_request.text = AsyncMock(return_value=json.dumps({"tenant_id": "tenant-1"}))
+        blank_heartbeat_resp = await server.handle_worker_node_heartbeat(blank_heartbeat_request)
+        assert blank_heartbeat_resp.status == 400
+        assert json.loads(blank_heartbeat_resp.text)["error"] == "Missing node_id"
+
+        invalid_heartbeat_request = MagicMock()
+        invalid_heartbeat_request.match_info = {"node_id": "node-1"}
+        invalid_heartbeat_request.text = AsyncMock(return_value="[]")
+        invalid_heartbeat_resp = await server.handle_worker_node_heartbeat(
+            invalid_heartbeat_request
+        )
+        assert invalid_heartbeat_resp.status == 400
+        assert json.loads(invalid_heartbeat_resp.text)["error"] == "Invalid JSON body"
+
+        mismatch_heartbeat_request = MagicMock()
+        mismatch_heartbeat_request.match_info = {"node_id": "node-1"}
+        mismatch_heartbeat_request.text = AsyncMock(
+            return_value=json.dumps({"tenant_id": "tenant-1", "node_id": "node-2"})
+        )
+        mismatch_heartbeat_resp = await server.handle_worker_node_heartbeat(
+            mismatch_heartbeat_request
+        )
+        assert mismatch_heartbeat_resp.status == 400
+        assert json.loads(mismatch_heartbeat_resp.text)["error"] == "node_id does not match route"
+
+        server._verify_worker_signature = AsyncMock(  # type: ignore[method-assign]
+            return_value={"session_id": "sess-1", "request_nonce": "nonce-1"}
+        )
+        metadata_heartbeat_request = MagicMock()
+        metadata_heartbeat_request.match_info = {"node_id": "node-1"}
+        metadata_heartbeat_request.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "tenant_id": "tenant-1",
+                    "node_id": "node-1",
+                    "metadata": "bad",
+                }
+            )
+        )
+        metadata_heartbeat_resp = await server.handle_worker_node_heartbeat(
+            metadata_heartbeat_request
+        )
+        assert metadata_heartbeat_resp.status == 400
+        assert (
+            json.loads(metadata_heartbeat_resp.text)["error"]
+            == "metadata must be an object when provided"
+        )
+
+        assert server._record_security_event.await_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_worker_bridge_heartbeat_claim_and_submit_cover_remaining_validation_paths(
+        self,
+        mock_registry,
+    ):
+        tenant_admin_manager = MagicMock()
+        tenant_admin_manager.heartbeat_worker_node = AsyncMock(
+            return_value={"node_id": "node-1", "health_status": "healthy"}
+        )
+        tenant_admin_manager.has_worker_capabilities = AsyncMock(return_value=True)
+        tenant_admin_manager.is_worker_node_canary_enabled = MagicMock(return_value=False)
+        tenant_admin_manager.claim_worker_dispatch_job = AsyncMock(return_value=None)
+        tenant_admin_manager.submit_worker_job_result = AsyncMock(
+            return_value={"status": "completed", "idempotent": False}
+        )
+        tenant_admin_manager.record_worker_job_event = AsyncMock()
+
+        server = SkillsServer(registry=mock_registry, tenant_admin_manager=tenant_admin_manager)
+        allowed = SimpleNamespace(
+            allowed=True,
+            approval_required=False,
+            status=200,
+            code="AI_OK",
+            message="Allowed",
+            details={},
+            requires_two_person=False,
+        )
+        denied = SimpleNamespace(
+            allowed=False,
+            approval_required=False,
+            status=403,
+            code="AI_TRUST_POLICY_DENIED",
+            message="Denied",
+            details={"action": "worker.job.complete"},
+            requires_two_person=False,
+        )
+        evaluate = MagicMock(return_value=allowed)
+        server._trust_policy_evaluator = SimpleNamespace(evaluate=evaluate)
+        server._verify_worker_signature = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "session_id": "sess-1",
+                "request_nonce": "nonce-1",
+                "status": "active",
+                "health_status": "healthy",
+                "node_metadata": {"lane": "ci"},
+            }
+        )
+        server._emit_worker_lifecycle_announcement = AsyncMock()  # type: ignore[method-assign]
+
+        missing_tenant_heartbeat_request = MagicMock()
+        missing_tenant_heartbeat_request.match_info = {"node_id": "node-1"}
+        missing_tenant_heartbeat_request.text = AsyncMock(
+            return_value=json.dumps({"node_id": "node-1"})
+        )
+        missing_tenant_heartbeat_resp = await server.handle_worker_node_heartbeat(
+            missing_tenant_heartbeat_request
+        )
+
+        blank_claim_request = MagicMock()
+        blank_claim_request.match_info = {"node_id": " "}
+        blank_claim_request.text = AsyncMock(
+            return_value=json.dumps({"tenant_id": "tenant-1"})
+        )
+        blank_claim_resp = await server.handle_worker_claim_job(blank_claim_request)
+
+        invalid_claim_request = MagicMock()
+        invalid_claim_request.match_info = {"node_id": "node-1"}
+        invalid_claim_request.text = AsyncMock(side_effect=RuntimeError("boom"))
+        invalid_claim_resp = await server.handle_worker_claim_job(invalid_claim_request)
+
+        missing_tenant_claim_request = MagicMock()
+        missing_tenant_claim_request.match_info = {"node_id": "node-1"}
+        missing_tenant_claim_request.text = AsyncMock(
+            return_value=json.dumps({"required_capabilities": []})
+        )
+        missing_tenant_claim_resp = await server.handle_worker_claim_job(
+            missing_tenant_claim_request
+        )
+
+        evaluate.return_value = denied
+        denied_submit_request = MagicMock()
+        denied_submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+        denied_submit_request.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "tenant_id": "tenant-1",
+                    "required_capabilities": ["docker", "ci"],
+                    "status": "completed",
+                }
+            )
+        )
+        denied_submit_resp = await server.handle_worker_submit_job_result(denied_submit_request)
+
+        assert missing_tenant_heartbeat_resp.status == 400
+        assert json.loads(missing_tenant_heartbeat_resp.text)["error"] == "Missing tenant_id"
+        assert blank_claim_resp.status == 400
+        assert json.loads(blank_claim_resp.text)["error"] == "Missing node_id"
+        assert invalid_claim_resp.status == 400
+        assert json.loads(invalid_claim_resp.text)["error"] == "Invalid JSON body"
+        assert missing_tenant_claim_resp.status == 400
+        assert json.loads(missing_tenant_claim_resp.text)["error"] == "Missing tenant_id"
+        assert denied_submit_resp.status == 403
+        assert json.loads(denied_submit_resp.text)["code"] == "AI_TRUST_POLICY_DENIED"
+        tenant_admin_manager.claim_worker_dispatch_job.assert_not_awaited()
+        tenant_admin_manager.submit_worker_job_result.assert_not_awaited()
+
 
 class TestSkillsServerLifecycle:
     """Tests for SkillsServer lifecycle methods."""
+
+    @pytest.mark.asyncio
+    async def test_tenant_admin_service_unavailable_and_automerge_token_error_paths(
+        self,
+        mock_registry,
+    ):
+        unavailable_server = SkillsServer(
+            registry=mock_registry,
+            tenant_admin_manager=SimpleNamespace(),
+        )
+        security_request = MagicMock()
+        security_request.match_info = {"tenant_id": "tenant-1"}
+        security_request.query = {}
+
+        security_events_resp = await unavailable_server.handle_tenant_list_security_events(
+            security_request
+        )
+        assert security_events_resp.status == 501
+        assert (
+            json.loads(security_events_resp.text)["error"]
+            == "Security event service unavailable"
+        )
+
+        security_dashboard_resp = await unavailable_server.handle_tenant_security_dashboard(
+            security_request
+        )
+        assert security_dashboard_resp.status == 501
+        assert (
+            json.loads(security_dashboard_resp.text)["error"]
+            == "Security dashboard service unavailable"
+        )
+
+        tenant_admin_manager = MagicMock()
+        server = SkillsServer(
+            registry=mock_registry,
+            tenant_admin_manager=tenant_admin_manager,
+        )
+        server._admin_actor = MagicMock(  # type: ignore[method-assign]
+            return_value=AdminActorContext(
+                actor_sub="operator-1",
+                actor_roles=("operator",),
+                request_id="req-1",
+                timestamp=datetime.now(UTC),
+                nonce=uuid4().hex,
+                change_ticket_id=None,
+            )
+        )
+        server._read_json_object = AsyncMock(return_value={})  # type: ignore[method-assign]
+        missing_repo_request = MagicMock()
+        missing_repo_request.match_info = {"tenant_id": "tenant-1"}
+        missing_repo_resp = await server.handle_tenant_execute_automerge(missing_repo_request)
+        assert missing_repo_resp.status == 400
+        assert json.loads(missing_repo_resp.text)["error"] == "Missing repository"
+
+        server._read_json_object = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "repository": "openclaw/openclaw",
+                "branch_guard_passed": True,
+                "risk_guard_passed": True,
+            }
+        )
+        server._trust_policy_evaluator = SimpleNamespace(
+            evaluate=MagicMock(
+                return_value=SimpleNamespace(
+                    allowed=True,
+                    approval_required=False,
+                    status=200,
+                    code="AI_OK",
+                    message="Allowed",
+                    details={},
+                    requires_two_person=False,
+                )
+            )
+        )
+        tenant_admin_manager.get_secret_cached.return_value = ""
+        with patch(
+            "zetherion_ai.config.get_settings",
+            return_value=SimpleNamespace(github_token=None, github_api_timeout=30.0),
+        ):
+            missing_token_resp = await server.handle_tenant_execute_automerge(missing_repo_request)
+        assert missing_token_resp.status == 400
+        assert (
+            json.loads(missing_token_resp.text)["error"]
+            == "GitHub token is not configured for this tenant"
+        )
 
     def test_create_app(self, mock_registry):
         """create_app() should return a configured aiohttp Application."""
@@ -1247,6 +2641,37 @@ class TestSkillsServerLifecycle:
 
             mock_runner_instance.cleanup.assert_awaited_once()
             assert server._runner is None
+
+    async def test_start_initializes_tenant_messaging_cleanup_task_when_manager_present(
+        self,
+        mock_registry,
+    ):
+        server = SkillsServer(registry=mock_registry, tenant_admin_manager=MagicMock())
+        cleanup_task = asyncio.create_task(asyncio.sleep(3600))
+
+        def _fake_create_task(coro, *, name=None):
+            coro.close()
+            return cleanup_task
+
+        with (
+            patch.object(web, "AppRunner") as mock_runner_cls,
+            patch.object(web, "TCPSite") as mock_site_cls,
+            patch.object(asyncio, "create_task", side_effect=_fake_create_task) as mock_create_task,
+        ):
+            mock_runner_instance = AsyncMock()
+            mock_runner_cls.return_value = mock_runner_instance
+
+            mock_site_instance = AsyncMock()
+            mock_site_cls.return_value = mock_site_instance
+
+            await server.start()
+
+            mock_create_task.assert_called_once()
+            assert server._messaging_ttl_cleanup_task is cleanup_task
+
+            await server.stop()
+
+        assert server._messaging_ttl_cleanup_task is None
 
     async def test_stop_without_start(self, mock_registry):
         """stop() should be a no-op when server was never started."""
@@ -2317,6 +3742,7 @@ class TestTenantAdminEndpoints:
             "chat_id": "chat-1",
             "message_id": "88888888-8888-8888-8888-888888888888",
             "body_text": "inbound text",
+            "observed_at": "2026-03-17T12:34:56",
         }
         raw_body = json.dumps(bridge_payload, separators=(",", ":"))
         nonce = uuid4().hex
@@ -2340,6 +3766,29 @@ class TestTenantAdminEndpoints:
         )
         assert ingest.status == 202
 
+        aware_bridge_payload = {
+            **bridge_payload,
+            "message_id": "99999999-9999-9999-9999-999999999999",
+            "observed_at": "2026-03-17T12:34:56+00:00",
+        }
+        aware_raw_body = json.dumps(aware_bridge_payload, separators=(",", ":"))
+        aware_nonce = uuid4().hex
+        aware_signature = hmac.new(
+            b"bridge-signing-secret",
+            f"{tenant_id}.{timestamp}.{aware_nonce}.{aware_raw_body}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        aware_ingest = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/messaging/ingest",
+            headers={
+                **ingest_headers,
+                "X-Bridge-Nonce": aware_nonce,
+                "X-Bridge-Signature": aware_signature,
+            },
+            data=aware_raw_body,
+        )
+        assert aware_ingest.status == 202
+
         tenant_admin_manager.get_messaging_provider_config.assert_awaited_once()
         tenant_admin_manager.put_messaging_provider_config.assert_awaited_once()
         tenant_admin_manager.put_messaging_chat_policy.assert_awaited_once()
@@ -2349,7 +3798,15 @@ class TestTenantAdminEndpoints:
         tenant_admin_manager.export_messaging_messages.assert_awaited_once()
         tenant_admin_manager.delete_messaging_messages.assert_awaited_once()
         tenant_admin_manager.queue_messaging_send.assert_awaited_once()
-        tenant_admin_manager.ingest_messaging_message.assert_awaited_once()
+        assert tenant_admin_manager.ingest_messaging_message.await_count == 2
+        assert (
+            tenant_admin_manager.ingest_messaging_message.await_args_list[0].kwargs["observed_at"].tzinfo
+            == UTC
+        )
+        assert (
+            tenant_admin_manager.ingest_messaging_message.await_args_list[1].kwargs["observed_at"].tzinfo
+            == UTC
+        )
         tenant_admin_manager.list_security_events.assert_awaited_once()
         tenant_admin_manager.get_security_dashboard.assert_awaited_once()
 
@@ -2422,6 +3879,548 @@ class TestTenantAdminEndpoints:
         tenant_admin_manager.pause_execution_plan.assert_awaited_once()
         tenant_admin_manager.resume_execution_plan.assert_awaited_once()
         tenant_admin_manager.cancel_execution_plan.assert_awaited_once()
+
+    async def test_tenant_admin_execution_plan_create_normalizes_naive_start_at(
+        self,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+
+        response = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/execution/plans",
+            headers=headers,
+            json={
+                "title": "Night Build",
+                "goal": "Ship overnight",
+                "steps": ["Design schema"],
+                "start_at": "2026-03-13T16:45:00",
+            },
+        )
+        assert response.status == 201
+        start_at = tenant_admin_manager.create_execution_plan.await_args.kwargs["start_at"]
+        assert start_at.tzinfo is UTC
+
+    async def test_tenant_admin_execution_plan_create_preserves_aware_start_at(
+        self,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+
+        response = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/execution/plans",
+            headers=headers,
+            json={
+                "title": "Night Build",
+                "goal": "Ship overnight",
+                "steps": ["Design schema"],
+                "start_at": "2026-03-13T16:45:00+11:00",
+            },
+        )
+        assert response.status == 201
+        start_at = tenant_admin_manager.create_execution_plan.await_args.kwargs["start_at"]
+        assert start_at.utcoffset() == timedelta(hours=11)
+
+    async def test_tenant_admin_execution_plan_detail_handles_not_found_and_omits_steps(
+        self,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        plan_id = "99999999-9999-9999-9999-999999999999"
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            return headers
+
+        tenant_admin_manager.get_execution_plan = AsyncMock(return_value=None)
+        not_found = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/execution/plans/{plan_id}",
+            headers=_headers(),
+        )
+        assert not_found.status == 404
+
+        tenant_admin_manager.get_execution_plan = AsyncMock(
+            return_value={
+                "plan_id": plan_id,
+                "status": "queued",
+                "title": "Night Build",
+            }
+        )
+        tenant_admin_manager.list_execution_plan_steps = AsyncMock(return_value=[])
+
+        detail = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/execution/plans/{plan_id}?include_steps=false",
+            headers=_headers(),
+        )
+        assert detail.status == 200
+        detail_payload = await detail.json()
+        assert "steps" not in detail_payload
+        tenant_admin_manager.list_execution_plan_steps.assert_not_awaited()
+
+    async def test_tenant_admin_worker_grant_revocation_validation_and_missing_manager(
+        self, mock_registry, admin_client, tenant_admin_manager
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        grant_id = "grant-1"
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            return headers
+
+        tenant_admin_manager.revoke_worker_delegation_grant = AsyncMock(
+            return_value={"grant_id": grant_id, "node_id": "node-1", "resource_scope": "repo"}
+        )
+        tenant_admin_manager.revoke_worker_messaging_grant = AsyncMock(
+            return_value={"grant_id": grant_id, "node_id": "node-1", "provider": "whatsapp"}
+        )
+        tenant_admin_manager.record_security_event = AsyncMock(return_value=None)
+
+        invalid_delegation = await admin_client.delete(
+            f"/admin/tenants/{tenant_id}/workers/delegation/grants/{grant_id}",
+            headers=_headers(),
+            data="[]",
+        )
+        assert invalid_delegation.status == 400
+
+        revoked_messaging = await admin_client.delete(
+            f"/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}",
+            headers=_headers(),
+            json={"reason": "cleanup"},
+        )
+        assert revoked_messaging.status == 200
+        tenant_admin_manager.revoke_worker_messaging_grant.assert_awaited_once()
+
+        no_manager_server = SkillsServer(registry=mock_registry, api_secret="test-secret")
+        missing_manager_request = MagicMock()
+        missing_manager_request.match_info = {"tenant_id": tenant_id, "grant_id": grant_id}
+        missing_manager_request.text = AsyncMock(return_value="")
+        missing_manager_response = (
+            await no_manager_server.handle_tenant_revoke_worker_delegation_grant(
+                missing_manager_request
+            )
+        )
+        assert missing_manager_response.status == 501
+
+    async def test_tenant_admin_worker_grant_revocation_accepts_empty_body(
+        self,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        grant_id = "grant-1"
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            return headers
+
+        tenant_admin_manager.revoke_worker_delegation_grant = AsyncMock(
+            return_value={"grant_id": grant_id, "node_id": "node-1", "resource_scope": "repo"}
+        )
+        tenant_admin_manager.revoke_worker_messaging_grant = AsyncMock(
+            return_value={"grant_id": grant_id, "node_id": "node-1", "provider": "whatsapp"}
+        )
+        tenant_admin_manager.revoke_worker_delegation_grant.reset_mock()
+        delegation = await admin_client.delete(
+            f"/admin/tenants/{tenant_id}/workers/delegation/grants/{grant_id}",
+            headers=_headers(),
+        )
+        assert delegation.status == 200
+        delegation_reason = tenant_admin_manager.revoke_worker_delegation_grant.await_args.kwargs[
+            "reason"
+        ]
+        assert delegation_reason is None
+
+        tenant_admin_manager.revoke_worker_messaging_grant.reset_mock()
+        messaging = await admin_client.delete(
+            f"/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}",
+            headers=_headers(),
+        )
+        assert messaging.status == 200
+        messaging_reason = tenant_admin_manager.revoke_worker_messaging_grant.await_args.kwargs[
+            "reason"
+        ]
+        assert messaging_reason is None
+
+    async def test_tenant_admin_worker_route_matrix_and_defaults(
+        self,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        job_id = "job-1"
+        grant_id = "grant-1"
+        scheduled_for = datetime(2026, 3, 13, 18, 30, tzinfo=UTC)
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            return headers
+
+        tenant_admin_manager.list_worker_jobs = AsyncMock(return_value=[{"job_id": job_id}])
+        tenant_admin_manager.get_worker_job = AsyncMock(return_value={"job_id": job_id})
+        tenant_admin_manager.list_worker_job_events = AsyncMock(
+            return_value=[{"event_type": "worker.heartbeat"}]
+        )
+        tenant_admin_manager.list_worker_delegation_grants = AsyncMock(
+            return_value=[{"grant_id": grant_id, "resource_scope": "repo"}]
+        )
+        tenant_admin_manager.put_worker_delegation_grant = AsyncMock(
+            return_value={
+                "grant_id": grant_id,
+                "node_id": node_id,
+                "resource_scope": "repo",
+                "permissions": ["repo.read"],
+            }
+        )
+        tenant_admin_manager.list_worker_messaging_grants = AsyncMock(
+            return_value=[{"grant_id": grant_id, "provider": "whatsapp"}]
+        )
+        tenant_admin_manager.put_worker_messaging_grant = AsyncMock(
+            return_value={
+                "grant_id": grant_id,
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "allow_read": True,
+                "allow_draft": False,
+                "allow_send": True,
+                "redacted_payload": True,
+            }
+        )
+        tenant_admin_manager.get_worker_node = AsyncMock(
+            side_effect=[
+                None,
+                {"node_id": node_id, "status": "active", "health_status": "healthy"},
+            ]
+        )
+        tenant_admin_manager.set_worker_capabilities = AsyncMock(
+            return_value={"node_id": node_id, "capabilities": ["docker", "ci"]}
+        )
+        tenant_admin_manager.set_worker_node_status = AsyncMock(
+            side_effect=[
+                {"node_id": node_id, "status": "quarantined", "health_status": "degraded"},
+                {"node_id": node_id, "status": "active", "health_status": "healthy"},
+            ]
+        )
+        tenant_admin_manager.retry_worker_job = AsyncMock(
+            return_value={
+                "job": {"job_id": job_id, "claimed_by_node_id": node_id, "status": "queued"},
+                "step": {"step_id": "step-1"},
+                "plan": {"plan_id": "plan-1"},
+                "scheduled_for": scheduled_for,
+            }
+        )
+        tenant_admin_manager.cancel_worker_job = AsyncMock(
+            return_value={
+                "job": {"job_id": job_id, "claimed_by_node_id": node_id, "status": "cancelled"},
+                "idempotent": True,
+                "step": {"step_id": "step-1"},
+            }
+        )
+
+        jobs = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/workers/jobs?limit=20",
+            headers=_headers(),
+        )
+        assert jobs.status == 200
+
+        worker_job = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}",
+            headers=_headers(),
+        )
+        assert worker_job.status == 200
+
+        worker_events = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/workers/events?node_id={node_id}&job_id={job_id}&limit=20",
+            headers=_headers(),
+        )
+        assert worker_events.status == 200
+
+        delegation_grants = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/workers/delegation/grants?node_id={node_id}&limit=20",
+            headers=_headers(),
+        )
+        assert delegation_grants.status == 200
+
+        delegation_put = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants",
+            headers=_headers(),
+            json={
+                "resource_scope": "repo",
+                "permissions": ["repo.read"],
+                "ttl_seconds": 1200,
+            },
+        )
+        assert delegation_put.status == 200
+
+        messaging_grants = await admin_client.get(
+            (
+                f"/admin/tenants/{tenant_id}/workers/messaging/grants"
+                f"?node_id={node_id}&provider=whatsapp&chat_id=chat-1"
+                "&include_expired=true&include_revoked=true&limit=20"
+            ),
+            headers=_headers(),
+        )
+        assert messaging_grants.status == 200
+
+        messaging_put = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/whatsapp/chat-1",
+            headers=_headers(),
+            json={
+                "allow_read": True,
+                "allow_send": True,
+                "redacted_payload": True,
+                "ttl_seconds": 1800,
+            },
+        )
+        assert messaging_put.status == 200
+
+        missing_node = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}",
+            headers=_headers(),
+        )
+        assert missing_node.status == 404
+
+        capability_update = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities",
+            headers=_headers(),
+            json={"capabilities": ["docker", "ci"]},
+        )
+        assert capability_update.status == 200
+
+        quarantine = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine",
+            headers={**_headers(), "Content-Type": "application/json"},
+            data="null",
+        )
+        assert quarantine.status == 200
+
+        unquarantine = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine",
+            headers={**_headers(), "Content-Type": "application/json"},
+            data="null",
+        )
+        assert unquarantine.status == 200
+
+        retry = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry",
+            headers=_headers(),
+        )
+        assert retry.status == 200
+        retry_payload = await retry.json()
+        assert retry_payload["step"]["step_id"] == "step-1"
+        assert retry_payload["plan"]["plan_id"] == "plan-1"
+        assert retry_payload["scheduled_for"] == scheduled_for.isoformat()
+
+        cancel = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel",
+            headers=_headers(),
+        )
+        assert cancel.status == 200
+        cancel_payload = await cancel.json()
+        assert cancel_payload["step"]["step_id"] == "step-1"
+        assert "plan" not in cancel_payload
+
+        capability_kwargs = tenant_admin_manager.set_worker_capabilities.await_args.kwargs
+        assert capability_kwargs["capabilities"] == ["docker", "ci"]
+        first_status_call = tenant_admin_manager.set_worker_node_status.await_args_list[0].kwargs
+        second_status_call = tenant_admin_manager.set_worker_node_status.await_args_list[1].kwargs
+        assert first_status_call["health_status"] == "degraded"
+        assert second_status_call["health_status"] == "healthy"
+
+    async def test_tenant_admin_worker_route_validation_and_policy_denial_paths(
+        self,
+        mock_registry,
+        tenant_admin_manager,
+    ):
+        class _DenyWorkerAdmin:
+            @staticmethod
+            def evaluate(*, action: str, **_kwargs):
+                return SimpleNamespace(
+                    allowed=False,
+                    approval_required=action.endswith(".grant"),
+                    status=409 if action.endswith(".grant") else 403,
+                    code=(
+                        "AI_APPROVAL_REQUIRED"
+                        if action.endswith(".grant")
+                        else "AI_TRUST_POLICY_DENIED"
+                    ),
+                    message="Approval required" if action.endswith(".grant") else "Denied",
+                    details={"action": action},
+                    requires_two_person=action.endswith(".grant"),
+                )
+
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            tenant_admin_manager=tenant_admin_manager,
+        )
+        server._trust_policy_evaluator = _DenyWorkerAdmin()
+        app = server.create_app()
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        grant_id = "grant-1"
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            return headers
+
+        async with TestClient(TestServer(app)) as client:
+            invalid_delegation_put = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants",
+                headers=_headers(),
+                json=[],
+            )
+            assert invalid_delegation_put.status == 400
+
+            denied_delegation_put = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants",
+                headers=_headers(),
+                json={"resource_scope": "repo", "permissions": ["repo.read"]},
+            )
+            assert denied_delegation_put.status == 409
+
+            denied_delegation_revoke = await client.delete(
+                f"/admin/tenants/{tenant_id}/workers/delegation/grants/{grant_id}",
+                headers=_headers(),
+                json={"reason": "cleanup"},
+            )
+            assert denied_delegation_revoke.status == 409
+
+            invalid_messaging_put = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/whatsapp/chat-1",
+                headers=_headers(),
+                json=[],
+            )
+            assert invalid_messaging_put.status == 400
+
+            denied_messaging_put = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/whatsapp/chat-1",
+                headers=_headers(),
+                json={"allow_read": True},
+            )
+            assert denied_messaging_put.status == 409
+
+            invalid_messaging_revoke = await client.delete(
+                f"/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}",
+                headers=_headers(),
+                data="[]",
+            )
+            assert invalid_messaging_revoke.status == 400
+
+            denied_messaging_revoke = await client.delete(
+                f"/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}",
+                headers=_headers(),
+                json={"reason": "cleanup"},
+            )
+            assert denied_messaging_revoke.status == 409
+
+            invalid_capabilities = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities",
+                headers=_headers(),
+                json=[],
+            )
+            assert invalid_capabilities.status == 400
+
+        no_manager_server = SkillsServer(registry=mock_registry, api_secret="test-secret")
+        missing_manager_request = MagicMock()
+        missing_manager_request.match_info = {"tenant_id": tenant_id}
+        missing_manager_request.query = {}
+        missing_manager_response = (
+            await no_manager_server.handle_tenant_list_worker_delegation_grants(
+                missing_manager_request
+            )
+        )
+        assert missing_manager_response.status == 501
+
+    async def test_tenant_admin_worker_route_json_error_and_success_variants(
+        self,
+        mock_registry,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        job_id = "job-2"
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            return headers
+
+        tenant_admin_manager.get_worker_node = AsyncMock(
+            return_value={"node_id": node_id, "status": "active", "health_status": "healthy"}
+        )
+        tenant_admin_manager.cancel_worker_job = AsyncMock(
+            return_value={
+                "job": {"job_id": job_id, "claimed_by_node_id": node_id, "status": "cancelled"},
+                "idempotent": False,
+                "plan": {"plan_id": "plan-2"},
+            }
+        )
+
+        node_response = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}",
+            headers=_headers(),
+        )
+        assert node_response.status == 200
+
+        invalid_delegation_put = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants",
+            headers={**_headers(), "Content-Type": "application/json"},
+            data="{",
+        )
+        assert invalid_delegation_put.status == 400
+
+        invalid_messaging_put = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/whatsapp/chat-1",
+            headers={**_headers(), "Content-Type": "application/json"},
+            data="{",
+        )
+        assert invalid_messaging_put.status == 400
+
+        invalid_quarantine = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine",
+            headers={**_headers(), "Content-Type": "application/json"},
+            data="{",
+        )
+        assert invalid_quarantine.status == 400
+
+        invalid_unquarantine = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine",
+            headers={**_headers(), "Content-Type": "application/json"},
+            data="{",
+        )
+        assert invalid_unquarantine.status == 400
+
+        cancel_response = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel",
+            headers=_headers(),
+        )
+        assert cancel_response.status == 200
+        cancel_payload = await cancel_response.json()
+        assert "step" not in cancel_payload
+        assert cancel_payload["plan"]["plan_id"] == "plan-2"
+
+        no_manager_server = SkillsServer(registry=mock_registry, api_secret="test-secret")
+        missing_manager_request = MagicMock()
+        missing_manager_request.match_info = {"tenant_id": tenant_id, "node_id": node_id}
+        missing_manager_response = (
+            await no_manager_server.handle_tenant_put_worker_delegation_grant(
+                missing_manager_request
+            )
+        )
+        assert missing_manager_response.status == 501
 
     async def test_tenant_admin_automerge_execute_success(
         self,
@@ -2515,6 +4514,104 @@ class TestTenantAdminEndpoints:
         assert payload["result"]["status"] == "merged"
         assert payload["result"]["pr_number"] == 45
         tenant_admin_manager.record_admin_event.assert_awaited_once()
+
+    async def test_tenant_admin_automerge_execute_uses_settings_token_fallback(
+        self,
+        admin_client,
+        tenant_admin_manager,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        from zetherion_ai.skills.github.models import PullRequest
+
+        captured_tokens: list[str] = []
+
+        class _FallbackGitHubClient:
+            def __init__(self, token: str, timeout: float):
+                captured_tokens.append(token)
+                self.timeout = timeout
+
+            async def ensure_branch(self, *_args, **_kwargs):
+                return {"created": True, "ref": "refs/heads/codex/automerge-1", "sha": "abc123"}
+
+            async def find_open_pull_request(self, *_args, **_kwargs):
+                return None
+
+            async def create_pull_request(self, *_args, **_kwargs):
+                return PullRequest(
+                    number=46,
+                    title="Automerge",
+                    head_ref="codex/automerge-1",
+                    base_ref="main",
+                    additions=12,
+                    deletions=2,
+                    changed_files=2,
+                    html_url="https://example.com/pr/46",
+                )
+
+            async def get_pull_request(self, *_args, **_kwargs):
+                return PullRequest(
+                    number=46,
+                    title="Automerge",
+                    head_ref="codex/automerge-1",
+                    base_ref="main",
+                    additions=12,
+                    deletions=2,
+                    changed_files=2,
+                    html_url="https://example.com/pr/46",
+                )
+
+            async def list_pull_request_files(self, *_args, **_kwargs):
+                return [{"filename": "src/app.py"}]
+
+            async def list_check_runs(self, *_args, **_kwargs):
+                return [
+                    {
+                        "name": "zetherion/merge-readiness",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ]
+
+            async def merge_pull_request(self, *_args, **_kwargs):
+                return {"merged": True, "message": "Pull Request successfully merged"}
+
+            async def close(self):
+                return None
+
+        monkeypatch.setattr("zetherion_ai.skills.server.GitHubClient", _FallbackGitHubClient)
+        tenant_admin_manager.get_secret_cached = MagicMock(return_value="")
+
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+
+        with patch(
+            "zetherion_ai.config.get_settings",
+            return_value=SimpleNamespace(
+                github_token=SimpleNamespace(get_secret_value=lambda: "ghp_settings_token"),
+                github_api_timeout=30.0,
+            ),
+        ):
+            response = await admin_client.post(
+                f"/admin/tenants/{tenant_id}/automerge/execute",
+                headers=headers,
+                json={
+                    "repository": "openclaw/openclaw",
+                    "base_branch": "main",
+                    "source_ref": "main",
+                    "head_branch": "codex/automerge-1",
+                    "branch_guard_passed": True,
+                    "risk_guard_passed": True,
+                    "required_checks": ["zetherion/merge-readiness"],
+                    "allowed_paths": ["src/"],
+                    "max_changed_files": 10,
+                    "max_additions": 500,
+                    "max_deletions": 250,
+                },
+            )
+
+        assert response.status == 200
+        assert captured_tokens == ["ghp_settings_token"]
 
     async def test_tenant_admin_automerge_denied_by_policy(
         self,
@@ -2698,6 +4795,153 @@ class TestTenantAdminEndpoints:
             },
         )
         assert invalid_automerge_checks.status == 400
+
+    async def test_tenant_admin_email_validation_error_branches(
+        self,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret"))
+            return headers
+
+        tenant_admin_manager.get_email_provider_config = AsyncMock(return_value=None)
+        missing_provider = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/email/providers/google/oauth-app",
+            headers=_headers(),
+        )
+        assert missing_provider.status == 404
+
+        missing_redirect_uri = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/email/providers/google/oauth-app",
+            headers=_headers(),
+            json={"client_id": "client-id"},
+        )
+        assert missing_redirect_uri.status == 400
+        assert "Missing redirect_uri" in (await missing_redirect_uri.json())["error"]
+
+        unsupported_provider = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/email/oauth/outlook/exchange",
+            headers=_headers(),
+            json={"code": "abc", "state": "state-1"},
+        )
+        assert unsupported_provider.status == 400
+
+        missing_oauth_state = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/email/oauth/google/exchange",
+            headers=_headers(),
+            json={"code": "abc"},
+        )
+        assert missing_oauth_state.status == 400
+
+        invalid_email_metadata = await admin_client.patch(
+            f"/admin/tenants/{tenant_id}/email/accounts/acc-1",
+            headers=_headers(),
+            json={"metadata": "bad"},
+        )
+        assert invalid_email_metadata.status == 400
+
+        invalid_calendar_ops = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/email/accounts/acc-1/sync",
+            headers=_headers(),
+            json={"calendar_operations": "bad"},
+        )
+        assert invalid_calendar_ops.status == 400
+
+        invalid_min_confidence = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/email/insights?min_confidence=not-a-number",
+            headers=_headers(),
+        )
+        assert invalid_min_confidence.status == 400
+
+        missing_account_id = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/email/calendars",
+            headers=_headers(),
+        )
+        assert missing_account_id.status == 400
+
+        missing_calendar_id = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/email/accounts/acc-1/calendar-primary",
+            headers=_headers(),
+            json={},
+        )
+        assert missing_calendar_id.status == 400
+
+    async def test_tenant_admin_delete_messaging_messages_normalizes_naive_timestamp(
+        self,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+
+        response = await admin_client.delete(
+            f"/admin/tenants/{tenant_id}/messaging/messages",
+            headers=headers,
+            json={
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "before_created_at": "2026-03-13T16:45:00",
+                "message_ids": ["11111111-1111-1111-1111-111111111111"],
+                "explicitly_elevated": True,
+            },
+        )
+        assert response.status == 200
+        delete_kwargs = tenant_admin_manager.delete_messaging_messages.await_args.kwargs
+        assert delete_kwargs["before_created_at"].tzinfo == UTC
+        assert delete_kwargs["message_ids"] == ["11111111-1111-1111-1111-111111111111"]
+
+    async def test_tenant_admin_delete_messaging_messages_rejects_non_list_message_ids(
+        self,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+
+        response = await admin_client.delete(
+            f"/admin/tenants/{tenant_id}/messaging/messages",
+            headers=headers,
+            json={
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "message_ids": "not-a-list",
+                "explicitly_elevated": True,
+            },
+        )
+        assert response.status == 400
+        payload = await response.json()
+        assert "message_ids must be an array" in payload["error"]
+        tenant_admin_manager.delete_messaging_messages.assert_not_awaited()
+
+    async def test_tenant_admin_delete_messaging_messages_preserves_aware_timestamp_without_ids(
+        self,
+        admin_client,
+        tenant_admin_manager,
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+
+        response = await admin_client.delete(
+            f"/admin/tenants/{tenant_id}/messaging/messages",
+            headers=headers,
+            json={
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "before_created_at": "2026-03-13T16:45:00+11:00",
+                "explicitly_elevated": True,
+            },
+        )
+        assert response.status == 200
+        delete_kwargs = tenant_admin_manager.delete_messaging_messages.await_args.kwargs
+        assert delete_kwargs["before_created_at"].utcoffset() == timedelta(hours=11)
+        assert delete_kwargs["message_ids"] is None
 
     async def test_tenant_admin_messaging_policy_denial_paths(
         self,
@@ -3627,6 +5871,24 @@ class TestAdditionalEndpointBranches:
         resp = await server.handle_oauth_authorize(request)
         assert resp.status == 400
 
+    async def test_oauth_authorize_and_gmail_alias_return_404_when_unconfigured(
+        self,
+        mock_registry,
+    ):
+        server = SkillsServer(registry=mock_registry)
+
+        authorize_request = MagicMock()
+        authorize_request.match_info = {"provider": "google"}
+        authorize_resp = await server.handle_oauth_authorize(authorize_request)
+
+        gmail_request = MagicMock()
+        gmail_resp = await server.handle_gmail_callback_alias(gmail_request)
+
+        assert authorize_resp.status == 404
+        assert "not configured" in json.loads(authorize_resp.text)["error"]
+        assert gmail_resp.status == 404
+        assert "not configured" in json.loads(gmail_resp.text)["error"]
+
     async def test_gmail_alias_value_error_returns_400(self, mock_registry):
         """Legacy /gmail/callback should map ValueError to HTTP 400."""
         handler = AsyncMock(side_effect=ValueError("invalid grant"))
@@ -3835,6 +6097,75 @@ async def test_owner_ci_worker_register_and_heartbeat_handlers_cover_success_and
     storage.register_worker_node.assert_awaited_once()
     storage.rotate_worker_session_credentials.assert_awaited_once()
     storage.heartbeat_worker_node.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_owner_ci_worker_register_and_heartbeat_cover_rotate_false_and_body_failures(
+    mock_registry,
+):
+    storage = MagicMock()
+    storage.register_worker_node = AsyncMock(
+        return_value={"node_id": "node-1", "status": "active"}
+    )
+    storage.rotate_worker_session_credentials = AsyncMock(
+        return_value={"session_id": "sess-1", "token": "secret"}
+    )
+    server = SkillsServer(registry=mock_registry, owner_ci_storage=storage)
+    server._verify_owner_ci_worker_signature = AsyncMock(  # type: ignore[method-assign]
+        return_value={"session_id": "sess-rotate-false"}
+    )
+
+    rotate_false_request = MagicMock()
+    rotate_false_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "node_id": "node-1",
+                "rotate_credentials": False,
+            }
+        )
+    )
+    rotate_false_request.headers = {}
+
+    rotate_false_response = await server.handle_owner_ci_worker_register_node(
+        rotate_false_request
+    )
+    rotate_false_payload = _response_json(rotate_false_response)
+
+    blank_heartbeat_request = MagicMock()
+    blank_heartbeat_request.match_info = {"node_id": " "}
+    blank_heartbeat_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1"})
+    )
+    blank_heartbeat_request.headers = {}
+
+    text_error_request = MagicMock()
+    text_error_request.match_info = {"node_id": "node-1"}
+    text_error_request.text = AsyncMock(side_effect=RuntimeError("body unavailable"))
+    text_error_request.headers = {}
+
+    missing_scope_request = MagicMock()
+    missing_scope_request.match_info = {"node_id": "node-1"}
+    missing_scope_request.text = AsyncMock(return_value=json.dumps({"node_id": "node-1"}))
+    missing_scope_request.headers = {}
+
+    blank_heartbeat_response = await server.handle_owner_ci_worker_node_heartbeat(
+        blank_heartbeat_request
+    )
+    text_error_response = await server.handle_owner_ci_worker_node_heartbeat(text_error_request)
+    missing_scope_response = await server.handle_owner_ci_worker_node_heartbeat(
+        missing_scope_request
+    )
+
+    assert rotate_false_response.status == 200
+    assert rotate_false_payload["session"] == {"session_id": "sess-rotate-false"}
+    storage.rotate_worker_session_credentials.assert_not_awaited()
+    assert blank_heartbeat_response.status == 400
+    assert _response_json(blank_heartbeat_response)["error"] == "Missing node_id"
+    assert text_error_response.status == 400
+    assert _response_json(text_error_response)["error"] == "Invalid JSON body"
+    assert missing_scope_response.status == 400
+    assert _response_json(missing_scope_response)["error"] == "Missing scope_id"
 
 
 @pytest.mark.asyncio
@@ -4054,6 +6385,46 @@ async def test_internal_runtime_health_endpoint_reports_blocked_queue_and_stale_
 
 
 @pytest.mark.asyncio
+async def test_internal_runtime_health_reports_missing_runtime_pool(mock_registry):
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+    ):
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "healthy",
+                "summary": "Required external service dependencies are reachable.",
+                "details": {},
+                "incident_type": None,
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["message_queue"]["status"] == "blocked"
+    assert domains["message_queue"]["summary"] == "Runtime database pool is unavailable."
+    assert domains["discord_bot"]["status"] == "blocked"
+    assert domains["announcement_dispatcher"]["status"] == "degraded"
+    assert domains["deploy_state"]["status"] == "degraded"
+    assert domains["release_verification"]["status"] == "blocked"
+
+
+@pytest.mark.asyncio
 async def test_internal_runtime_health_uses_owner_ci_storage_pool_when_user_manager_missing(
     mock_registry,
 ):
@@ -4123,6 +6494,90 @@ async def test_internal_runtime_health_uses_owner_ci_storage_pool_when_user_mana
     assert domains["announcement_dispatcher"]["status"] == "healthy"
     assert domains["deploy_state"]["details"]["revision"] == "rev-owner-ci"
     assert domains["release_verification"]["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_internal_runtime_health_degrades_release_without_blockers(mock_registry):
+    fake_pool = object()
+    now = datetime.now(UTC).isoformat()
+    bot_status = {
+        "service_name": "discord_bot",
+        "status": "starting",
+        "summary": "Discord bot is starting.",
+        "updated_at": now,
+        "details": {
+            "queue": {
+                "accepting_work": True,
+                "healthy": True,
+            }
+        },
+    }
+    dispatcher_status = {
+        "service_name": "announcement_dispatcher",
+        "status": "starting",
+        "summary": "Announcement dispatcher is warming up.",
+        "updated_at": now,
+        "details": {
+            "running": False,
+        },
+    }
+    fake_store = SimpleNamespace(
+        get_status=AsyncMock(
+            side_effect=lambda service_name: (
+                bot_status
+                if service_name == "discord_bot"
+                else dispatcher_status if service_name == "announcement_dispatcher" else None
+            )
+        )
+    )
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+        owner_ci_storage=SimpleNamespace(_pool=fake_pool),
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage,
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch.dict(
+            os.environ,
+            {"APP_GIT_SHA": "", "GITHUB_SHA": "", "RELEASE_SHA": ""},
+            clear=False,
+        ),
+    ):
+        queue_storage = mock_queue_storage.return_value
+        queue_storage.get_status_counts = AsyncMock(
+            return_value={"queued": 1, "processing": 0, "dead": 0}
+        )
+        queue_storage.count_stale_processing = AsyncMock(return_value=0)
+        server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "healthy",
+                "summary": "Required external service dependencies are reachable.",
+                "details": {},
+                "incident_type": None,
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["message_queue"]["status"] == "healthy"
+    assert domains["discord_bot"]["status"] == "degraded"
+    assert domains["announcement_dispatcher"]["status"] == "degraded"
+    assert domains["deploy_state"]["status"] == "degraded"
+    assert domains["release_verification"]["status"] == "degraded"
 
 
 @pytest.mark.asyncio
@@ -4272,6 +6727,317 @@ async def test_internal_runtime_health_uses_direct_announcement_dispatcher_statu
     assert domains["deploy_state"]["status"] == "healthy"
     assert domains["deploy_state"]["details"]["revision"] == "rev-dispatcher"
     assert domains["deploy_state"]["details"]["source"] == "announcement_dispatcher_runtime_status"
+
+
+@pytest.mark.asyncio
+async def test_internal_runtime_health_handles_invalid_runtime_timestamps_and_failed_statuses(
+    mock_registry,
+):
+    fake_pool = object()
+    bot_status = {
+        "service_name": "discord_bot",
+        "status": "offline",
+        "summary": "Discord bot connection dropped.",
+        "updated_at": "not-a-time",
+        "details": {
+            "queue": {
+                "accepting_work": True,
+                "healthy": True,
+            }
+        },
+    }
+    dispatcher_status = {
+        "service_name": "announcement_dispatcher",
+        "status": "failed",
+        "summary": "Announcement dispatcher crashed.",
+        "updated_at": "not-a-time",
+        "details": {
+            "running": False,
+        },
+    }
+    fake_store = SimpleNamespace(
+        get_status=AsyncMock(
+            side_effect=lambda service_name: (
+                bot_status
+                if service_name == "discord_bot"
+                else dispatcher_status if service_name == "announcement_dispatcher" else None
+            )
+        )
+    )
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+        owner_ci_storage=SimpleNamespace(_pool=fake_pool),
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage,
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch.dict(os.environ, {"APP_GIT_SHA": "rev-invalid-times"}, clear=False),
+    ):
+        queue_storage = mock_queue_storage.return_value
+        queue_storage.get_status_counts = AsyncMock(
+            return_value={"queued": 0, "processing": 0, "dead": 0}
+        )
+        queue_storage.count_stale_processing = AsyncMock(return_value=0)
+        server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "healthy",
+                "summary": "Required external service dependencies are reachable.",
+                "details": {},
+                "incident_type": None,
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["deploy_state"]["status"] == "healthy"
+    assert domains["discord_bot"]["status"] == "blocked"
+    assert domains["discord_bot"]["details"]["status_age_seconds"] is None
+    assert domains["announcement_dispatcher"]["status"] == "blocked"
+    assert domains["announcement_dispatcher"]["details"]["status_age_seconds"] is None
+    assert domains["release_verification"]["status"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_internal_runtime_health_marks_naive_runtime_heartbeats_stale(mock_registry):
+    fake_pool = object()
+    stale_dispatcher = (datetime.now(UTC) - timedelta(minutes=5)).replace(tzinfo=None)
+    stale_bot = (datetime.now(UTC) - timedelta(minutes=2)).replace(tzinfo=None)
+    dispatcher_status = {
+        "service_name": "announcement_dispatcher",
+        "status": "healthy",
+        "summary": "Announcement dispatcher is running.",
+        "updated_at": stale_dispatcher.isoformat(),
+        "release_revision": "rev-dispatcher-stale",
+        "details": {
+            "running": True,
+        },
+    }
+    bot_status = {
+        "service_name": "discord_bot",
+        "status": "healthy",
+        "summary": "Discord bot is connected.",
+        "updated_at": stale_bot.isoformat(),
+        "details": {
+            "queue": {
+                "accepting_work": True,
+                "healthy": True,
+            }
+        },
+    }
+    fake_store = SimpleNamespace(
+        get_status=AsyncMock(
+            side_effect=lambda service_name: (
+                bot_status
+                if service_name == "discord_bot"
+                else dispatcher_status if service_name == "announcement_dispatcher" else None
+            )
+        )
+    )
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+        owner_ci_storage=SimpleNamespace(_pool=fake_pool),
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage,
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch.dict(
+            os.environ,
+            {"APP_GIT_SHA": "", "GITHUB_SHA": "", "RELEASE_SHA": ""},
+            clear=False,
+        ),
+    ):
+        queue_storage = mock_queue_storage.return_value
+        queue_storage.get_status_counts = AsyncMock(
+            return_value={"queued": 0, "processing": 0, "dead": 0}
+        )
+        queue_storage.count_stale_processing = AsyncMock(return_value=0)
+        server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "healthy",
+                "summary": "Required external service dependencies are reachable.",
+                "details": {},
+                "incident_type": None,
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["deploy_state"]["status"] == "healthy"
+    assert domains["deploy_state"]["details"]["revision"] == "rev-dispatcher-stale"
+    assert domains["announcement_dispatcher"]["status"] == "degraded"
+    assert (
+        domains["announcement_dispatcher"]["summary"]
+        == "Announcement dispatcher heartbeat is stale."
+    )
+    assert domains["announcement_dispatcher"]["details"]["status_age_seconds"] > 180
+    assert domains["discord_bot"]["status"] == "blocked"
+    assert domains["discord_bot"]["summary"] == "Discord bot heartbeat is stale."
+    assert domains["discord_bot"]["details"]["status_age_seconds"] > 90
+
+
+@pytest.mark.asyncio
+async def test_internal_runtime_health_handles_non_string_runtime_timestamps(
+    mock_registry,
+):
+    fake_pool = object()
+    bot_status = {
+        "service_name": "discord_bot",
+        "status": "healthy",
+        "summary": "Discord bot is connected.",
+        "updated_at": 12345,
+        "details": {
+            "queue": {
+                "accepting_work": True,
+                "healthy": True,
+            }
+        },
+    }
+    dispatcher_status = {
+        "service_name": "announcement_dispatcher",
+        "status": "healthy",
+        "summary": "Announcement dispatcher is running.",
+        "updated_at": None,
+        "details": {
+            "running": True,
+        },
+    }
+    fake_store = SimpleNamespace(
+        get_status=AsyncMock(
+            side_effect=lambda service_name: (
+                bot_status
+                if service_name == "discord_bot"
+                else dispatcher_status if service_name == "announcement_dispatcher" else None
+            )
+        )
+    )
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+        owner_ci_storage=SimpleNamespace(_pool=fake_pool),
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage,
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch.dict(os.environ, {"APP_GIT_SHA": "rev-non-string"}, clear=False),
+    ):
+        queue_storage = mock_queue_storage.return_value
+        queue_storage.get_status_counts = AsyncMock(
+            return_value={"queued": 0, "processing": 0, "dead": 0}
+        )
+        queue_storage.count_stale_processing = AsyncMock(return_value=0)
+        server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "healthy",
+                "summary": "Required external service dependencies are reachable.",
+                "details": {},
+                "incident_type": None,
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["discord_bot"]["status"] == "healthy"
+    assert domains["discord_bot"]["details"]["status_age_seconds"] is None
+    assert domains["announcement_dispatcher"]["status"] == "healthy"
+    assert domains["announcement_dispatcher"]["details"]["status_age_seconds"] is None
+    assert domains["deploy_state"]["details"]["revision"] == "rev-non-string"
+
+
+@pytest.mark.asyncio
+async def test_internal_runtime_health_degrades_for_dead_letters_without_runtime_status(
+    mock_registry,
+):
+    fake_pool = object()
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+        owner_ci_storage=SimpleNamespace(_pool=fake_pool),
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage,
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch.dict(
+            os.environ,
+            {"APP_GIT_SHA": "", "GITHUB_SHA": "", "RELEASE_SHA": ""},
+            clear=False,
+        ),
+    ):
+        queue_storage = mock_queue_storage.return_value
+        queue_storage.get_status_counts = AsyncMock(
+            return_value={"queued": 3, "processing": 0, "dead": 2}
+        )
+        queue_storage.count_stale_processing = AsyncMock(return_value=0)
+        server._get_runtime_status_store = AsyncMock(return_value=None)  # type: ignore[method-assign]
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "healthy",
+                "summary": "Required external service dependencies are reachable.",
+                "details": {},
+                "incident_type": None,
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["message_queue"]["status"] == "degraded"
+    assert domains["message_queue"]["incident_type"] == "discord_delivery_failed"
+    assert domains["discord_bot"]["status"] == "blocked"
+    assert domains["announcement_dispatcher"]["status"] == "degraded"
+    assert domains["deploy_state"]["status"] == "degraded"
+    assert domains["release_verification"]["status"] == "blocked"
 
 
 @pytest.mark.asyncio
@@ -4538,3 +7304,187 @@ async def test_owner_ci_worker_bridge_error_paths_cover_registration_heartbeat_c
     assert replay_submit_response.status == 401
     assert runtime_submit_response.status == 409
     assert exception_submit_response.status == 502
+
+
+@pytest.mark.asyncio
+async def test_owner_ci_worker_bridge_additional_validation_paths(mock_registry):
+    storage = MagicMock()
+    storage.bootstrap_worker_node_session = AsyncMock(
+        return_value={"session_id": "sess-1", "token": "bootstrap-token"}
+    )
+    storage.get_worker_node = AsyncMock(return_value={"node_id": "node-1"})
+    storage.register_worker_node = AsyncMock(return_value={"node_id": "node-1"})
+    storage.rotate_worker_session_credentials = AsyncMock(
+        return_value={"session_id": "sess-1", "token": "token-1"}
+    )
+    storage.heartbeat_worker_node = AsyncMock(return_value={"node_id": "node-1"})
+    storage.claim_worker_job = AsyncMock(return_value=None)
+    storage.submit_worker_job_result = AsyncMock(return_value={"idempotent": False})
+
+    server = SkillsServer(registry=mock_registry, owner_ci_storage=storage, api_secret="secret")
+    server._resolve_owner_ci_worker_bootstrap_secret = MagicMock(  # type: ignore[method-assign]
+        return_value="bootstrap-secret"
+    )
+    server._verify_owner_ci_worker_signature = AsyncMock(  # type: ignore[method-assign]
+        return_value={"session_id": "sess-1"}
+    )
+    server._check_auth = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+    blank_bootstrap_request = MagicMock()
+    blank_bootstrap_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "node_id": "   "})
+    )
+    blank_bootstrap_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+    blank_bootstrap_response = await server.handle_owner_ci_worker_bootstrap(
+        blank_bootstrap_request
+    )
+
+    invalid_register_request = MagicMock()
+    invalid_register_request.text = AsyncMock(return_value="[]")
+    invalid_register_request.headers = {}
+    invalid_register_response = await server.handle_owner_ci_worker_register_node(
+        invalid_register_request
+    )
+
+    missing_register_request = MagicMock()
+    missing_register_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1"})
+    )
+    missing_register_request.headers = {}
+    missing_register_response = await server.handle_owner_ci_worker_register_node(
+        missing_register_request
+    )
+
+    invalid_heartbeat_request = MagicMock()
+    invalid_heartbeat_request.match_info = {"node_id": "node-1"}
+    invalid_heartbeat_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "node_id": "node-1",
+                "metadata": "bad",
+            }
+        )
+    )
+    invalid_heartbeat_request.headers = {}
+    invalid_heartbeat_response = await server.handle_owner_ci_worker_node_heartbeat(
+        invalid_heartbeat_request
+    )
+
+    blank_claim_request = MagicMock()
+    blank_claim_request.match_info = {"node_id": " "}
+    blank_claim_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1"})
+    )
+    blank_claim_request.headers = {}
+    blank_claim_response = await server.handle_owner_ci_worker_claim_job(blank_claim_request)
+
+    invalid_claim_request = MagicMock()
+    invalid_claim_request.match_info = {"node_id": "node-1"}
+    invalid_claim_request.text = AsyncMock(return_value="[]")
+    invalid_claim_request.headers = {}
+    invalid_claim_response = await server.handle_owner_ci_worker_claim_job(invalid_claim_request)
+
+    missing_scope_claim_request = MagicMock()
+    missing_scope_claim_request.match_info = {"node_id": "node-1"}
+    missing_scope_claim_request.text = AsyncMock(
+        return_value=json.dumps({"required_capabilities": []})
+    )
+    missing_scope_claim_request.headers = {}
+    missing_scope_claim_response = await server.handle_owner_ci_worker_claim_job(
+        missing_scope_claim_request
+    )
+
+    missing_route_submit_request = MagicMock()
+    missing_route_submit_request.match_info = {"node_id": " ", "job_id": "job-1"}
+    missing_route_submit_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1"})
+    )
+    missing_route_submit_request.headers = {}
+    missing_route_submit_response = await server.handle_owner_ci_worker_submit_job_result(
+        missing_route_submit_request
+    )
+
+    invalid_submit_request = MagicMock()
+    invalid_submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    invalid_submit_request.text = AsyncMock(return_value="[]")
+    invalid_submit_request.headers = {}
+    invalid_submit_response = await server.handle_owner_ci_worker_submit_job_result(
+        invalid_submit_request
+    )
+
+    missing_scope_submit_request = MagicMock()
+    missing_scope_submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    missing_scope_submit_request.text = AsyncMock(
+        return_value=json.dumps({"status": "succeeded"})
+    )
+    missing_scope_submit_request.headers = {}
+    missing_scope_submit_response = await server.handle_owner_ci_worker_submit_job_result(
+        missing_scope_submit_request
+    )
+
+    assert blank_bootstrap_response.status == 400
+    assert _response_json(blank_bootstrap_response)["error"] == "Missing node_id"
+    assert invalid_register_response.status == 400
+    assert _response_json(invalid_register_response)["error"] == "Invalid JSON body"
+    assert missing_register_response.status == 400
+    assert _response_json(missing_register_response)["error"] == "Missing scope_id or node_id"
+    assert invalid_heartbeat_response.status == 400
+    assert (
+        _response_json(invalid_heartbeat_response)["error"]
+        == "metadata must be an object when provided"
+    )
+    assert blank_claim_response.status == 400
+    assert _response_json(blank_claim_response)["error"] == "Missing node_id"
+    assert invalid_claim_response.status == 400
+    assert _response_json(invalid_claim_response)["error"] == "Invalid JSON body"
+    assert missing_scope_claim_response.status == 400
+    assert _response_json(missing_scope_claim_response)["error"] == "Missing scope_id"
+    assert missing_route_submit_response.status == 400
+    assert _response_json(missing_route_submit_response)["error"] == "Missing node_id or job_id"
+    assert invalid_submit_response.status == 400
+    assert _response_json(invalid_submit_response)["error"] == "Invalid JSON body"
+    assert missing_scope_submit_response.status == 400
+    assert _response_json(missing_scope_submit_response)["error"] == "Missing scope_id"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("error", [], "error must be an object when provided"),
+        ("events", "bad", "events must be an array when provided"),
+        ("log_chunks", "bad", "log_chunks must be an array when provided"),
+        ("resource_samples", "bad", "resource_samples must be an array when provided"),
+        ("debug_bundle", [], "debug_bundle must be an object when provided"),
+        ("cleanup_receipt", [], "cleanup_receipt must be an object when provided"),
+        ("steps", "bad", "steps must be an array when provided"),
+        ("artifacts", "bad", "artifacts must be an array when provided"),
+        ("evidence_references", "bad", "evidence_references must be an array when provided"),
+        ("correlation_context", "bad", "correlation_context must be an object when provided"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_owner_ci_worker_submit_result_rejects_invalid_structured_payload_shapes(
+    mock_registry,
+    field,
+    value,
+    message,
+):
+    storage = MagicMock()
+    storage.submit_worker_job_result = AsyncMock(return_value={"idempotent": False})
+    server = SkillsServer(registry=mock_registry, owner_ci_storage=storage, api_secret="secret")
+    server._verify_owner_ci_worker_signature = AsyncMock(  # type: ignore[method-assign]
+        return_value={"session_id": "sess-1"}
+    )
+
+    payload = {"scope_id": "owner:owner-1", "status": "succeeded", field: value}
+    request = MagicMock()
+    request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    request.text = AsyncMock(return_value=json.dumps(payload))
+    request.headers = {}
+
+    response = await server.handle_owner_ci_worker_submit_job_result(request)
+
+    assert response.status == 400
+    assert _response_json(response)["error"] == message
+    storage.submit_worker_job_result.assert_not_awaited()

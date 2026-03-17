@@ -30,6 +30,10 @@ def _lane_ids(plan: dict[str, object]) -> set[str]:
     return {item["lane_id"] for item in plan["lanes"]}  # type: ignore[index]
 
 
+def _lane(plan: dict[str, object], lane_id: str) -> dict[str, object]:
+    return next(item for item in plan["lanes"] if item["lane_id"] == lane_id)  # type: ignore[index]
+
+
 def test_api_route_change_requires_docs_bundle_and_mypy() -> None:
     module = _load_module()
     manifest = module.load_manifest()
@@ -142,6 +146,11 @@ def test_queue_manager_change_requires_unit_full() -> None:
         "z-int-runtime-queue",
         "z-e2e-faults",
     }
+    unit_lane = _lane(plan, "z-unit-core")
+    assert unit_lane["validation_mode"] == "zetherion_alone"
+    assert unit_lane["lane_family"] == "unit"
+    assert unit_lane["shard_purpose"] == "Zetherion unit core"
+    assert unit_lane["expected_artifacts"] == ["stdout", "stderr"]
     assert plan["unmapped_protected_paths"] == []
 
 

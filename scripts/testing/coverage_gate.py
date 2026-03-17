@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +13,32 @@ from pathlib import Path
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _display_path(path: Path, repo_root: Path) -> str:
+    resolved_repo_root = repo_root.resolve()
+    resolved_path = path.resolve()
+    try:
+        return str(resolved_path.relative_to(resolved_repo_root))
+    except ValueError:
+        pass
+
+    workspace_root = os.environ.get("ZETHERION_WORKSPACE_ROOT", "").strip()
+    host_workspace_root = os.environ.get("ZETHERION_HOST_WORKSPACE_ROOT", "").strip()
+    if workspace_root and host_workspace_root:
+        workspace_root_path = Path(workspace_root).expanduser()
+        try:
+            suffix = resolved_path.relative_to(workspace_root_path.resolve())
+        except ValueError:
+            suffix = None
+        if suffix is not None:
+            remapped = Path(host_workspace_root).expanduser().resolve() / suffix
+            try:
+                return str(remapped.relative_to(resolved_repo_root))
+            except ValueError:
+                return str(remapped)
+
+    return str(resolved_path)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -91,9 +118,9 @@ def main() -> int:
         repo_root=repo_root,
         source_root=(repo_root / args.source_root).resolve(),
         thresholds=thresholds,
-        coverage_json_path=str(coverage_json_path.relative_to(repo_root)),
-        coverage_report_path=str((artifacts_dir / "coverage-report.txt").relative_to(repo_root)),
-        html_index_path=str((html_dir / "index.html").relative_to(repo_root)),
+        coverage_json_path=_display_path(coverage_json_path, repo_root),
+        coverage_report_path=_display_path(artifacts_dir / "coverage-report.txt", repo_root),
+        html_index_path=_display_path(html_dir / "index.html", repo_root),
         repo_sha=args.repo_sha or None,
         run_id=args.run_id or None,
         lane_id=args.lane_id or None,
@@ -115,8 +142,8 @@ def main() -> int:
             "confidence": 1.0,
             "recommended_next_actions": [],
             "artifact_paths": [
-                str(summary_path.relative_to(repo_root)),
-                str(gaps_path.relative_to(repo_root)),
+                _display_path(summary_path, repo_root),
+                _display_path(gaps_path, repo_root),
             ],
         }
         diagnostic_findings: list[dict[str, object]] = []
@@ -144,12 +171,15 @@ def main() -> int:
             f"(threshold {metric.get('threshold', 0):.2f}%, "
             f"covered {metric.get('covered', 0)}/{metric.get('total', 0)})"
         )
-    print(f"[coverage_gate] summary={summary_path.relative_to(repo_root)}")
-    print(f"[coverage_gate] gaps={gaps_path.relative_to(repo_root)}")
-    print(f"[coverage_gate] diagnostic_summary={diagnostic_summary_path.relative_to(repo_root)}")
+    print(f"[coverage_gate] summary={_display_path(summary_path, repo_root)}")
+    print(f"[coverage_gate] gaps={_display_path(gaps_path, repo_root)}")
+    print(
+        "[coverage_gate] diagnostic_summary="
+        f"{_display_path(diagnostic_summary_path, repo_root)}"
+    )
     print(
         "[coverage_gate] diagnostic_findings="
-        f"{diagnostic_findings_path.relative_to(repo_root)}"
+        f"{_display_path(diagnostic_findings_path, repo_root)}"
     )
     return exit_code
 

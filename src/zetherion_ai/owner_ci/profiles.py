@@ -89,7 +89,24 @@ def _local_gate(
     parallel_group: str = "local-cpu",
     timeout_seconds: int = 1200,
     required_paths: list[str] | None = None,
+    gate_kind: str | None = None,
 ) -> dict[str, Any]:
+    normalized_lane_id = lane_id.strip().lower()
+    inferred_gate_kind = gate_kind or (
+        "e2e"
+        if "e2e" in normalized_lane_id
+        else (
+            "integration"
+            if normalized_lane_id.startswith(("z-int", "c-int"))
+            or "integration" in normalized_lane_id
+            else (
+                "unit"
+                if normalized_lane_id.startswith(("z-unit", "c-unit"))
+                or "unit" in normalized_lane_id
+                else "static"
+            )
+        )
+    )
     return {
         "lane_id": lane_id,
         "lane_label": lane_label,
@@ -103,7 +120,7 @@ def _local_gate(
             "expects": ["stdout", "stderr"],
         },
         "metadata": {
-            "gate_kind": "static",
+            "gate_kind": inferred_gate_kind,
             "resource_class": resource_class,
             "parallel_group": parallel_group,
             "workspace_root": workspace_root,

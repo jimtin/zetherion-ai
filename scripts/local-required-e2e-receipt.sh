@@ -16,6 +16,7 @@ DISCORD_LOG_PATH="${DISCORD_LOG_PATH:-discord-e2e.log}"
 DISCORD_RESULT_PATH="${DISCORD_RESULT_PATH:-.artifacts/discord-e2e-last-run.json}"
 DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
 E2E_ENABLE_OLLAMA="${E2E_ENABLE_OLLAMA:-false}"
+OLLAMA_DOCKER_IMAGE="${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed}"
 CURRENT_HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 RECEIPT_HEAD_SHA="${LOCAL_E2E_RECEIPT_HEAD_SHA:-local}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
@@ -95,6 +96,25 @@ ensure_optional_ollama_profile() {
             export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}ollama"
             ;;
     esac
+}
+
+ensure_ollama_base_image() {
+    if [[ "$E2E_ENABLE_OLLAMA" != "true" ]]; then
+        return 0
+    fi
+
+    if docker image inspect "$OLLAMA_DOCKER_IMAGE" >/dev/null 2>&1; then
+        echo "Ollama base image already cached." >&2
+        return 0
+    fi
+
+    echo "Pulling Ollama base image for local-provider E2E..." >&2
+    echo "First-time pull can take several minutes." >&2
+    if ! docker pull "$OLLAMA_DOCKER_IMAGE"; then
+        echo "ERROR: Failed to pull Ollama base image." >&2
+        exit 1
+    fi
+    echo "Ollama base image ready." >&2
 }
 
 load_repo_env() {
@@ -347,6 +367,7 @@ start_external_docker_stack() {
     fi
 
     compose_down
+    ensure_ollama_base_image
     docker compose -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build >/dev/null
     DOCKER_STARTED_BY_SCRIPT=true
 
@@ -455,7 +476,6 @@ declare -a required_env=(
     "DISCORD_E2E_ENABLED"
     "DISCORD_E2E_ALLOWED_AUTHOR_IDS"
     "OPENAI_API_KEY"
-    "GEMINI_API_KEY"
 )
 provider_normalized="$(printf '%s' "$DISCORD_E2E_PROVIDER" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 if [[ -z "$provider_normalized" ]]; then

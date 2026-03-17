@@ -333,6 +333,21 @@ class TestInferenceStreamingProviderImplementations:
             ]
             assert [c.content for c in chunks] == ["x"]
 
+        with patch.object(broker, "_stream_groq", side_effect=lambda *_, **__: _token_stream()):
+            chunks = [
+                c
+                async for c in broker._stream_provider(
+                    provider=Provider.GROQ,
+                    prompt="p",
+                    task_type=TaskType.CONVERSATION,
+                    system_prompt=None,
+                    messages=None,
+                    max_tokens=32,
+                    temperature=0.7,
+                )
+            ]
+            assert [c.content for c in chunks] == ["x"]
+
         with patch.object(broker, "_stream_ollama", side_effect=lambda *_, **__: _token_stream()):
             chunks = [
                 c
@@ -347,6 +362,67 @@ class TestInferenceStreamingProviderImplementations:
                 )
             ]
             assert [c.content for c in chunks] == ["x"]
+
+    @pytest.mark.asyncio
+    async def test_stream_claude_requires_client_and_handles_empty_history(self) -> None:
+        with (
+            patch("zetherion_ai.agent.inference.get_settings", return_value=_settings()),
+            patch("zetherion_ai.agent.inference.httpx.AsyncClient", return_value=AsyncMock()),
+        ):
+            broker = InferenceBroker()
+
+        with pytest.raises(RuntimeError, match="Claude client not initialized"):
+            chunks = []
+            async for chunk in broker._stream_claude(
+                prompt="prompt",
+                task_type=TaskType.CONVERSATION,
+                system_prompt=None,
+                messages=None,
+                max_tokens=32,
+                temperature=0.2,
+            ):
+                chunks.append(chunk)
+
+        async def text_stream() -> AsyncGenerator[str, None]:
+            yield "Only"
+
+        final_message = MagicMock()
+        final_message.usage.input_tokens = 4
+        final_message.usage.output_tokens = 2
+
+        class FakeClaudeStream:
+            def __init__(self) -> None:
+                self.text_stream = text_stream()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_: object) -> None:
+                return None
+
+            async def get_final_message(self):
+                return final_message
+
+        claude_client = MagicMock()
+        claude_client.messages.stream = MagicMock(return_value=FakeClaudeStream())
+        broker._claude_client = claude_client
+        broker._claude_model = "claude-stream-model"
+
+        with patch("zetherion_ai.agent.inference.get_dynamic", return_value="claude-stream-model"):
+            chunks = [
+                c
+                async for c in broker._stream_claude(
+                    prompt="prompt",
+                    task_type=TaskType.CONVERSATION,
+                    system_prompt=None,
+                    messages=None,
+                    max_tokens=64,
+                    temperature=0.7,
+                )
+            ]
+
+        assert [c.content for c in chunks[:-1]] == ["Only"]
+        assert chunks[-1].done is True
 
     @pytest.mark.asyncio
     async def test_stream_claude_yields_tokens_and_done_metadata(self) -> None:
@@ -424,6 +500,7 @@ class TestInferenceStreamingProviderImplementations:
         openai_client = MagicMock()
         openai_client.chat.completions.create = AsyncMock(return_value=openai_stream())
         broker._openai_client = openai_client
+        broker._openai_model = "openai-stream-model"
 
         with patch("zetherion_ai.agent.inference.get_dynamic", return_value="openai-stream-model"):
             chunks = [
@@ -443,6 +520,115 @@ class TestInferenceStreamingProviderImplementations:
         assert chunks[-1].model == "openai-stream-model"
         assert chunks[-1].input_tokens == 22
         assert chunks[-1].output_tokens == 8
+
+    @pytest.mark.asyncio
+    async def test_stream_openai_missing_client_and_empty_metadata_paths(self) -> None:
+        with (
+            patch("zetherion_ai.agent.inference.get_settings", return_value=_settings()),
+            patch("zetherion_ai.agent.inference.httpx.AsyncClient", return_value=AsyncMock()),
+        ):
+            broker = InferenceBroker()
+
+        with pytest.raises(RuntimeError, match="OpenAI client not initialized"):
+            chunks = []
+            async for chunk in broker._stream_openai(
+                prompt="prompt",
+                task_type=TaskType.CONVERSATION,
+                system_prompt=None,
+                messages=None,
+                max_tokens=32,
+                temperature=0.2,
+            ):
+                chunks.append(chunk)
+
+        chunk_1 = MagicMock()
+        chunk_1.choices = []
+        chunk_1.usage = None
+        chunk_2 = MagicMock()
+        chunk_2.choices = [MagicMock(delta=MagicMock(content="done"))]
+        chunk_2.usage = MagicMock(prompt_tokens=9, completion_tokens=4)
+
+        async def openai_stream() -> AsyncGenerator[MagicMock, None]:
+            yield chunk_1
+            yield chunk_2
+
+        openai_client = MagicMock()
+        openai_client.chat.completions.create = AsyncMock(return_value=openai_stream())
+        broker._openai_client = openai_client
+        broker._openai_model = "openai-stream-model"
+
+        with patch("zetherion_ai.agent.inference.get_dynamic", return_value="openai-stream-model"):
+            chunks = [
+                c
+                async for c in broker._stream_openai(
+                    prompt="prompt",
+                    task_type=TaskType.CONVERSATION,
+                    system_prompt=None,
+                    messages=None,
+                    max_tokens=64,
+                    temperature=0.3,
+                )
+            ]
+
+        assert [c.content for c in chunks[:-1]] == ["done"]
+        assert chunks[-1].input_tokens == 9
+        assert chunks[-1].output_tokens == 4
+
+    @pytest.mark.asyncio
+    async def test_stream_groq_covers_missing_client_and_history_paths(self) -> None:
+        with (
+            patch(
+                "zetherion_ai.agent.inference.get_settings",
+                return_value=_settings(groq_key="gsk"),
+            ),
+            patch("zetherion_ai.agent.inference.httpx.AsyncClient", return_value=AsyncMock()),
+        ):
+            broker = InferenceBroker()
+
+        broker._groq_client = None
+        with pytest.raises(RuntimeError, match="Groq client not initialized"):
+            chunks = []
+            async for chunk in broker._stream_groq(
+                prompt="prompt",
+                task_type=TaskType.CONVERSATION,
+                system_prompt=None,
+                messages=None,
+                max_tokens=32,
+                temperature=0.2,
+            ):
+                chunks.append(chunk)
+
+        chunk_1 = MagicMock()
+        chunk_1.choices = [MagicMock(delta=MagicMock(content="hi"))]
+        chunk_1.usage = None
+        chunk_2 = MagicMock()
+        chunk_2.choices = [MagicMock(delta=MagicMock(content=" there"))]
+        chunk_2.usage = MagicMock(prompt_tokens=10, completion_tokens=5)
+
+        async def groq_stream() -> AsyncGenerator[MagicMock, None]:
+            yield chunk_1
+            yield chunk_2
+
+        groq_client = MagicMock()
+        groq_client.chat.completions.create = AsyncMock(return_value=groq_stream())
+        broker._groq_client = groq_client
+
+        with patch("zetherion_ai.agent.inference.get_dynamic", return_value="groq-stream-model"):
+            chunks = [
+                c
+                async for c in broker._stream_groq(
+                    prompt="prompt",
+                    task_type=TaskType.CONVERSATION,
+                    system_prompt=None,
+                    messages=[{"role": "assistant", "content": "history"}],
+                    max_tokens=64,
+                    temperature=0.3,
+                )
+            ]
+
+        assert [c.content for c in chunks[:-1]] == ["hi", " there"]
+        assert chunks[-1].input_tokens == 10
+        assert chunks[-1].output_tokens == 5
 
     @pytest.mark.asyncio
     async def test_stream_ollama_yields_tokens_and_done_usage(self) -> None:
@@ -489,6 +675,48 @@ class TestInferenceStreamingProviderImplementations:
         assert chunks[-1].model == "ollama-stream-model"
         assert chunks[-1].input_tokens == 5
         assert chunks[-1].output_tokens == 3
+
+    @pytest.mark.asyncio
+    async def test_stream_ollama_without_system_prompt_or_history(self) -> None:
+        with (
+            patch("zetherion_ai.agent.inference.get_settings", return_value=_settings()),
+            patch("zetherion_ai.agent.inference.httpx.AsyncClient", return_value=AsyncMock()),
+        ):
+            broker = InferenceBroker()
+
+        class FakeOllamaResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            async def aiter_lines(self) -> AsyncGenerator[str, None]:
+                yield '{"done": true, "prompt_eval_count": 1, "eval_count": 2}'
+
+        class FakeOllamaStreamCM:
+            async def __aenter__(self):
+                return FakeOllamaResponse()
+
+            async def __aexit__(self, *_: object) -> None:
+                return None
+
+        broker._httpx_client.stream = MagicMock(return_value=FakeOllamaStreamCM())
+
+        with patch("zetherion_ai.agent.inference.get_dynamic", return_value="ollama-stream-model"):
+            chunks = [
+                c
+                async for c in broker._stream_ollama(
+                    prompt="prompt",
+                    task_type=TaskType.CONVERSATION,
+                    system_prompt=None,
+                    messages=None,
+                    max_tokens=80,
+                    temperature=0.2,
+                )
+            ]
+
+        payload = broker._httpx_client.stream.call_args.kwargs["json"]
+        assert payload["messages"] == [{"role": "user", "content": "prompt"}]
+        assert chunks[-1].input_tokens == 1
+        assert chunks[-1].output_tokens == 2
 
     @pytest.mark.asyncio
     async def test_call_claude_and_openai_include_history_messages(self) -> None:
@@ -573,6 +801,58 @@ class TestInferenceStreamingProviderImplementations:
             gemini_client.models.generate_content.call_args.kwargs["contents"]
             == "system prompt\n\nhello"
         )
+
+    @pytest.mark.asyncio
+    async def test_call_provider_routes_to_groq_and_call_groq_without_system_prompt(self) -> None:
+        with (
+            patch(
+                "zetherion_ai.agent.inference.get_settings",
+                return_value=_settings(groq_key="gsk"),
+            ),
+            patch("zetherion_ai.agent.inference.httpx.AsyncClient", return_value=AsyncMock()),
+        ):
+            broker = InferenceBroker()
+
+        expected = InferenceResult(
+            content="groq result",
+            provider=Provider.GROQ,
+            task_type=TaskType.SIMPLE_QA,
+            model="groq-test",
+        )
+        with patch.object(broker, "_call_groq", AsyncMock(return_value=expected)) as mock_call_groq:
+            result = await broker._call_provider(
+                provider=Provider.GROQ,
+                prompt="hello",
+                task_type=TaskType.SIMPLE_QA,
+                system_prompt=None,
+                messages=None,
+                max_tokens=32,
+                temperature=0.1,
+            )
+
+        assert result is expected
+        mock_call_groq.assert_awaited_once()
+
+        groq_client = MagicMock()
+        groq_response = MagicMock()
+        groq_response.choices = [MagicMock(message=MagicMock(content="Groq response"))]
+        groq_response.usage = MagicMock(prompt_tokens=7, completion_tokens=5)
+        groq_client.chat.completions.create = AsyncMock(return_value=groq_response)
+        broker._groq_client = groq_client
+
+        with patch("zetherion_ai.agent.inference.get_dynamic", return_value="groq-call-model"):
+            groq_result = await broker._call_groq(
+                prompt="hello",
+                task_type=TaskType.SIMPLE_QA,
+                system_prompt=None,
+                messages=[{"role": "assistant", "content": "history"}],
+                max_tokens=64,
+                temperature=0.2,
+            )
+
+        assert groq_result.content == "Groq response"
+        groq_messages = groq_client.chat.completions.create.call_args.kwargs["messages"]
+        assert groq_messages[0] == {"role": "assistant", "content": "history"}
 
 
 class TestInferenceAncillaryBranches:

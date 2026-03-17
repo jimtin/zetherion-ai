@@ -179,6 +179,7 @@ E2E_ENABLE_OLLAMA="${E2E_ENABLE_OLLAMA:-false}"
 RUN_BANDIT_CHECK="${RUN_BANDIT_CHECK:-true}"
 RUN_LICENSE_COMPLIANCE_CHECK="${RUN_LICENSE_COMPLIANCE_CHECK:-true}"
 OLLAMA_PULL_PROFILE="none"
+OLLAMA_DOCKER_IMAGE="${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed}"
 EMBEDDINGS_BACKEND="${EMBEDDINGS_BACKEND:-openai}"
 OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}"
 OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
@@ -187,6 +188,12 @@ PIPAUDIT_TIMEOUT_SECONDS="${PIPAUDIT_TIMEOUT_SECONDS:-300}"
 STATIC_TIMEOUT_SECONDS="${STATIC_TIMEOUT_SECONDS:-600}"
 COVERAGE_MINIMUM="${COVERAGE_MINIMUM:-90}"
 COVERAGE_ARTIFACTS_DIR="${COVERAGE_ARTIFACTS_DIR:-.artifacts/coverage}"
+VALIDATION_ARTIFACTS_DIR="${VALIDATION_ARTIFACTS_DIR:-.artifacts/validation}"
+VALIDATION_MATRIX_PATH="${VALIDATION_MATRIX_PATH:-$VALIDATION_ARTIFACTS_DIR/validation-matrix.json}"
+COMBINED_SYSTEM_SUMMARY_PATH="${COMBINED_SYSTEM_SUMMARY_PATH:-$VALIDATION_ARTIFACTS_DIR/combined-system-summary.json}"
+VALIDATION_SCOPE="${VALIDATION_SCOPE:-full}"
+RUN_COMBINED_SYSTEM_VALIDATION="${RUN_COMBINED_SYSTEM_VALIDATION:-auto}"
+COMBINED_SYSTEM_MAX_PARALLEL="${COMBINED_SYSTEM_MAX_PARALLEL:-2}"
 
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/e2e_run_manager.sh"
@@ -211,6 +218,11 @@ normalize_bool() {
     esac
 }
 
+normalize_choice() {
+    local value="${1:-}"
+    printf '%s\n' "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+}
+
 ensure_optional_ollama_profile() {
     E2E_ENABLE_OLLAMA="$(normalize_bool "$E2E_ENABLE_OLLAMA")"
     export E2E_ENABLE_OLLAMA
@@ -226,6 +238,25 @@ ensure_optional_ollama_profile() {
             export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}ollama"
             ;;
     esac
+}
+
+ensure_ollama_base_image() {
+    if [ "$E2E_ENABLE_OLLAMA" != "true" ]; then
+        return 0
+    fi
+
+    if docker image inspect "$OLLAMA_DOCKER_IMAGE" >/dev/null 2>&1; then
+        echo "[$(ts)] [docker] Ollama base image already cached."
+        return 0
+    fi
+
+    echo "[$(ts)] [docker] Pulling Ollama base image for local-provider E2E..."
+    echo "[$(ts)] [docker] First-time pull can take several minutes."
+    if ! docker pull "$OLLAMA_DOCKER_IMAGE"; then
+        echo "DOCKER_ERROR: Failed to pull Ollama base image" > "$DOCKER_LOG"
+        return 1
+    fi
+    echo "[$(ts)] [docker] Ollama base image ready."
 }
 
 ensure_python_ca_bundle() {
@@ -414,6 +445,10 @@ start_docker_background() {
     echo "[$(ts)] [docker] Tearing down any stale test environment..."
     compose_down
 
+    if ! ensure_ollama_base_image; then
+        return 1
+    fi
+
     echo "[$(ts)] [docker] Building and starting containers..."
     docker compose -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build 2>&1 | tail -5
 
@@ -523,6 +558,19 @@ echo "  Pre-push: Full test suite"
 echo "  Started at $(ts)"
 echo "========================================"
 
+VALIDATION_SCOPE="$(normalize_choice "$VALIDATION_SCOPE")"
+RUN_COMBINED_SYSTEM_VALIDATION="$(normalize_choice "$RUN_COMBINED_SYSTEM_VALIDATION")"
+if [ "$VALIDATION_SCOPE" != "full" ] && [ "$VALIDATION_SCOPE" != "offline" ]; then
+    echo "[$(ts)] ERROR: VALIDATION_SCOPE must be 'full' or 'offline' (got '$VALIDATION_SCOPE')."
+    exit 1
+fi
+if [ "$RUN_COMBINED_SYSTEM_VALIDATION" != "true" ] \
+    && [ "$RUN_COMBINED_SYSTEM_VALIDATION" != "false" ] \
+    && [ "$RUN_COMBINED_SYSTEM_VALIDATION" != "auto" ]; then
+    echo "[$(ts)] ERROR: RUN_COMBINED_SYSTEM_VALIDATION must be 'true', 'false', or 'auto' (got '$RUN_COMBINED_SYSTEM_VALIDATION')."
+    exit 1
+fi
+
 DISCORD_E2E_PROVIDER="$(printf '%s' "$DISCORD_E2E_PROVIDER" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 RUN_DISCORD_E2E_LOCAL_MODEL="$(printf '%s' "$RUN_DISCORD_E2E_LOCAL_MODEL" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 if [ "$DISCORD_E2E_PROVIDER" != "groq" ] && [ "$DISCORD_E2E_PROVIDER" != "local" ]; then
@@ -548,16 +596,57 @@ fi
 ensure_optional_ollama_profile
 echo "[$(ts)] Discord E2E provider mode: $DISCORD_E2E_PROVIDER (ROUTER_BACKEND=$ROUTER_BACKEND, OLLAMA_PULL_PROFILE=$OLLAMA_PULL_PROFILE)"
 
-if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
-    REPO_ENV_FILE="$(resolve_repo_env_file || true)"
-    if [ -n "$REPO_ENV_FILE" ]; then
-        source_repo_env_file "$REPO_ENV_FILE"
-    fi
-    # Canonical full gate runs cloud embeddings only (OpenAI), never local embedding pulls.
-    EMBEDDINGS_BACKEND="openai"
-    OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}"
-    OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
+REPO_ENV_FILE="$(resolve_repo_env_file || true)"
+if [ -n "$REPO_ENV_FILE" ]; then
+    source_repo_env_file "$REPO_ENV_FILE"
+fi
 
+mkdir -p "$VALIDATION_ARTIFACTS_DIR"
+if ! "$PYTHON_BIN" "$SCRIPT_DIR/testing/compile_validation_matrix.py" \
+    --output "$VALIDATION_MATRIX_PATH"; then
+    echo "[$(ts)] ERROR: Failed to compile validation matrix artifact."
+    exit 1
+fi
+echo "[$(ts)] Validation matrix written to $VALIDATION_MATRIX_PATH"
+
+COMBINED_SYSTEM_AVAILABLE="$("$PYTHON_BIN" - <<'PY' "$VALIDATION_MATRIX_PATH"
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+mode = next(
+    (item for item in payload.get("modes", []) if item.get("mode_id") == "combined_system"),
+    None,
+)
+print("true" if mode and mode.get("available") else "false")
+PY
+)"
+if [ "$RUN_COMBINED_SYSTEM_VALIDATION" = "true" ] && [ "$COMBINED_SYSTEM_AVAILABLE" != "true" ]; then
+    echo "[$(ts)] ERROR: combined-system validation was requested but is unavailable in $VALIDATION_MATRIX_PATH."
+    exit 1
+fi
+if [ "$VALIDATION_SCOPE" = "offline" ]; then
+    echo "[$(ts)] Validation scope: offline (static + security + unit + integration + combined_system)"
+else
+    echo "[$(ts)] Validation scope: full"
+fi
+
+# Canonical full gate runs cloud embeddings only (OpenAI), never local embedding pulls.
+EMBEDDINGS_BACKEND="openai"
+OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}"
+OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
+require_env_var "OPENAI_API_KEY"
+
+if [ "$VALIDATION_SCOPE" = "full" ]; then
+    if [ "$ROUTER_BACKEND" = "groq" ]; then
+        require_env_var "GROQ_API_KEY"
+    elif [ "$ROUTER_BACKEND" = "gemini" ]; then
+        require_env_var "GEMINI_API_KEY"
+    fi
+fi
+
+if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
     require_env_var "TEST_DISCORD_BOT_TOKEN"
     DISCORD_E2E_ENABLED="${DISCORD_E2E_ENABLED:-true}"
     DISCORD_E2E_GUILD_ID="${DISCORD_E2E_GUILD_ID:-${TEST_DISCORD_GUILD_ID:-}}"
@@ -574,10 +663,6 @@ if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
     if [ -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" ] && [ -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]; then
         echo "[$(ts)] ERROR: Set TEST_DISCORD_E2E_CATEGORY_ID or TEST_DISCORD_E2E_CATEGORY_NAME for isolated Discord E2E runs."
         exit 1
-    fi
-    require_env_var "OPENAI_API_KEY"
-    if [ "$DISCORD_E2E_PROVIDER" = "groq" ]; then
-        require_env_var "GROQ_API_KEY"
     fi
 fi
 export EMBEDDINGS_BACKEND OPENAI_EMBEDDING_MODEL OPENAI_EMBEDDING_DIMENSIONS
@@ -596,18 +681,22 @@ if [ "${SKIP_LOCAL_SOCKET_PREFLIGHT:-false}" != "true" ]; then
     fi
 fi
 
-start_e2e_run
-echo "[$(ts)] Isolated E2E run: run_id=${E2E_RUN_ID} project=${PROJECT} stack_root=${E2E_STACK_ROOT}"
+if [ "$VALIDATION_SCOPE" = "full" ]; then
+    start_e2e_run
+    echo "[$(ts)] Isolated E2E run: run_id=${E2E_RUN_ID} project=${PROJECT} stack_root=${E2E_STACK_ROOT}"
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase A: Start Docker in background, run fast tests in foreground
 # ═══════════════════════════════════════════════════════════════════
 
-echo ""
-echo "[$(ts)] Starting Docker environment in background..."
-start_docker_background &
-DOCKER_PID=$!
-DOCKER_STARTED_BY_US=true
+if [ "$VALIDATION_SCOPE" = "full" ]; then
+    echo ""
+    echo "[$(ts)] Starting Docker environment in background..."
+    start_docker_background &
+    DOCKER_PID=$!
+    DOCKER_STARTED_BY_US=true
+fi
 
 # ── Step 1: Static analysis (parallel) ────────────────────────────
 # Catches: ruff lint+format, bandit, gitleaks, hadolint, licenses,
@@ -651,6 +740,14 @@ start_static_check "docs build strict" "$PYTHON_BIN -m mkdocs build --strict"
 
 if command -v gitleaks >/dev/null 2>&1; then
     start_static_check "gitleaks" "gitleaks detect --no-git --redact --config=.gitleaks.toml"
+elif docker info >/dev/null 2>&1; then
+    start_static_check \
+        "gitleaks" \
+        "docker run --rm -v \"$(pwd):/repo\" -w /repo zricethezav/gitleaks:v8.24.2 detect --source . --no-git --redact --config=.gitleaks.toml"
+elif [ "$STRICT_REQUIRED_TESTS" = "true" ]; then
+    echo "[$(ts)] ERROR: gitleaks is required for the canonical gate."
+    echo "[$(ts)] Install gitleaks locally or run with Docker available for the containerized fallback."
+    exit 1
 else
     echo "  [skip] gitleaks not installed (install: brew install gitleaks)"
 fi
@@ -843,6 +940,28 @@ fi
 rm -f "$INTEGRATION_LOG"
 echo "[$(ts)] [3/5] Integration tests passed."
 
+if [ "$RUN_COMBINED_SYSTEM_VALIDATION" != "false" ] && [ "$COMBINED_SYSTEM_AVAILABLE" = "true" ]; then
+    echo ""
+    echo "[$(ts)] [3.5/5] Combined-system validation..."
+    if ! "$PYTHON_BIN" "$SCRIPT_DIR/testing/run_combined_system_lane.py" \
+        --all \
+        --max-parallel "$COMBINED_SYSTEM_MAX_PARALLEL" \
+        --output "$COMBINED_SYSTEM_SUMMARY_PATH"; then
+        echo "[$(ts)] ERROR: combined-system validation failed."
+        exit 1
+    fi
+    echo "[$(ts)] [3.5/5] Combined-system validation passed."
+    echo "[$(ts)] Combined-system summary written to $COMBINED_SYSTEM_SUMMARY_PATH"
+elif [ "$RUN_COMBINED_SYSTEM_VALIDATION" = "auto" ]; then
+    echo ""
+    echo "[$(ts)] [3.5/5] Combined-system validation skipped (not available in current workspace)."
+fi
+
+if [ "$VALIDATION_SCOPE" = "offline" ]; then
+    echo ""
+    echo "[$(ts)] Skipping E2E phases in offline validation scope."
+else
+
 # ═══════════════════════════════════════════════════════════════════
 # Phase B: Wait for Docker, run ALL E2E tests concurrently
 # ═══════════════════════════════════════════════════════════════════
@@ -865,7 +984,7 @@ echo "[$(ts)] Docker environment confirmed ready."
 
 # ── Step 3.5: E2E smoke preflight ─────────────────────────────────
 echo ""
-echo "[$(ts)] [3.5/5] E2E smoke preflight..."
+echo "[$(ts)] [3.6/5] E2E smoke preflight..."
 
 DOCKER_SMOKE_LOG="$(mktemp)"
 DISCORD_SMOKE_LOG="$(mktemp)"
@@ -912,7 +1031,7 @@ if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
 fi
 
 rm -f "$DOCKER_SMOKE_LOG" "$DISCORD_SMOKE_LOG"
-echo "[$(ts)] [3.5/5] E2E smoke preflight passed."
+echo "[$(ts)] [3.6/5] E2E smoke preflight passed."
 
 # ── Step 4: Required Docker E2E tests (concurrent) ────────────────
 echo ""
@@ -1062,11 +1181,18 @@ fi
 
 echo "[$(ts)] [4/5] All E2E tests passed."
 
+fi
+
 # ── Step 4.5: Combined coverage gate ─────────────────────────────
 echo ""
 echo "[$(ts)] [4.5/5] Combined coverage report..."
 
-mapfile -t COVERAGE_DATA_FILES < <(find . -maxdepth 1 -type f -name '.coverage*' | sort)
+COVERAGE_DATA_FILES=()
+while IFS= read -r coverage_file; do
+    if [ -n "$coverage_file" ]; then
+        COVERAGE_DATA_FILES+=("$coverage_file")
+    fi
+done < <(find . -maxdepth 1 -type f -name '.coverage*' | sort)
 if [ "${#COVERAGE_DATA_FILES[@]}" -gt 1 ]; then
     if ! run_python_module coverage combine > /dev/null 2>&1; then
         echo "[$(ts)] ERROR: Failed to combine coverage data."

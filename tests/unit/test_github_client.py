@@ -547,6 +547,39 @@ class TestGitHubClientAdditionalCoverage:
     """Additional branch-focused tests for GitHub client methods."""
 
     @pytest.mark.asyncio
+    async def test_get_client_recreates_closed_client(self, client):
+        """A closed cached client should be replaced on the next access."""
+        closed_client = MagicMock()
+        closed_client.is_closed = True
+        client._client = closed_client
+
+        recreated = await client._get_client()
+
+        assert recreated is not closed_client
+        assert client._client is recreated
+
+        open_client = MagicMock()
+        open_client.is_closed = False
+        client._client = open_client
+
+        reused = await client._get_client()
+
+        assert reused is open_client
+
+    @pytest.mark.asyncio
+    async def test_get_client_reuses_open_cached_client_without_recreating(self, client):
+        """An open cached client should be returned without constructing a new one."""
+        cached_client = MagicMock()
+        cached_client.is_closed = False
+        client._client = cached_client
+
+        with patch("zetherion_ai.skills.github.client.httpx.AsyncClient") as mock_http_client:
+            reused = await client._get_client()
+
+        assert reused is cached_client
+        mock_http_client.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_close_without_client_is_noop(self, client):
         """Closing an uninitialized client should be a no-op."""
         await client.close()
@@ -625,12 +658,69 @@ class TestGitHubClientAdditionalCoverage:
                 await client.get_authenticated_user()
 
     @pytest.mark.asyncio
-    async def test_get_repository_and_get_issue_unexpected_response_raise(self, client):
+    async def test_repository_issue_and_pull_request_success_and_empty_paths(self, client):
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(
+                side_effect=[
+                    {
+                        "id": 1,
+                        "name": "repo",
+                        "full_name": "owner/repo",
+                        "private": False,
+                        "default_branch": "main",
+                    },
+                    {"number": 1, "title": "Issue", "state": "open"},
+                    {"number": 12, "title": "PR", "state": "open"},
+                    [{"id": 1, "name": "repo", "full_name": "owner/repo"}],
+                    {"required_status_checks": {"strict": True}},
+                ]
+            ),
+        ) as mock_request:
+            repository = await client.get_repository("owner", "repo")
+            issue = await client.get_issue("owner", "repo", 1)
+            pull_request = await client.get_pull_request("owner", "repo", 12)
+            repositories = await client.list_repositories()
+            protection = await client.update_branch_protection(
+                "owner",
+                "repo",
+                branch="main",
+                payload={"required_status_checks": {"strict": True}},
+            )
+
+        assert repository.full_name == "owner/repo"
+        assert issue.number == 1
+        assert pull_request.number == 12
+        assert repositories[0].full_name == "owner/repo"
+        assert protection["required_status_checks"]["strict"] is True
+        assert mock_request.await_count == 5
+
         with patch.object(client, "_request", AsyncMock(return_value=[])):
             with pytest.raises(GitHubAPIError):
                 await client.get_repository("owner", "repo")
             with pytest.raises(GitHubAPIError):
                 await client.get_issue("owner", "repo", 1)
+            with pytest.raises(GitHubAPIError):
+                await client.get_pull_request("owner", "repo", 12)
+            with pytest.raises(GitHubAPIError):
+                await client.update_branch_protection(
+                    "owner",
+                    "repo",
+                    branch="main",
+                    payload={"required_status_checks": {"strict": True}},
+                )
+
+        with patch.object(client, "list_pull_requests", AsyncMock(return_value=[])):
+            assert (
+                await client.find_open_pull_request(
+                    "owner",
+                    "repo",
+                    head="feature",
+                    base="main",
+                )
+                is None
+            )
 
     @pytest.mark.asyncio
     async def test_list_repositories_returns_empty_for_non_list(self, client):
@@ -898,6 +988,18 @@ class TestGitHubClientAdditionalCoverage:
             payload = mock_req.await_args.kwargs["json"]
             assert payload == {"ref": "refs/heads/feature", "sha": "abc"}
 
+        with pytest.raises(ValueError, match="ref is required"):
+            await client.get_reference("owner", "repo", "")
+
+        with patch.object(client, "_request", AsyncMock(return_value=[])):
+            with pytest.raises(GitHubAPIError):
+                await client.create_reference(
+                    "owner",
+                    "repo",
+                    ref="heads/feature",
+                    sha="abc",
+                )
+
     @pytest.mark.asyncio
     async def test_ensure_branch_existing_and_create_paths(self, client):
         with patch.object(
@@ -941,6 +1043,133 @@ class TestGitHubClientAdditionalCoverage:
             )
             assert ensured["created"] is True
             assert ensured["sha"] == "source-sha"
+
+        with pytest.raises(ValueError, match="branch is required"):
+            await client.ensure_branch("owner", "repo", branch="", source_ref="main")
+
+        with (
+            patch.object(client, "get_reference", AsyncMock(return_value=None)),
+            pytest.raises(ValueError, match="source_ref is required"),
+        ):
+            await client.ensure_branch("owner", "repo", branch="feature", source_ref="")
+
+        with patch.object(
+            client,
+            "get_reference",
+            AsyncMock(return_value={"ref": "refs/heads/feature", "object": "bad"}),
+        ):
+            ensured = await client.ensure_branch(
+                "owner",
+                "repo",
+                branch="feature",
+                source_ref="main",
+            )
+            assert ensured["sha"] == ""
+
+        with (
+            patch.object(
+                client,
+                "get_reference",
+                AsyncMock(
+                    side_effect=[
+                        None,
+                        None,
+                    ]
+                ),
+            ),
+            pytest.raises(GitHubNotFoundError, match="Source ref not found"),
+        ):
+            await client.ensure_branch(
+                "owner",
+                "repo",
+                branch="feature",
+                source_ref="refs/heads/main",
+            )
+
+        with (
+            patch.object(
+                client,
+                "get_reference",
+                AsyncMock(
+                    side_effect=[
+                        None,
+                        {"ref": "refs/heads/main", "object": "bad"},
+                    ]
+                ),
+            ),
+            pytest.raises(GitHubAPIError, match="Source ref payload is malformed"),
+        ):
+            await client.ensure_branch("owner", "repo", branch="feature", source_ref="heads/main")
+
+        with (
+            patch.object(
+                client,
+                "get_reference",
+                AsyncMock(
+                    side_effect=[
+                        None,
+                        {"ref": "refs/heads/main", "object": {"sha": ""}},
+                    ]
+                ),
+            ),
+            pytest.raises(GitHubAPIError, match="Source ref did not include an object sha"),
+        ):
+            await client.ensure_branch("owner", "repo", branch="feature", source_ref="main")
+
+        with (
+            patch.object(
+                client,
+                "get_reference",
+                AsyncMock(
+                    side_effect=[
+                        None,
+                        {"ref": "refs/heads/main", "object": {"sha": "source-sha"}},
+                    ]
+                ),
+            ),
+            patch.object(
+                client,
+                "create_reference",
+                AsyncMock(return_value={"ref": "refs/heads/feature"}),
+            ),
+        ):
+            ensured = await client.ensure_branch(
+                "owner",
+                "repo",
+                branch="feature",
+                source_ref="main",
+            )
+            assert ensured["sha"] == "source-sha"
+
+    @pytest.mark.asyncio
+    async def test_installation_compare_and_branch_protection_unexpected_response_paths(
+        self,
+        client,
+    ):
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(side_effect=[{"repositories": {}}, [], []]),
+        ):
+            repositories = await client.list_installation_repositories()
+            assert repositories == []
+
+            with pytest.raises(GitHubAPIError):
+                await client.compare_commits("owner", "repo", base="main", head="feature")
+
+            with pytest.raises(GitHubAPIError):
+                await client.get_branch_protection("owner", "repo", branch="main")
+
+        with pytest.raises(ValueError, match="branch is required"):
+            await client.update_branch_protection(
+                "owner",
+                "repo",
+                branch="",
+                payload={"required_status_checks": {"strict": True}},
+            )
+
+        with patch.object(client, "_request", AsyncMock(return_value=[])):
+            assert await client.list_installation_repositories() == []
 
     @pytest.mark.asyncio
     async def test_create_find_pr_files_and_check_runs_paths(self, client):
@@ -1001,6 +1230,14 @@ class TestGitHubClientAdditionalCoverage:
             files = await client.list_pull_request_files("owner", "repo", 1)
             assert files[0]["filename"] == "src/app.py"
 
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value=[{"filename": "src/app.py"}, "bad-row"]),
+        ):
+            files = await client.list_pull_request_files("owner", "repo", 1)
+            assert files == [{"filename": "src/app.py"}]
+
         with pytest.raises(ValueError, match="ref is required"):
             await client.list_check_runs("owner", "repo", ref="")
 
@@ -1015,3 +1252,255 @@ class TestGitHubClientAdditionalCoverage:
         with patch.object(client, "_request", AsyncMock(return_value={})):
             runs = await client.list_check_runs("owner", "repo", ref="main")
             assert runs == []
+
+        with patch.object(client, "_request", AsyncMock(return_value={"check_runs": "bad"})):
+            runs = await client.list_check_runs("owner", "repo", ref="main")
+            assert runs == []
+
+    @pytest.mark.asyncio
+    async def test_github_client_remaining_helper_branches(self, client):
+        with patch.object(client, "_request", AsyncMock(return_value=[])):
+            with pytest.raises(GitHubAPIError):
+                await client.get_reference("owner", "repo", "heads/main")
+            with pytest.raises(GitHubAPIError):
+                await client.create_pull_request(
+                    "owner",
+                    "repo",
+                    title="PR",
+                    head="feature",
+                    base="main",
+                )
+            with pytest.raises(GitHubAPIError):
+                await client.get_workflow_run("owner", "repo", 1)
+            with pytest.raises(GitHubAPIError):
+                await client.create_commit_status(
+                    "owner",
+                    "repo",
+                    "a" * 40,
+                    state="success",
+                    context="zetherion/check",
+                    description="ready",
+                )
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value={"id": 1}),
+        ) as mock_request:
+            status = await client.create_commit_status(
+                "owner",
+                "repo",
+                "a" * 40,
+                state="success",
+                context="zetherion/check",
+                description="ready",
+            )
+            assert status["id"] == 1
+            assert "target_url" not in mock_request.await_args.kwargs["json_body"]
+
+        diff_response = MagicMock(spec=httpx.Response)
+        diff_response.status_code = 200
+        diff_response.text = "diff --git a/file b/file"
+        diff_client = AsyncMock()
+        diff_client.get.return_value = diff_response
+        with patch.object(client, "_get_client", AsyncMock(return_value=diff_client)):
+            diff = await client.get_pr_diff("owner", "repo", 9)
+            assert "diff --git" in diff
+
+        with patch.object(client, "_request", AsyncMock(return_value={"jobs": "bad"})):
+            assert await client.list_workflow_jobs("owner", "repo", 7) == []
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value={"jobs": [{"id": 1}, "bad"]}),
+        ):
+            assert await client.list_workflow_jobs("owner", "repo", 7) == [{"id": 1}]
+
+        with patch.object(client, "_request", AsyncMock(return_value={"artifacts": "bad"})):
+            assert await client.list_workflow_run_artifacts("owner", "repo", 7) == []
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value={"artifacts": [{"id": 2}, "bad"]}),
+        ):
+            assert await client.list_workflow_run_artifacts("owner", "repo", 7) == [{"id": 2}]
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value=[{"name": "triage", "color": "cccccc"}]),
+        ):
+            labels = await client.list_labels("owner", "repo")
+            assert labels[0].name == "triage"
+
+    @pytest.mark.asyncio
+    async def test_download_workflow_run_logs_handles_empty_and_truncated_archives(self, client):
+        empty_response = MagicMock(spec=httpx.Response)
+        empty_response.content = b""
+
+        archive_buffer = io.BytesIO()
+        with zipfile.ZipFile(archive_buffer, "w") as archive:
+            archive.writestr("logs/", "")
+            archive.writestr("logs/unit.txt", "A" * 20)
+            archive.writestr("logs/worker.txt", "B" * 20)
+
+        archive_response = MagicMock(spec=httpx.Response)
+        archive_response.content = archive_buffer.getvalue()
+
+        with patch.object(
+            client,
+            "_send",
+            AsyncMock(side_effect=[empty_response, archive_response]),
+        ):
+            empty_logs = await client.download_workflow_run_logs("owner", "repo", 1)
+            truncated_logs = await client.download_workflow_run_logs(
+                "owner",
+                "repo",
+                2,
+                max_bytes=10,
+            )
+
+        assert empty_logs == {"entries": [], "combined_text": "", "truncated": False}
+        assert truncated_logs["truncated"] is True
+        assert len(truncated_logs["entries"]) == 1
+        assert truncated_logs["entries"][0]["name"] == "logs/unit.txt"
+        assert all(entry["name"] != "logs/" for entry in truncated_logs["entries"])
+
+    @pytest.mark.asyncio
+    async def test_remaining_github_client_response_shape_guards(self, client):
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(
+                side_effect=[
+                    [],
+                    "bad",
+                    [],
+                    {},
+                    "bad",
+                    {"jobs": "bad"},
+                    "bad",
+                    {"artifacts": "bad"},
+                    "bad",
+                    {"check_runs": "bad"},
+                    [],
+                    {"id": 1},
+                    [],
+                ]
+            ),
+        ) as mock_request:
+            with pytest.raises(GitHubAPIError, match="Unexpected response format"):
+                await client.get_reference("owner", "repo", "heads/main")
+
+            assert await client.list_installation_repositories() == []
+
+            with pytest.raises(GitHubAPIError, match="Unexpected response format"):
+                await client.create_pull_request(
+                    "owner",
+                    "repo",
+                    title="PR",
+                    head="feature",
+                    base="main",
+                )
+
+            assert await client.list_pull_request_files("owner", "repo", 7) == []
+            assert await client.list_workflow_jobs("owner", "repo", 7) == []
+            assert await client.list_workflow_jobs("owner", "repo", 7) == []
+            assert await client.list_workflow_run_artifacts("owner", "repo", 7) == []
+            assert await client.list_workflow_run_artifacts("owner", "repo", 7) == []
+            assert await client.list_check_runs("owner", "repo", ref="main") == []
+            assert await client.list_check_runs("owner", "repo", ref="main") == []
+
+            with pytest.raises(GitHubAPIError, match="Unexpected response format"):
+                await client.create_commit_status(
+                    "owner",
+                    "repo",
+                    "a" * 40,
+                    state="success",
+                    context="zetherion/check",
+                    description="ready",
+                )
+
+            status = await client.create_commit_status(
+                "owner",
+                "repo",
+                "a" * 40,
+                state="success",
+                context="zetherion/check",
+                description="ready",
+                target_url="https://cgs.example.com/runs/1",
+            )
+            assert status["id"] == 1
+            assert mock_request.await_args_list[11].kwargs["json_body"]["target_url"].startswith(
+                "https://cgs.example.com/"
+            )
+
+            assert await client.list_labels("owner", "repo") == []
+
+    @pytest.mark.asyncio
+    async def test_remaining_github_client_success_edge_paths(self, client):
+        diff_response = MagicMock(spec=httpx.Response)
+        diff_response.status_code = 200
+        diff_response.text = "diff --git a/file b/file\n+added"
+
+        diff_client = AsyncMock()
+        diff_client.get.return_value = diff_response
+
+        empty_logs_response = MagicMock(spec=httpx.Response)
+        empty_logs_response.content = b""
+
+        archive_buffer = io.BytesIO()
+        with zipfile.ZipFile(archive_buffer, "w") as archive:
+            archive.writestr("logs/", "")
+            archive.writestr("logs/unit.txt", "A" * 20)
+            archive.writestr("logs/worker.txt", "B" * 20)
+
+        archive_response = MagicMock(spec=httpx.Response)
+        archive_response.content = archive_buffer.getvalue()
+
+        with (
+            patch.object(client, "_get_client", AsyncMock(return_value=diff_client)),
+            patch.object(
+                client,
+                "_send",
+                AsyncMock(side_effect=[empty_logs_response, archive_response]),
+            ),
+            patch.object(
+                client,
+                "_request",
+                AsyncMock(
+                    side_effect=[
+                        {"id": 77},
+                        [{"name": "triage", "color": "cccccc"}],
+                    ]
+                ),
+            ) as mock_request,
+        ):
+            diff = await client.get_pr_diff("owner", "repo", 9)
+            empty_logs = await client.download_workflow_run_logs("owner", "repo", 1)
+            truncated_logs = await client.download_workflow_run_logs(
+                "owner",
+                "repo",
+                2,
+                max_bytes=10,
+            )
+            status = await client.create_commit_status(
+                "owner",
+                "repo",
+                "b" * 40,
+                state="success",
+                context="zetherion/check",
+                description="ready",
+            )
+            labels = await client.list_labels("owner", "repo")
+
+        assert diff.startswith("diff --git")
+        assert empty_logs == {"entries": [], "combined_text": "", "truncated": False}
+        assert truncated_logs["truncated"] is True
+        assert truncated_logs["entries"][0]["name"] == "logs/unit.txt"
+        assert all(entry["name"] != "logs/" for entry in truncated_logs["entries"])
+        assert status["id"] == 77
+        assert "target_url" not in mock_request.await_args_list[0].kwargs["json_body"]
+        assert labels[0].name == "triage"

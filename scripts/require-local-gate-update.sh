@@ -144,8 +144,11 @@ if [[ "$NEEDS_LOCAL_GATE_UPDATE" == "true" ]]; then
     && ! has_changed ".git-hooks/pre-push" \
     && ! has_changed "scripts/run-local-gate-preflight.sh" \
     && ! has_changed "scripts/local_gate_plan.py" \
-    && ! has_changed ".ci/local_gate_manifest.json"; then
-    missing+=("expected local gate automation change (scripts/test-full.sh, scripts/pre-push-tests.sh, .git-hooks/pre-push, scripts/run-local-gate-preflight.sh, scripts/local_gate_plan.py, or .ci/local_gate_manifest.json)")
+    && ! has_changed ".ci/local_gate_manifest.json" \
+    && ! has_changed "scripts/testing/compile_validation_matrix.py" \
+    && ! has_changed "scripts/testing/run_combined_system_lane.py" \
+    && ! has_changed ".ci/system_validation_manifest.json"; then
+    missing+=("expected local gate automation change (scripts/test-full.sh, scripts/pre-push-tests.sh, .git-hooks/pre-push, scripts/run-local-gate-preflight.sh, scripts/local_gate_plan.py, .ci/local_gate_manifest.json, scripts/testing/compile_validation_matrix.py, scripts/testing/run_combined_system_lane.py, or .ci/system_validation_manifest.json)")
   fi
 fi
 

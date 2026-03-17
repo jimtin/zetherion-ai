@@ -30,6 +30,8 @@ def test_pre_push_script_uses_python_module_wrappers() -> None:
     assert 'DEFAULT_ZETHERION_ENV_FILE="$REPO_DIR/.env"' in rendered
     assert 'is_generated_e2e_env_file()' in rendered
     assert 'Ignoring missing generated E2E env file' in rendered
+    assert 'OLLAMA_DOCKER_IMAGE="${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest@sha256:' in rendered
+    assert 'ensure_ollama_base_image()' in rendered
 
 
 def test_discord_wrappers_support_docker_python_fallback() -> None:
@@ -51,21 +53,38 @@ def test_discord_wrappers_support_docker_python_fallback() -> None:
     )
     assert 'E2E_ENABLE_OLLAMA="${E2E_ENABLE_OLLAMA:-false}"' in local_receipt
     assert 'ensure_optional_ollama_profile()' in local_receipt
+    assert (
+        'OLLAMA_DOCKER_IMAGE="${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest@sha256:'
+        in local_receipt
+    )
+    assert 'ensure_ollama_base_image()' in local_receipt
 
 
 def test_docker_python_tool_normalizes_tmpdir() -> None:
     rendered = (REPO_ROOT / "scripts/docker-python-tool.sh").read_text(encoding="utf-8")
     assert 'HOST_WORKSPACE_ROOT="${ZETHERION_HOST_WORKSPACE_ROOT:-$REPO_DIR}"' in rendered
     assert 'WORKSPACE_MOUNT_TARGET="${ZETHERION_WORKSPACE_MOUNT_TARGET:-/workspace}"' in rendered
+    assert (
+        'SIBLING_CGS_ROOT_DEFAULT="$(cd "$REPO_DIR/.." && pwd)/catalyst-group-solutions"'
+        in rendered
+    )
+    assert (
+        'SIBLING_CGS_MOUNT_TARGET="${ZETHERION_CGS_WORKSPACE_MOUNT_TARGET:-/workspace-siblings/catalyst-group-solutions}"'
+        in rendered
+    )
+    assert '"CGS_WORKSPACE_ROOT=$SIBLING_CGS_MOUNT_TARGET"' in rendered
+    assert '"CGS_DOCKER_HOST_ROOT=$SIBLING_CGS_ROOT_DEFAULT"' in rendered
     assert 'is_generated_e2e_env_file()' in rendered
+    assert 'CONTAINER_ENV_FILE_PATH=""' in rendered
     assert 'HOST_DOCKERFILE_PATH="$(map_repo_path_to_host "$DOCKERFILE_PATH")"' in rendered
     assert '"-e" "TMPDIR=/tmp"' in rendered
     assert '"-e" "TMP=/tmp"' in rendered
     assert '"-e" "TEMP=/tmp"' in rendered
     assert 'Ignoring missing generated E2E env file' in rendered
-    assert 'RUN_ARGS+=(-v "$HOST_ENV_FILE_PATH:$ENV_FILE_PATH:ro")' in rendered
+    assert 'RUN_ARGS+=(-v "$HOST_ENV_FILE_PATH:$CONTAINER_ENV_FILE_PATH:ro")' in rendered
     assert 'RUN_ARGS+=(-v "$HOST_WORKSPACE_ROOT:$HOST_WORKSPACE_ROOT")' in rendered
     assert 'RUN_ARGS+=(-v "$REPO_DIR:$REPO_DIR")' in rendered
+    assert 'RUN_ARGS+=(-v "$SIBLING_CGS_ROOT_DEFAULT:$SIBLING_CGS_MOUNT_TARGET")' in rendered
     assert '-v "$HOST_WORKSPACE_ROOT:$WORKSPACE_MOUNT_TARGET"' in rendered
     assert "RECEIPT_*" in rendered
     assert "SUITE_*" in rendered

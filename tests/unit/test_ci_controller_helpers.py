@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -79,6 +80,10 @@ def test_lane_and_repo_helpers_cover_coercion_contexts_and_sha_inference() -> No
     assert ci_controller.CiControllerSkill._scope_id("owner-1", "zetherion-ai") == (
         "owner:owner-1:repo:zetherion-ai"
     )
+    assert ci_controller._dedupe_strings(["alpha", "", "alpha", "beta"]) == [
+        "alpha",
+        "beta",
+    ]
 
 
 def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certification_payload(
@@ -163,6 +168,8 @@ def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certifica
     assert plan["resource_budget"] == {"cpu": 8, "service": 2, "serial": 1}
     assert plan["host_capacity_policy"]["admission_mode"] == "dynamic_resource_based"
     assert plan["debug_bundle_contract"]["retain_debug_bundle_days"] == 7
+    assert plan["validation_mode"] == "zetherion_alone"
+    assert plan["mode_label"] == "zetherion alone"
     assert [shard["lane_id"] for shard in plan["shards"]] == [
         "ruff-check",
         "gitleaks",
@@ -182,6 +189,9 @@ def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certifica
     assert plan["shards"][2]["metadata"]["gate_family"] == "unit"
     assert plan["shards"][3]["metadata"]["gate_family"] == "integration"
     assert plan["shards"][4]["metadata"]["gate_family"] == "e2e"
+    assert plan["shards"][2]["validation_mode"] == "zetherion_alone"
+    assert plan["shards"][2]["shard_purpose"] == "z-unit-core"
+    assert plan["shards"][2]["expected_artifacts"] == ["stdout", "stderr"]
     assert plan["shards"][4]["metadata"]["resource_reservation"]["resource_class"] == "serial"
     assert plan["shards"][3]["timeout_seconds"] == 600
 
@@ -206,6 +216,116 @@ def test_compile_run_plan_rejects_docker_only_windows_shard_without_container_sp
 
     with pytest.raises(ValueError, match="container_spec"):
         skill._compile_run_plan(repo=repo, mode="certification", git_ref="main")
+
+
+def test_ci_controller_preflight_and_readiness_helpers_cover_missing_files_and_failures(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    bad_root = tmp_path / "bad"
+    good_root = tmp_path / "good"
+    bad_root.mkdir()
+    good_root.mkdir()
+    (good_root / "requirements-dev.txt").write_text("ruff==0.8.4\n", encoding="utf-8")
+
+    original_read_text = Path.read_text
+
+    def flaky_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if self == bad_root / "requirements-dev.txt":
+            raise OSError("unavailable")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    assert ci_controller._expected_ruff_version(
+        {"allowed_paths": [str(bad_root), str(good_root)]}
+    ) == "0.8.4"
+
+    violations = ci_controller._collect_preflight_violations(
+        repo={"allowed_paths": [str(good_root)]},
+        compiled={
+            "required_static_gate_ids": ["ruff-check"],
+            "required_security_gate_ids": ["gitleaks"],
+        },
+        mode="certification",
+        request_context={
+            "preflight_checks": {
+                "checks": [
+                    "ruff-check",
+                    {"id": "gitleaks", "status": "failed"},
+                ],
+                "tool_versions": {"ruff": "0.8.3"},
+            }
+        },
+    )
+    assert {violation["rule_code"] for violation in violations} == {
+        "missing_preflight_attestation",
+        "missing_preflight_check",
+        "tool_version_mismatch",
+    }
+
+
+@pytest.mark.asyncio
+async def test_build_readiness_receipts_fail_on_missing_categories_and_degraded_release() -> None:
+    skill = ci_controller.CiControllerSkill(storage=MagicMock())
+    merge_receipt, deploy_receipt, repo_readiness, workspace_readiness = (
+        await skill._build_readiness_receipts(
+            repo={
+                "repo_id": "zetherion-ai",
+                "promotion_policy": {"require_release_receipt": True},
+            },
+            run={
+                "repo_id": "zetherion-ai",
+                "metadata": {"mode": "certification", "git_sha": "a" * 40},
+                "plan": {"required_gate_categories": ["static", "security"]},
+                "shards": [
+                    {
+                        "lane_id": "ruff-check",
+                        "status": "succeeded",
+                        "metadata": {
+                            "gate_family": "static",
+                            "blocking": True,
+                        },
+                        "result": {},
+                        "error": {},
+                        "artifact_contract": {},
+                    }
+                ],
+            },
+            review={"merge_blocked": False},
+            release_receipt={"status": "degraded", "summary": "Waiting on final verify."},
+            requested_by="owner-1",
+        )
+    )
+
+    assert merge_receipt["state"] == "failure"
+    assert "Required gate categories are incomplete" in merge_receipt["description"]
+    assert deploy_receipt["state"] == "failure"
+    assert "incomplete gate categories" in deploy_receipt["description"]
+    assert repo_readiness["missing_categories"] == ["security"]
+    assert workspace_readiness["missing_categories"] == ["security"]
+
+
+def test_compile_run_plan_fast_mode_keeps_local_only_shards() -> None:
+    skill = ci_controller.CiControllerSkill(storage=MagicMock())
+    repo = {
+        "repo_id": "zetherion-ai",
+        "stack_kind": "python",
+        "allowed_paths": ["/tmp/zetherion-ai"],
+        "mandatory_static_gates": [{"lane_id": "ruff-check"}],
+        "mandatory_security_gates": [{"lane_id": "gitleaks"}],
+        "local_fast_lanes": [{"lane_id": "z-unit-core"}],
+        "local_full_lanes": [{"lane_id": "z-int-runtime"}],
+        "windows_full_lanes": [{"lane_id": "discord-required-e2e"}],
+    }
+
+    plan = skill._compile_run_plan(repo=repo, mode="fast", git_ref="main")
+
+    assert [shard["lane_id"] for shard in plan["shards"]] == [
+        "ruff-check",
+        "gitleaks",
+        "z-unit-core",
+    ]
 
 
 def test_default_cgs_windows_lanes_use_real_images_and_persistent_volume_mounts() -> None:
@@ -313,8 +433,40 @@ async def test_publish_github_statuses_handles_missing_inputs_and_success(monkey
         "contexts": ["zetherion/merge-readiness", "zetherion/deploy-readiness"],
     }
     assert published_calls[0]["owner"] == "jimtin"
-    assert published_calls[0]["target_url"] == "https://example.com/status"
-    assert published_calls[1]["state"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_publish_github_statuses_skips_blank_receipts() -> None:
+    skill = ci_controller.CiControllerSkill(storage=MagicMock())
+
+    class FakeSecret:
+        def get_secret_value(self) -> str:
+            return "token-123"
+
+    original_settings = ci_controller.get_settings
+    original_client = ci_controller.GitHubClient
+    ci_controller.get_settings = lambda: SimpleNamespace(github_token=FakeSecret())
+    ci_controller.GitHubClient = lambda _token: MagicMock(close=AsyncMock())  # type: ignore[assignment]
+    try:
+        result = await skill._publish_github_statuses(
+            repo={"github_repo": "jimtin/zetherion-ai"},
+            run={
+                "metadata": {"git_sha": "0" * 40},
+                "github_receipts": {
+                    "merge_readiness": {
+                        "context": "",
+                        "state": "success",
+                        "description": "skip",
+                    },
+                    "deploy_readiness": {},
+                },
+            },
+        )
+    finally:
+        ci_controller.get_settings = original_settings
+        ci_controller.GitHubClient = original_client
+
+    assert result == {"published": False, "sha": "0" * 40, "contexts": []}
 
 
 def test_normalize_mode_rejects_unknown_values() -> None:

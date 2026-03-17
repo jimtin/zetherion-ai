@@ -178,6 +178,52 @@ async def test_runtime_public_request_typed_and_fallback_paths() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_helper_error_paths_cover_coercion_and_plain_fallbacks() -> None:
+    catalog = runtime_routes._normalize_provider_catalog(
+        {"providers": "openai", "defaults": ["not-a-dict"]}
+    )
+    assert catalog["providers"] == "openai"
+    assert catalog["defaults"] == ["not-a-dict"]
+
+    with pytest.raises(TypeError, match="invalid response tuple"):
+        runtime_routes._coerce_json_response("bad")
+
+    with pytest.raises(TypeError, match="non-dict headers"):
+        runtime_routes._coerce_json_response((200, {}, ["x"]))
+
+    with pytest.raises(TypeError, match="non-bytes body"):
+        runtime_routes._coerce_raw_response((200, {"bad": True}, {}))
+
+    client = MagicMock()
+    client.request_json = AsyncMock(return_value=(204, {"plain": True}, {"x": 1}))
+    client.request_raw = AsyncMock(return_value=(206, b"plain", {"y": 2}))
+
+    app = web.Application()
+    app["cgs_public_client"] = client
+    request = _request(app=app)
+
+    status, payload, headers = await runtime_routes._public_request_json(
+        request,
+        method="GET",
+        path="/plain-json",
+        headers={"A": "B"},
+    )
+    assert status == 204
+    assert payload == {"plain": True}
+    assert headers == {"x": "1"}
+
+    status, payload, headers = await runtime_routes._public_request_raw(
+        request,
+        method="GET",
+        path="/plain-raw",
+        headers={"A": "B"},
+    )
+    assert status == 206
+    assert payload == b"plain"
+    assert headers == {"y": "2"}
+
+
+@pytest.mark.asyncio
 async def test_runtime_idempotency_helpers_conflict_cached_and_save_paths() -> None:
     storage = MagicMock()
     storage.get_idempotency_record = AsyncMock(return_value=None)

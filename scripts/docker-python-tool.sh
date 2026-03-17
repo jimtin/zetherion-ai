@@ -10,6 +10,8 @@ EXPLICIT_ZETHERION_ENV_FILE="${ZETHERION_ENV_FILE:-}"
 DEFAULT_ZETHERION_ENV_FILE="$REPO_DIR/.env"
 HOST_WORKSPACE_ROOT="${ZETHERION_HOST_WORKSPACE_ROOT:-$REPO_DIR}"
 WORKSPACE_MOUNT_TARGET="${ZETHERION_WORKSPACE_MOUNT_TARGET:-/workspace}"
+SIBLING_CGS_ROOT_DEFAULT="$(cd "$REPO_DIR/.." && pwd)/catalyst-group-solutions"
+SIBLING_CGS_MOUNT_TARGET="${ZETHERION_CGS_WORKSPACE_MOUNT_TARGET:-/workspace-siblings/catalyst-group-solutions}"
 
 is_generated_e2e_env_file() {
     local env_file="${1:-}"
@@ -35,6 +37,25 @@ map_repo_path_to_host() {
             ;;
         "$REPO_DIR"/*)
             printf '%s/%s\n' "$HOST_WORKSPACE_ROOT" "${path#"$REPO_DIR"/}"
+            ;;
+        *)
+            printf '%s\n' "$path"
+            ;;
+    esac
+}
+
+map_repo_path_to_container() {
+    local path="${1:-}"
+    if [ -z "$path" ]; then
+        printf '%s\n' "$path"
+        return 0
+    fi
+    case "$path" in
+        "$REPO_DIR")
+            printf '%s\n' "$WORKSPACE_MOUNT_TARGET"
+            ;;
+        "$REPO_DIR"/*)
+            printf '%s/%s\n' "$WORKSPACE_MOUNT_TARGET" "${path#"$REPO_DIR"/}"
             ;;
         *)
             printf '%s\n' "$path"
@@ -117,7 +138,7 @@ collect_env_args() {
     local name
     while IFS='=' read -r name _; do
         case "$name" in
-            ANTHROPIC_*|API_*|APP_*|CGS_*|CI|COMPOSE_FILE|CURRENT_*|DISCORD_*|DOCKER_*|E2E_*|EMBEDDINGS_*|ENVIRONMENT|GEMINI_*|GITHUB_*|GROQ_*|HEAD_*|LOCAL_E2E_*|MISSING_ENV|OPENAI_*|OLLAMA_*|OWNER_*|POSTGRES_*|PROJECT|PRESERVE_TEST_VOLUMES|PYTEST_*|QDRANT_*|RECEIPT_*|RELEASE_*|RUN_*|SKILLS_*|SSL_CERT_FILE|STRICT_*|SUITE_*|TEST_*|VERSION|WRAPPER_*|ZETHERION_*)
+            ANTHROPIC_*|API_*|APP_*|CGS_*|CI|COMPOSE_FILE|CURRENT_*|DISCORD_*|DOCKER_*|E2E_*|EMBEDDINGS_*|ENVIRONMENT|GEMINI_*|GITHUB_*|GROQ_*|HEAD_*|LOCAL_E2E_*|MISSING_ENV|OPENAI_*|OLLAMA_*|OWNER_*|POSTGRES_*|PROJECT|PRESERVE_TEST_VOLUMES|PYTEST_*|QDRANT_*|RECEIPT_*|RELEASE_*|ROUTER_*|RUN_*|SKILLS_*|SSL_CERT_FILE|STRICT_*|SUITE_*|TEST_*|VERSION|WRAPPER_*|ZETHERION_*)
                 ENV_ARGS+=("-e" "$name")
                 ;;
         esac
@@ -129,6 +150,8 @@ build_image
 ENV_ARGS=(
     "-e" "PYTHONPATH=/workspace/src"
     "-e" "E2E_RUNTIME_HOST=${E2E_RUNTIME_HOST:-host.docker.internal}"
+    "-e" "ZETHERION_HOST_WORKSPACE_ROOT=$HOST_WORKSPACE_ROOT"
+    "-e" "ZETHERION_WORKSPACE_ROOT=$WORKSPACE_MOUNT_TARGET"
     "-e" "TMPDIR=/tmp"
     "-e" "TMP=/tmp"
     "-e" "TEMP=/tmp"
@@ -151,12 +174,25 @@ elif [ -f "$DEFAULT_ZETHERION_ENV_FILE" ]; then
 fi
 
 HOST_ENV_FILE_PATH=""
+CONTAINER_ENV_FILE_PATH=""
 if [ -n "$ENV_FILE_PATH" ]; then
+    case "$ENV_FILE_PATH" in
+        /*) ;;
+        *) ENV_FILE_PATH="$REPO_DIR/$ENV_FILE_PATH" ;;
+    esac
     HOST_ENV_FILE_PATH="$(map_repo_path_to_host "$ENV_FILE_PATH")"
+    CONTAINER_ENV_FILE_PATH="$(map_repo_path_to_container "$ENV_FILE_PATH")"
 fi
 
 if [ -n "$HOST_ENV_FILE_PATH" ]; then
     ENV_ARGS+=("--env-file" "$HOST_ENV_FILE_PATH")
+fi
+
+if [ -d "$SIBLING_CGS_ROOT_DEFAULT" ] && [ "$SIBLING_CGS_ROOT_DEFAULT" != "$REPO_DIR" ]; then
+    ENV_ARGS+=(
+        "-e" "CGS_WORKSPACE_ROOT=$SIBLING_CGS_MOUNT_TARGET"
+        "-e" "CGS_DOCKER_HOST_ROOT=$SIBLING_CGS_ROOT_DEFAULT"
+    )
 fi
 
 collect_env_args
@@ -178,8 +214,14 @@ if [ "$HOST_WORKSPACE_ROOT" = "$REPO_DIR" ] && [ "$REPO_DIR" != "$WORKSPACE_MOUN
     RUN_ARGS+=(-v "$REPO_DIR:$REPO_DIR")
 fi
 
+if [ -d "$SIBLING_CGS_ROOT_DEFAULT" ] \
+    && [ "$SIBLING_CGS_ROOT_DEFAULT" != "$REPO_DIR" ] \
+    && [ "${SIBLING_CGS_ROOT_DEFAULT#"$HOST_WORKSPACE_ROOT"/}" = "$SIBLING_CGS_ROOT_DEFAULT" ]; then
+    RUN_ARGS+=(-v "$SIBLING_CGS_ROOT_DEFAULT:$SIBLING_CGS_MOUNT_TARGET")
+fi
+
 if [ -n "$HOST_ENV_FILE_PATH" ] && [ "${HOST_ENV_FILE_PATH#"$HOST_WORKSPACE_ROOT"/}" = "$HOST_ENV_FILE_PATH" ]; then
-    RUN_ARGS+=(-v "$HOST_ENV_FILE_PATH:$ENV_FILE_PATH:ro")
+    RUN_ARGS+=(-v "$HOST_ENV_FILE_PATH:$CONTAINER_ENV_FILE_PATH:ro")
 fi
 
 if [ -S /var/run/docker.sock ]; then

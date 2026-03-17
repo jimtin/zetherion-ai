@@ -48,6 +48,46 @@ SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true
 RUNTIME = get_runtime()
 
 
+def _normalize_bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _primary_router_backend() -> str:
+    backend = os.getenv("ROUTER_BACKEND", "gemini").strip().lower()
+    if backend in {"gemini", "groq", "ollama"}:
+        return backend
+    return "gemini"
+
+
+def _require_discord_runtime() -> bool:
+    return _normalize_bool_env("RUN_DISCORD_E2E_REQUIRED", default=True)
+
+
+def _required_runtime_env_vars() -> list[str]:
+    required = ["OPENAI_API_KEY"]
+    backend = _primary_router_backend()
+    if backend == "groq":
+        required.append("GROQ_API_KEY")
+    elif backend == "gemini":
+        required.append("GEMINI_API_KEY")
+
+    if _require_discord_runtime():
+        required.append("DISCORD_TOKEN")
+
+    return required
+
+
+PRIMARY_ROUTER_BACKEND = _primary_router_backend()
+ROUTER_BACKEND_PARAMS: list[object] = [PRIMARY_ROUTER_BACKEND]
+if PRIMARY_ROUTER_BACKEND != "ollama":
+    ROUTER_BACKEND_PARAMS.append(
+        pytest.param("ollama", marks=pytest.mark.optional_e2e, id="ollama")
+    )
+
+
 def _http_get_json(url: str, *, timeout: int = 15) -> Any:
     """Fetch JSON from a runtime service without relying on host curl."""
     request = Request(url, headers={"Accept": "application/json"})
@@ -130,8 +170,9 @@ class DockerEnvironment:
             "postgres": "healthy",
             "qdrant": "healthy",
             "zetherion-ai-skills": "healthy",
-            "zetherion-ai-bot": "healthy",
         }
+        if _require_discord_runtime():
+            expected["zetherion-ai-bot"] = "healthy"
         ollama_enabled = os.getenv("E2E_ENABLE_OLLAMA", "false").strip().lower() in {
             "1",
             "true",
@@ -247,11 +288,11 @@ class DockerEnvironment:
 class MockDiscordBot:
     """Mock Discord bot for testing agent logic without Discord API."""
 
-    def __init__(self, router_backend: str = "gemini") -> None:
+    def __init__(self, router_backend: str = PRIMARY_ROUTER_BACKEND) -> None:
         """Initialize the mock bot.
 
         Args:
-            router_backend: Router backend to use ('gemini' or 'ollama').
+            router_backend: Router backend to use ('gemini', 'groq', or 'ollama').
         """
         # Import here to avoid issues if Discord isn't available
         from zetherion_ai.agent.core import Agent
@@ -318,8 +359,8 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
     if SKIP_INTEGRATION:
         pytest.skip("Integration tests disabled (SKIP_INTEGRATION_TESTS=true)")
 
-    # Check if required environment variables are set
-    required_vars = ["GEMINI_API_KEY", "OPENAI_API_KEY", "DISCORD_TOKEN"]
+    # Check if required environment variables are set for the active backend.
+    required_vars = _required_runtime_env_vars()
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     if missing_vars:
         pytest.skip(f"Missing required environment variables: {', '.join(missing_vars)}")
@@ -360,10 +401,7 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
 
 @pytest.fixture(
     scope="module",
-    params=[
-        "gemini",
-        pytest.param("ollama", marks=pytest.mark.optional_e2e, id="ollama"),
-    ],
+    params=ROUTER_BACKEND_PARAMS,
 )
 def router_backend(request: Any, docker_env: DockerEnvironment) -> str:
     """Pytest fixture to parameterize router backend.
@@ -373,7 +411,7 @@ def router_backend(request: Any, docker_env: DockerEnvironment) -> str:
         docker_env: Docker environment fixture.
 
     Returns:
-        Router backend name ('gemini' or 'ollama').
+        Router backend name for the required lane plus optional ollama coverage.
     """
     backend = request.param
 
@@ -405,7 +443,7 @@ async def mock_bot(
 
     Args:
         docker_env: Docker environment fixture (ensures Docker is running first).
-        router_backend: Router backend to use ('gemini' or 'ollama').
+        router_backend: Router backend to use ('gemini', 'groq', or 'ollama').
 
     Yields:
         Initialized MockDiscordBot instance shared across tests in the module.
@@ -584,25 +622,28 @@ async def test_docker_services_running(docker_env: DockerEnvironment) -> None:
     assert result.stdout.strip()
     print("✅ Qdrant container is running")
 
-    # Check Zetherion AI (uses container_name from docker-compose.yml)
-    result = subprocess.run(
-        [
-            "docker",
-            "ps",
-            "--filter",
-            f"label=com.docker.compose.project={docker_env.project_name}",
-            "--filter",
-            "label=com.docker.compose.service=zetherion-ai-bot",
-            "--filter",
-            "status=running",
-            "--format",
-            "{{.Names}}",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert result.stdout.strip()
-    print("✅ Zetherion AI container is running")
+    if _require_discord_runtime():
+        # Check Zetherion AI (uses container_name from docker-compose.yml)
+        result = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "--filter",
+                f"label=com.docker.compose.project={docker_env.project_name}",
+                "--filter",
+                "label=com.docker.compose.service=zetherion-ai-bot",
+                "--filter",
+                "status=running",
+                "--format",
+                "{{.Names}}",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.stdout.strip()
+        print("✅ Zetherion AI container is running")
+    else:
+        print("ℹ️ Discord bot container is not required for this E2E profile")
 
 
 @pytest.mark.integration

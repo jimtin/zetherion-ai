@@ -77,6 +77,8 @@ class LocalGateShardSpec(BaseModel):
     lane_id: str
     lane_label: str
     shard_id: str | None = None
+    validation_mode: str = "repo_only"
+    shard_purpose: str | None = None
     execution_target: str = "local_mac"
     runner: str = "command"
     action: str = "ci.test.run"
@@ -93,6 +95,7 @@ class LocalGateShardSpec(BaseModel):
     gate_family: str = "integration"
     blocking: bool = True
     required_category: str | None = None
+    expected_artifacts: list[str] = Field(default_factory=list)
     payload: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -332,6 +335,8 @@ class LocalGatePlan(BaseModel):
     repo_id: str
     git_ref: str
     mode: str
+    validation_mode: str = "repo_only"
+    mode_label: str | None = None
     windows_execution_mode: str = "command"
     resource_budget: dict[str, int] = Field(default_factory=dict)
     schedule_tags: list[str] = Field(default_factory=list)

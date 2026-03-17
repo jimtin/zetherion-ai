@@ -1,10 +1,11 @@
 """Unit tests for Discord bot layer."""
 
 import asyncio
+import os
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import discord
 import httpx
@@ -13,8 +14,10 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from zetherion_ai.discord.bot import ZetherionAIBot
+from zetherion_ai.discord.e2e_lease import DiscordE2ELease
 from zetherion_ai.memory.qdrant import QdrantMemory
 from zetherion_ai.skills.client import SkillsClientError
+from zetherion_ai.updater.manager import UpdateStatus
 
 
 @pytest.fixture
@@ -148,6 +151,347 @@ class TestBotInitialization:
             await bot.setup_hook()
 
             assert bot._agent == mock_agent
+
+    @pytest.mark.asyncio
+    async def test_setup_hook_covers_runtime_status_provider_probe_and_blocked_queue(
+        self, bot, mock_agent
+    ):
+        runtime_pool = object()
+        bot._user_manager._pool = runtime_pool
+        bot._user_manager.list_users = AsyncMock(
+            return_value=[
+                {"discord_user_id": 123, "role": "owner"},
+                {"discord_user_id": 456, "role": "restricted"},
+            ]
+        )
+        queue_processors = SimpleNamespace(
+            _bot=None,
+            _agent=None,
+            _skills_client=None,
+            _action_executor=None,
+            _plan_executor=None,
+        )
+        bot._queue_manager = SimpleNamespace(
+            _processors=queue_processors,
+            start=AsyncMock(),
+            stop=AsyncMock(),
+        )
+        bot._publish_runtime_status = AsyncMock()
+        bot._keep_warm_loop = AsyncMock(return_value=None)
+        bot._provider_watch_loop = AsyncMock(return_value=None)
+        bot._runtime_status_loop = AsyncMock(return_value=None)
+        bot._startup_queue_path_ready = AsyncMock(return_value=False)
+
+        mock_agent.warmup = AsyncMock(return_value=False)
+        mock_broker = MagicMock()
+        mock_broker.set_provider_issue_handler = AsyncMock()
+        mock_agent._inference_broker = mock_broker
+        mock_agent._get_skills_client = AsyncMock(side_effect=RuntimeError("skills unavailable"))
+
+        runtime_status_store = AsyncMock()
+        announcement_repository = AsyncMock()
+        announcement_dispatcher = MagicMock()
+        heartbeat_scheduler = AsyncMock()
+        heartbeat_scheduler.start = AsyncMock()
+        heartbeat_scheduler.set_user_ids = MagicMock()
+
+        settings = SimpleNamespace(
+            provider_probe_enabled=True,
+            provider_probe_interval_seconds=90,
+            security_tier2_enabled=False,
+            postgres_control_plane_schema="owner_ci",
+            postgres_owner_personal_schema="owner_personal",
+        )
+
+        def _get_dynamic(_namespace: str, key: str, default):
+            if key == "provider_probe_enabled":
+                return True
+            if key == "provider_probe_interval_seconds":
+                return 90
+            if key == "announcement_dispatch_interval_seconds":
+                return 20
+            if key == "announcement_dispatch_batch_size":
+                return 5
+            return default
+
+        with (
+            patch("zetherion_ai.discord.bot.Agent", return_value=mock_agent),
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=_get_dynamic),
+            patch(
+                "zetherion_ai.discord.bot.RuntimeStatusStore",
+                return_value=runtime_status_store,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.AnnouncementRepository",
+                return_value=announcement_repository,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.AnnouncementDispatcher",
+                return_value=announcement_dispatcher,
+            ) as dispatcher_cls,
+            patch(
+                "zetherion_ai.discord.bot.build_announcement_channel_registry",
+                return_value=object(),
+            ),
+            patch(
+                "zetherion_ai.discord.bot.HeartbeatScheduler",
+                return_value=heartbeat_scheduler,
+            ),
+            patch("zetherion_ai.discord.bot.SecurityPipeline"),
+        ):
+            await bot.setup_hook()
+
+        assert bot._agent == mock_agent
+        mock_broker.set_provider_issue_handler.assert_awaited_once()
+        mock_agent.warmup.assert_awaited_once()
+        runtime_status_store.initialize.assert_awaited_once()
+        bot._publish_runtime_status.assert_awaited_once()
+        bot._startup_queue_path_ready.assert_awaited_once()
+        bot._queue_manager.start.assert_not_awaited()
+        dispatcher_cls.assert_called_once()
+        heartbeat_scheduler.set_user_ids.assert_called_once_with(["123"])
+        heartbeat_scheduler.start.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_setup_hook_covers_non_coroutine_provider_handler_and_init_failures(
+        self, bot, mock_agent
+    ):
+        runtime_pool = object()
+        bot._user_manager._pool = runtime_pool
+        bot._user_manager.list_users = AsyncMock(side_effect=RuntimeError("user list unavailable"))
+        bot._tenant_admin_manager = AsyncMock()
+        queue_processors = SimpleNamespace(
+            _bot=None,
+            _agent=None,
+            _skills_client=None,
+            _action_executor=None,
+            _plan_executor=None,
+        )
+        bot._queue_manager = SimpleNamespace(
+            _processors=queue_processors,
+            start=AsyncMock(),
+            stop=AsyncMock(),
+        )
+        bot._publish_runtime_status = AsyncMock()
+        bot._keep_warm_loop = AsyncMock(return_value=None)
+        bot._runtime_status_loop = AsyncMock(return_value=None)
+        bot._startup_queue_path_ready = AsyncMock(return_value=True)
+
+        mock_agent.warmup = AsyncMock(return_value=True)
+        mock_broker = MagicMock()
+        mock_broker.set_provider_issue_handler = MagicMock(return_value=None)
+        mock_agent._inference_broker = mock_broker
+        mock_agent._get_skills_client = AsyncMock(side_effect=RuntimeError("skills unavailable"))
+
+        runtime_status_store = AsyncMock()
+        runtime_status_store.initialize = AsyncMock(side_effect=RuntimeError("status unavailable"))
+        announcement_repository = AsyncMock()
+        announcement_repository.initialize = AsyncMock(side_effect=RuntimeError("repo unavailable"))
+        heartbeat_scheduler = AsyncMock()
+        heartbeat_scheduler.start = AsyncMock()
+        heartbeat_scheduler.set_user_ids = MagicMock()
+        plan_executor = MagicMock()
+
+        settings = SimpleNamespace(
+            provider_probe_enabled=False,
+            provider_probe_interval_seconds=90,
+            security_tier2_enabled=True,
+            postgres_control_plane_schema="owner_ci",
+            postgres_owner_personal_schema="owner_personal",
+        )
+
+        def _get_dynamic(_namespace: str, key: str, default):
+            if key == "provider_probe_enabled":
+                return False
+            if key == "announcement_dispatch_interval_seconds":
+                return 20
+            if key == "announcement_dispatch_batch_size":
+                return 5
+            return default
+
+        with (
+            patch("zetherion_ai.discord.bot.Agent", return_value=mock_agent),
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=_get_dynamic),
+            patch(
+                "zetherion_ai.discord.bot.RuntimeStatusStore",
+                return_value=runtime_status_store,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.AnnouncementRepository",
+                return_value=announcement_repository,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.PlanContinuationExecutor",
+                return_value=plan_executor,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.HeartbeatScheduler",
+                return_value=heartbeat_scheduler,
+            ),
+            patch("zetherion_ai.discord.bot.SecurityAIAnalyzer", return_value=MagicMock()),
+            patch(
+                "zetherion_ai.discord.bot.SecurityPipeline",
+                side_effect=RuntimeError("security init failed"),
+            ),
+            patch(
+                "zetherion_ai.personal.operational_storage.OwnerPersonalIntelligenceStorage",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "zetherion_ai.personal.review_inbox.OwnerReviewInbox",
+                side_effect=RuntimeError("review inbox unavailable"),
+            ),
+            patch(
+                "zetherion_ai.trust.storage.TrustStorage",
+                return_value=SimpleNamespace(initialize=AsyncMock()),
+            ),
+            patch(
+                "zetherion_ai.discord.bot.build_announcement_channel_registry",
+                return_value=object(),
+            ),
+        ):
+            await bot.setup_hook()
+
+        assert bot._provider_watch_task is None
+        assert bot._security_pipeline is None
+        assert bot._security_ai_analyzer is None
+        bot._publish_runtime_status.assert_not_awaited()
+        bot._startup_queue_path_ready.assert_awaited_once()
+        bot._queue_manager.start.assert_awaited_once()
+        plan_executor.attach_review_inbox.assert_not_called()
+        heartbeat_scheduler.set_user_ids.assert_not_called()
+        heartbeat_scheduler.start.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_setup_hook_covers_provider_handler_failure_and_review_inbox_success(
+        self, bot, mock_agent
+    ):
+        runtime_pool = object()
+        bot._user_manager._pool = runtime_pool
+        bot._user_manager.list_users = AsyncMock(
+            return_value=[{"discord_user_id": 123, "role": "owner"}]
+        )
+        bot._tenant_admin_manager = AsyncMock()
+        queue_processors = SimpleNamespace(
+            _bot=None,
+            _agent=None,
+            _skills_client=None,
+            _action_executor=None,
+            _plan_executor=None,
+        )
+        bot._queue_manager = SimpleNamespace(
+            _processors=queue_processors,
+            start=AsyncMock(),
+            stop=AsyncMock(),
+        )
+        bot._publish_runtime_status = AsyncMock()
+        bot._keep_warm_loop = AsyncMock(return_value=None)
+        bot._runtime_status_loop = AsyncMock(return_value=None)
+        bot._startup_queue_path_ready = AsyncMock(return_value=True)
+
+        mock_agent.warmup = AsyncMock(return_value=True)
+        mock_broker = MagicMock()
+        mock_broker.set_provider_issue_handler = AsyncMock(side_effect=RuntimeError("boom"))
+        mock_agent._inference_broker = mock_broker
+        mock_agent._get_skills_client = AsyncMock(return_value=AsyncMock())
+
+        runtime_status_store = AsyncMock()
+        announcement_repository = AsyncMock()
+        heartbeat_scheduler = AsyncMock()
+        heartbeat_scheduler.start = AsyncMock()
+        heartbeat_scheduler.set_user_ids = MagicMock()
+        plan_executor = MagicMock()
+        review_inbox = MagicMock()
+        trust_storage = SimpleNamespace(initialize=AsyncMock())
+
+        settings = SimpleNamespace(
+            provider_probe_enabled=False,
+            provider_probe_interval_seconds=90,
+            security_tier2_enabled=False,
+            postgres_control_plane_schema="owner_ci",
+            postgres_owner_personal_schema="owner_personal",
+        )
+
+        with (
+            patch("zetherion_ai.discord.bot.Agent", return_value=mock_agent),
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=lambda *_args: _args[-1]),
+            patch(
+                "zetherion_ai.discord.bot.RuntimeStatusStore",
+                return_value=runtime_status_store,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.AnnouncementRepository",
+                return_value=announcement_repository,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.PlanContinuationExecutor",
+                return_value=plan_executor,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.HeartbeatScheduler",
+                return_value=heartbeat_scheduler,
+            ),
+            patch("zetherion_ai.discord.bot.SecurityPipeline"),
+            patch(
+                "zetherion_ai.personal.operational_storage.OwnerPersonalIntelligenceStorage",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "zetherion_ai.personal.review_inbox.OwnerReviewInbox",
+                return_value=review_inbox,
+            ),
+            patch("zetherion_ai.trust.storage.TrustStorage", return_value=trust_storage),
+            patch(
+                "zetherion_ai.discord.bot.build_announcement_channel_registry",
+                return_value=object(),
+            ),
+        ):
+            await bot.setup_hook()
+
+        plan_executor.attach_review_inbox.assert_called_once_with(review_inbox)
+        assert bot._owner_review_inbox is review_inbox
+        heartbeat_scheduler.start.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_setup_hook_covers_missing_broker_and_no_user_manager(self, mock_memory):
+        bot = ZetherionAIBot(memory=mock_memory, user_manager=None)
+        bot._tree.sync = AsyncMock()
+        bot._keep_warm_loop = AsyncMock(return_value=None)
+
+        mock_agent = AsyncMock()
+        mock_agent.warmup = AsyncMock(return_value=True)
+        mock_agent._get_skills_client = AsyncMock(return_value=AsyncMock())
+        mock_agent._inference_broker = None
+
+        heartbeat_scheduler = AsyncMock()
+        heartbeat_scheduler.start = AsyncMock()
+        heartbeat_scheduler.set_user_ids = MagicMock()
+
+        settings = SimpleNamespace(
+            provider_probe_enabled=False,
+            provider_probe_interval_seconds=90,
+            security_tier2_enabled=False,
+            postgres_control_plane_schema="owner_ci",
+            postgres_owner_personal_schema="owner_personal",
+        )
+
+        with (
+            patch("zetherion_ai.discord.bot.Agent", return_value=mock_agent),
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=lambda *_args: _args[-1]),
+            patch(
+                "zetherion_ai.discord.bot.HeartbeatScheduler",
+                return_value=heartbeat_scheduler,
+            ),
+            patch("zetherion_ai.discord.bot.SecurityPipeline"),
+        ):
+            await bot.setup_hook()
+
+        heartbeat_scheduler.set_user_ids.assert_not_called()
+        heartbeat_scheduler.start.assert_awaited_once()
 
 
 class TestOnMessage:
@@ -1540,6 +1884,25 @@ class TestWebhookDetection:
             mock_handler.assert_called_once_with(mock_message)
 
     @pytest.mark.asyncio
+    async def test_webhook_dynamic_value_fallbacks_use_safe_defaults(self, bot, mock_message):
+        mock_message.webhook_id = 111222333
+        mock_message.author.name = "zetherion-dev-agent"
+        mock_message.embeds = []
+        bot._agent = AsyncMock()
+
+        with (
+            patch.object(bot, "_handle_dev_event", new_callable=AsyncMock) as mock_handler,
+            patch("zetherion_ai.discord.bot.get_settings", return_value=SimpleNamespace()),
+            patch(
+                "zetherion_ai.discord.bot.get_dynamic",
+                side_effect=[123, object()],
+            ),
+        ):
+            await bot.on_message(mock_message)
+
+        mock_handler.assert_awaited_once_with(mock_message)
+
+    @pytest.mark.asyncio
     async def test_non_webhook_processed_normally(self, bot, mock_message, mock_agent):
         """Non-webhook messages continue through normal processing."""
         bot._agent = mock_agent
@@ -1601,6 +1964,70 @@ class TestDevWatcherDmWizard:
 
         status_handler.assert_awaited_once_with(mock_dm_message)
         mock_agent.generate_response.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_maybe_handle_dev_watcher_dm_direct_paths(self, bot, mock_dm_message):
+        assert await bot._maybe_handle_dev_watcher_dm(mock_dm_message, "   ") is False
+
+        with patch.object(
+            bot,
+            "_continue_dev_watcher_wizard",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
+            assert await bot._maybe_handle_dev_watcher_dm(mock_dm_message, "1") is True
+
+        mock_dm_message.reply.reset_mock()
+        with (
+            patch.object(
+                bot,
+                "_continue_dev_watcher_wizard",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch.object(
+                bot,
+                "_handle_dev_watcher_status_dm",
+                new_callable=AsyncMock,
+            ) as status_handler,
+            patch.object(
+                bot,
+                "_start_dev_watcher_wizard",
+                new_callable=AsyncMock,
+            ) as start_wizard,
+        ):
+            assert (
+                await bot._maybe_handle_dev_watcher_dm(mock_dm_message, "dev watcher help")
+                is True
+            )
+
+        status_handler.assert_not_awaited()
+        start_wizard.assert_not_awaited()
+        mock_dm_message.reply.assert_awaited_once()
+        assert "Dev watcher DM commands" in mock_dm_message.reply.call_args[0][0]
+
+        with (
+            patch.object(
+                bot,
+                "_continue_dev_watcher_wizard",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch.object(
+                bot,
+                "_handle_dev_watcher_status_dm",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                bot,
+                "_start_dev_watcher_wizard",
+                new_callable=AsyncMock,
+            ),
+        ):
+            assert (
+                await bot._maybe_handle_dev_watcher_dm(mock_dm_message, "something unrelated")
+                is False
+            )
 
 
 class TestDevWatcherWizardDetails:
@@ -1958,6 +2385,116 @@ class TestDevWatcherWizardDetails:
         assert "AUTO_UPDATE_REPO" in detail
 
     @pytest.mark.asyncio
+    async def test_ensure_dev_agent_available_update_paths(self, bot):
+        release = SimpleNamespace(version="1.2.3")
+
+        with (
+            patch.object(bot, "_dev_agent_healthcheck", new_callable=AsyncMock, return_value=False),
+            patch(
+                "zetherion_ai.discord.bot.get_settings",
+                return_value=_dev_settings("http://dev-agent.local:8787"),
+            ),
+            patch("zetherion_ai.updater.manager.UpdateManager") as update_manager_cls,
+        ):
+            manager = update_manager_cls.return_value
+            manager.check_for_update = AsyncMock(return_value=None)
+            ok, detail = await bot._ensure_dev_agent_available()
+
+        assert ok is False
+        assert "no newer signed release" in detail
+        manager.apply_update.assert_not_called()
+
+        with (
+            patch.object(bot, "_dev_agent_healthcheck", new_callable=AsyncMock, return_value=False),
+            patch(
+                "zetherion_ai.discord.bot.get_settings",
+                return_value=_dev_settings("http://dev-agent.local:8787"),
+            ),
+            patch("zetherion_ai.updater.manager.UpdateManager") as update_manager_cls,
+        ):
+            manager = update_manager_cls.return_value
+            manager.check_for_update = AsyncMock(return_value=release)
+            manager.apply_update = AsyncMock(
+                return_value=SimpleNamespace(
+                    status=UpdateStatus.FAILED,
+                    error="signature mismatch",
+                )
+            )
+            ok, detail = await bot._ensure_dev_agent_available()
+
+        assert ok is False
+        assert detail == "update failed: signature mismatch"
+
+        github_token = SimpleNamespace(get_secret_value=lambda: "gh-token")
+        settings = _dev_settings(
+            "http://dev-agent.local:8787",
+            github_token=github_token,
+            updater_secret="shared-secret",
+        )
+        with (
+            patch.object(
+                bot,
+                "_dev_agent_healthcheck",
+                new_callable=AsyncMock,
+                side_effect=[False, True],
+            ),
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.updater.manager.UpdateManager") as update_manager_cls,
+        ):
+            manager = update_manager_cls.return_value
+            manager.check_for_update = AsyncMock(return_value=release)
+            manager.apply_update = AsyncMock(
+                return_value=SimpleNamespace(
+                    status=UpdateStatus.SUCCESS,
+                    error=None,
+                )
+            )
+            ok, detail = await bot._ensure_dev_agent_available()
+
+        assert ok is True
+        assert detail == "updated to 1.2.3"
+        assert update_manager_cls.call_args.kwargs["github_token"] == "gh-token"
+        assert update_manager_cls.call_args.kwargs["updater_secret"] == "shared-secret"
+
+    def test_dev_agent_base_url_and_updater_secret_paths(self, bot, tmp_path):
+        direct_settings = _dev_settings(
+            "http://dev-agent.local:8787",
+            updater_secret="  direct-secret  ",
+        )
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=direct_settings),
+            patch("zetherion_ai.discord.bot.get_dynamic", return_value=123),
+        ):
+            assert bot._dev_agent_base_url() == "http://zetherion-ai-dev-agent:8787"
+
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=direct_settings):
+            assert bot._resolve_updater_secret() == "direct-secret"
+
+        secret_path = tmp_path / "updater-secret.txt"
+        secret_path.write_text(" from-file \n", encoding="utf-8")
+        file_settings = _dev_settings(
+            "http://dev-agent.local:8787",
+            updater_secret="",
+            updater_secret_path=str(secret_path),
+        )
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=file_settings):
+            assert bot._resolve_updater_secret() == "from-file"
+
+        missing_settings = _dev_settings(
+            "http://dev-agent.local:8787",
+            updater_secret="",
+            updater_secret_path=str(tmp_path / "missing.txt"),
+        )
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=missing_settings):
+            assert bot._resolve_updater_secret() == ""
+
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=file_settings),
+            patch("pathlib.Path.read_text", side_effect=OSError("denied")),
+        ):
+            assert bot._resolve_updater_secret() == ""
+
+    @pytest.mark.asyncio
     async def test_ensure_dev_watcher_discord_assets_returns_none_when_members_missing(self, bot):
         guild = MagicMock(spec=discord.Guild)
         guild.me = None
@@ -1977,6 +2514,258 @@ class TestDevWatcherWizardDetails:
             result = await bot._ensure_dev_watcher_discord_assets(guild=guild, user_id=123456789)
 
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_select_manageable_guilds_and_resolve_member_paths(self, bot):
+        owner_member = MagicMock(spec=discord.Member)
+        blocked_missing_bot = MagicMock(spec=discord.Guild)
+        blocked_missing_bot.name = "No Bot"
+        blocked_missing_bot.me = None
+        blocked_missing_bot.get_member.return_value = None
+
+        blocked_permissions = MagicMock(spec=discord.Guild)
+        blocked_permissions.name = "No Perms"
+        blocked_permissions.me = SimpleNamespace(
+            guild_permissions=SimpleNamespace(
+                manage_channels=False,
+                manage_webhooks=False,
+            )
+        )
+
+        allowed_guild = MagicMock(spec=discord.Guild)
+        allowed_guild.name = "Allowed"
+        allowed_guild.me = SimpleNamespace(
+            guild_permissions=SimpleNamespace(
+                manage_channels=True,
+                manage_webhooks=True,
+            )
+        )
+
+        with (
+            patch.object(
+                type(bot),
+                "guilds",
+                new_callable=PropertyMock,
+                return_value=[
+                    MagicMock(spec=discord.Guild),
+                    blocked_missing_bot,
+                    blocked_permissions,
+                    allowed_guild,
+                ],
+            ),
+            patch.object(
+                bot,
+                "_resolve_guild_member",
+                new_callable=AsyncMock,
+                side_effect=[None, owner_member, owner_member, owner_member],
+            ),
+        ):
+            manageable, blocked = await bot._select_manageable_guilds(123456789)
+
+        assert manageable == [allowed_guild]
+        assert blocked == [
+            "No Bot: bot membership unavailable",
+            "No Perms: missing Manage Channels, Manage Webhooks",
+        ]
+
+        cached_member = MagicMock(spec=discord.Member)
+        cached_guild = MagicMock(spec=discord.Guild)
+        cached_guild.get_member.return_value = cached_member
+        assert await bot._resolve_guild_member(cached_guild, 1) is cached_member
+
+        fetched_member = MagicMock(spec=discord.Member)
+        fetched_guild = MagicMock(spec=discord.Guild)
+        fetched_guild.get_member.return_value = None
+        fetched_guild.fetch_member = AsyncMock(return_value=fetched_member)
+        assert await bot._resolve_guild_member(fetched_guild, 2) is fetched_member
+
+        missing_guild = MagicMock(spec=discord.Guild)
+        missing_guild.get_member.return_value = None
+        missing_guild.fetch_member = AsyncMock(side_effect=RuntimeError("boom"))
+        assert await bot._resolve_guild_member(missing_guild, 3) is None
+
+    @pytest.mark.asyncio
+    async def test_run_dev_watcher_provisioning_handles_unavailable_and_asset_failures(
+        self,
+        bot,
+        mock_dm_message,
+    ):
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = 404
+        guild.name = "My Guild"
+        mock_dm_message.channel.send = AsyncMock()
+
+        with patch.object(
+            bot,
+            "_ensure_dev_agent_available",
+            new_callable=AsyncMock,
+            return_value=(False, "dev-agent unavailable"),
+        ):
+            await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
+
+        assert mock_dm_message.channel.send.await_args_list[-1].args[0] == (
+            "Provisioning halted: dev-agent unavailable"
+        )
+
+        mock_dm_message.channel.send.reset_mock()
+        with (
+            patch.object(
+                bot,
+                "_ensure_dev_agent_available",
+                new_callable=AsyncMock,
+                return_value=(True, "dev-agent healthy"),
+            ),
+            patch.object(
+                bot,
+                "_ensure_dev_watcher_discord_assets",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
+
+        assert mock_dm_message.channel.send.await_args_list[-1].args[0] == (
+            "Provisioning halted: failed while creating Discord assets."
+        )
+
+        mock_dm_message.channel.send.reset_mock()
+        with (
+            patch.object(
+                bot,
+                "_ensure_dev_agent_available",
+                new_callable=AsyncMock,
+                return_value=(True, "dev-agent healthy"),
+            ),
+            patch.object(
+                bot,
+                "_ensure_dev_watcher_discord_assets",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
+
+        assert "could not create Discord assets" in (
+            mock_dm_message.channel.send.await_args_list[-1].args[0]
+        )
+
+    @pytest.mark.asyncio
+    async def test_run_dev_watcher_provisioning_handles_bootstrap_and_persist_failures(
+        self,
+        bot,
+        mock_dm_message,
+    ):
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = 404
+        guild.name = "My Guild"
+        mock_dm_message.channel.send = AsyncMock()
+
+        category = MagicMock(spec=discord.CategoryChannel)
+        category.name = "Zetherion Ops"
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 202
+        webhook = MagicMock(spec=discord.Webhook)
+        webhook.name = "zetherion-dev-agent"
+        webhook.url = "https://discord.test/webhook"
+
+        with (
+            patch.object(
+                bot,
+                "_ensure_dev_agent_available",
+                new_callable=AsyncMock,
+                return_value=(True, "dev-agent healthy"),
+            ),
+            patch.object(
+                bot,
+                "_ensure_dev_watcher_discord_assets",
+                new_callable=AsyncMock,
+                return_value=(category, channel, webhook),
+            ),
+            patch.object(
+                bot,
+                "_bootstrap_dev_agent",
+                new_callable=AsyncMock,
+                return_value={"ok": False, "error": "bad bootstrap"},
+            ),
+        ):
+            await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
+
+        assert "during bootstrap: bad bootstrap" in (
+            mock_dm_message.channel.send.await_args_list[-1].args[0]
+        )
+
+        mock_dm_message.channel.send.reset_mock()
+        with (
+            patch.object(
+                bot,
+                "_ensure_dev_agent_available",
+                new_callable=AsyncMock,
+                return_value=(True, "dev-agent healthy"),
+            ),
+            patch.object(
+                bot,
+                "_ensure_dev_watcher_discord_assets",
+                new_callable=AsyncMock,
+                return_value=(category, channel, webhook),
+            ),
+            patch.object(
+                bot,
+                "_bootstrap_dev_agent",
+                new_callable=AsyncMock,
+                return_value={"ok": True, "api_token": "  "},
+            ),
+        ):
+            await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
+
+        assert "did not return an API token" in (
+            mock_dm_message.channel.send.await_args_list[-1].args[0]
+        )
+
+        mock_dm_message.channel.send.reset_mock()
+        with (
+            patch.object(
+                bot,
+                "_ensure_dev_agent_available",
+                new_callable=AsyncMock,
+                return_value=(True, "dev-agent healthy"),
+            ),
+            patch.object(
+                bot,
+                "_ensure_dev_watcher_discord_assets",
+                new_callable=AsyncMock,
+                return_value=(category, channel, webhook),
+            ),
+            patch.object(
+                bot,
+                "_bootstrap_dev_agent",
+                new_callable=AsyncMock,
+                return_value={"ok": True, "api_token": "api-token"},
+            ),
+            patch.object(
+                bot,
+                "_persist_dev_watcher_runtime",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("persist failed"),
+            ),
+        ):
+            await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
+
+        assert "while saving runtime settings/secrets: persist failed" in (
+            mock_dm_message.channel.send.await_args_list[-1].args[0]
+        )
+
+    @pytest.mark.asyncio
+    async def test_dev_agent_healthcheck_returns_false_on_request_error(self, bot):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(bot, "_dev_agent_base_url", return_value="http://dev-agent.local:8787"),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            assert await bot._dev_agent_healthcheck() is False
 
     @pytest.mark.asyncio
     async def test_ensure_dev_watcher_discord_assets_creates_category_channel_webhook(self, bot):
@@ -2249,6 +3038,58 @@ class TestDevWatcherWizardDetails:
 class TestBotRuntimeHelpers:
     """Coverage for runtime helper methods in discord bot layer."""
 
+    @pytest.mark.asyncio
+    async def test_setup_command_callbacks_route_to_handlers(self, bot, mock_interaction):
+        handled_user = MagicMock(spec=discord.User)
+        commands = {command.name: command for command in bot._tree.get_commands()}
+
+        with (
+            patch.object(type(bot), "latency", new_callable=PropertyMock, return_value=0.123),
+            patch.object(bot, "_handle_ask", new_callable=AsyncMock) as handle_ask,
+            patch.object(bot, "_handle_remember", new_callable=AsyncMock) as handle_remember,
+            patch.object(bot, "_handle_search", new_callable=AsyncMock) as handle_search,
+            patch.object(bot, "_handle_channels", new_callable=AsyncMock) as handle_channels,
+            patch.object(bot, "_handle_allow", new_callable=AsyncMock) as handle_allow,
+            patch.object(bot, "_handle_deny", new_callable=AsyncMock) as handle_deny,
+            patch.object(bot, "_handle_role", new_callable=AsyncMock) as handle_role,
+            patch.object(bot, "_handle_allowlist", new_callable=AsyncMock) as handle_allowlist,
+            patch.object(bot, "_handle_audit", new_callable=AsyncMock) as handle_audit,
+            patch.object(bot, "_handle_config_list", new_callable=AsyncMock) as handle_config_list,
+            patch.object(bot, "_handle_config_set", new_callable=AsyncMock) as handle_config_set,
+            patch.object(
+                bot, "_handle_config_reset", new_callable=AsyncMock
+            ) as handle_config_reset,
+        ):
+            await commands["ask"].callback(mock_interaction, "How are we looking?")
+            await commands["remember"].callback(mock_interaction, "Remember this.")
+            await commands["search"].callback(mock_interaction, "roadmap")
+            await commands["ping"].callback(mock_interaction)
+            await commands["channels"].callback(mock_interaction)
+            await commands["allow"].callback(mock_interaction, handled_user, "admin")
+            await commands["deny"].callback(mock_interaction, handled_user)
+            await commands["role"].callback(mock_interaction, handled_user, "owner")
+            await commands["allowlist"].callback(mock_interaction, "admin")
+            await commands["audit"].callback(mock_interaction, 7)
+            await commands["config_list"].callback(mock_interaction, "models")
+            await commands["config_set"].callback(mock_interaction, "models", "provider", "groq")
+            await commands["config_reset"].callback(mock_interaction, "models", "provider")
+
+        handle_ask.assert_awaited_once_with(mock_interaction, "How are we looking?")
+        handle_remember.assert_awaited_once_with(mock_interaction, "Remember this.")
+        handle_search.assert_awaited_once_with(mock_interaction, "roadmap")
+        mock_interaction.response.send_message.assert_awaited_once()
+        handle_channels.assert_awaited_once_with(mock_interaction)
+        handle_allow.assert_awaited_once_with(mock_interaction, handled_user, "admin")
+        handle_deny.assert_awaited_once_with(mock_interaction, handled_user)
+        handle_role.assert_awaited_once_with(mock_interaction, handled_user, "owner")
+        handle_allowlist.assert_awaited_once_with(mock_interaction, "admin")
+        handle_audit.assert_awaited_once_with(mock_interaction, 7)
+        handle_config_list.assert_awaited_once_with(mock_interaction, "models")
+        handle_config_set.assert_awaited_once_with(
+            mock_interaction, "models", "provider", "groq"
+        )
+        handle_config_reset.assert_awaited_once_with(mock_interaction, "models", "provider")
+
     def test_parse_clock_time(self):
         nine_thirty = datetime.strptime("09:30", "%H:%M").time()
         twenty_three_fifty_nine = datetime.strptime("23:59", "%H:%M").time()
@@ -2320,6 +3161,44 @@ class TestBotRuntimeHelpers:
         assert await bot._resolve_quiet_hours("123") is None
 
     @pytest.mark.asyncio
+    async def test_resolve_quiet_hours_ignores_non_mapping_windows(self, bot):
+        bot._user_manager = AsyncMock()
+        bot._user_manager.get_personal_profile = AsyncMock(
+            return_value={
+                "timezone": "UTC",
+                "preferences": ["not-a-dict"],
+                "working_hours": ["also-not-a-dict"],
+            }
+        )
+
+        assert await bot._resolve_quiet_hours("123") is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_quiet_hours_handles_string_fallback_parsing(self, bot):
+        bot._user_manager = AsyncMock()
+        bot._user_manager.get_personal_profile = AsyncMock(
+            return_value={
+                "timezone": "UTC",
+                "preferences": "{bad json",
+                "working_hours": '{"start":"09:00","end":"17:00"}',
+            }
+        )
+
+        window = await bot._resolve_quiet_hours("123")
+
+        assert window is not None
+        assert window.start.hour == 17
+        assert window.end.hour == 9
+
+    def test_as_int_parsing(self, bot):
+        assert bot._as_int(True) == 1
+        assert bot._as_int(4) == 4
+        assert bot._as_int(3.8) == 3
+        assert bot._as_int("42") == 42
+        assert bot._as_int("oops", default=9) == 9
+        assert bot._as_int("", default=7) == 7
+
+    @pytest.mark.asyncio
     async def test_resolve_owner_alert_user_id_prefers_owner_setting(self, bot):
         with patch(
             "zetherion_ai.discord.bot.get_settings",
@@ -2354,6 +3233,37 @@ class TestBotRuntimeHelpers:
         ):
             owner_id = await bot._resolve_owner_alert_user_id()
         assert owner_id is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_owner_alert_user_id_returns_none_without_matching_owner(self, bot):
+        bot._user_manager = AsyncMock()
+        bot._user_manager.list_users = AsyncMock(
+            return_value=[
+                {"discord_user_id": "123", "role": "user"},
+                {"discord_user_id": None, "role": "owner"},
+            ]
+        )
+        with patch(
+            "zetherion_ai.discord.bot.get_settings",
+            return_value=SimpleNamespace(owner_user_id=0),
+        ):
+            owner_id = await bot._resolve_owner_alert_user_id()
+        assert owner_id is None
+
+        bot._user_manager = None
+        with patch(
+            "zetherion_ai.discord.bot.get_settings",
+            return_value=SimpleNamespace(owner_user_id=0),
+        ):
+            owner_id = await bot._resolve_owner_alert_user_id()
+        assert owner_id is None
+
+    def test_resolve_runtime_pool_handles_missing_pool_and_missing_user_manager(self, bot):
+        bot._user_manager = None
+        assert bot._resolve_runtime_pool() is None
+
+        bot._user_manager = object()
+        assert bot._resolve_runtime_pool() is None
 
     @pytest.mark.asyncio
     async def test_handle_provider_issue_alert_emits_announcement(self, bot):
@@ -2393,6 +3303,67 @@ class TestBotRuntimeHelpers:
         assert "Top up credits" in payload["body"]
 
     @pytest.mark.asyncio
+    async def test_handle_provider_issue_alert_returns_early_when_not_ready(self, bot):
+        alert = SimpleNamespace(
+            provider=SimpleNamespace(value="openai"),
+            issue_type="rate_limit",
+            task_type="chat",
+            model="gpt-4o",
+            fail_count=2,
+            error="busy",
+        )
+
+        with (
+            patch.object(bot, "is_ready", return_value=False),
+            patch.object(
+                bot,
+                "_resolve_owner_alert_user_id",
+                new_callable=AsyncMock,
+            ) as resolve_owner,
+            patch.object(
+                bot,
+                "emit_announcement_event",
+                new_callable=AsyncMock,
+            ) as emit_announcement,
+        ):
+            await bot._handle_provider_issue_alert(alert)
+
+        resolve_owner.assert_not_awaited()
+        emit_announcement.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_provider_issue_alert_truncates_error_and_logs_emit_failure(self, bot):
+        alert = SimpleNamespace(
+            provider=SimpleNamespace(value="groq"),
+            issue_type="auth",
+            task_type="chat.completions",
+            model="llama-3",
+            fail_count=3,
+            error="x" * 700,
+        )
+
+        with (
+            patch.object(bot, "is_ready", return_value=True),
+            patch.object(
+                bot,
+                "_resolve_owner_alert_user_id",
+                new_callable=AsyncMock,
+                return_value=123456789,
+            ),
+            patch.object(
+                bot,
+                "emit_announcement_event",
+                new_callable=AsyncMock,
+                return_value=False,
+            ) as emit_announcement,
+        ):
+            await bot._handle_provider_issue_alert(alert)
+
+        payload = emit_announcement.await_args.args[0]
+        assert payload["payload"]["provider"] == "groq"
+        assert payload["body"].endswith("...`")
+
+    @pytest.mark.asyncio
     async def test_handle_provider_issue_alert_skips_when_owner_missing(self, bot):
         alert = SimpleNamespace(
             provider=SimpleNamespace(value="openai"),
@@ -2412,6 +3383,204 @@ class TestBotRuntimeHelpers:
             ),
         ):
             await bot._handle_provider_issue_alert(alert)
+
+    @pytest.mark.asyncio
+    async def test_startup_queue_path_ready_sets_blocker_when_runtime_checks_fail(self, bot):
+        queue_manager = SimpleNamespace(
+            get_status=AsyncMock(side_effect=RuntimeError("queue unavailable")),
+            _storage=SimpleNamespace(dequeue=AsyncMock()),
+        )
+        runtime_status_store = AsyncMock()
+        announcement_repository = AsyncMock()
+        announcement_repository.probe_claim_due_deliveries = AsyncMock(
+            side_effect=RuntimeError("dispatcher unavailable")
+        )
+        bot._queue_manager = queue_manager
+        bot._runtime_status_store = runtime_status_store
+        bot._announcement_repository = announcement_repository
+        bot._publish_runtime_status = AsyncMock()
+
+        ready = await bot._startup_queue_path_ready()
+
+        assert ready is False
+        assert bot._startup_blocker is not None
+        assert bot._startup_blocker["code"] == "runtime_startup_self_check_failed"
+        assert "message_queue" in bot._startup_blocker["details"]["issues"]
+        assert "announcement_dispatcher" in bot._startup_blocker["details"]["issues"]
+        bot._publish_runtime_status.assert_awaited_once_with(
+            status="blocked",
+            summary=bot._startup_blocker["summary"],
+        )
+
+    @pytest.mark.asyncio
+    async def test_startup_queue_path_ready_returns_true_when_all_checks_pass(self, bot):
+        queue_manager = SimpleNamespace(
+            get_status=AsyncMock(return_value={"running": True}),
+            _storage=SimpleNamespace(dequeue=AsyncMock(return_value=None)),
+        )
+        runtime_status_store = AsyncMock()
+        announcement_repository = AsyncMock()
+        announcement_repository.probe_claim_due_deliveries = AsyncMock(return_value=None)
+        bot._queue_manager = queue_manager
+        bot._runtime_status_store = runtime_status_store
+        bot._announcement_repository = announcement_repository
+        bot._publish_runtime_status = AsyncMock()
+        bot._startup_blocker = {"code": "stale"}
+
+        ready = await bot._startup_queue_path_ready()
+
+        assert ready is True
+        assert bot._startup_blocker is None
+        runtime_status_store.upsert_status.assert_awaited_once()
+        runtime_status_store.get_status.assert_awaited_once()
+        announcement_repository.probe_claim_due_deliveries.assert_awaited_once()
+        bot._publish_runtime_status.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_startup_queue_path_ready_suppresses_runtime_status_publish_errors(self, bot):
+        queue_manager = SimpleNamespace(
+            get_status=AsyncMock(side_effect=RuntimeError("queue unavailable")),
+            _storage=SimpleNamespace(dequeue=AsyncMock()),
+        )
+        runtime_status_store = AsyncMock()
+        runtime_status_store.upsert_status = AsyncMock(return_value=None)
+        runtime_status_store.get_status = AsyncMock(return_value={"status": "healthy"})
+        bot._queue_manager = queue_manager
+        bot._runtime_status_store = runtime_status_store
+        bot._announcement_repository = None
+        bot._publish_runtime_status = AsyncMock(side_effect=RuntimeError("status publish failed"))
+
+        ready = await bot._startup_queue_path_ready()
+
+        assert ready is False
+        assert bot._startup_blocker is not None
+        bot._publish_runtime_status.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_startup_queue_path_ready_handles_missing_optional_services(self, bot):
+        announcement_repository = AsyncMock()
+        announcement_repository.probe_claim_due_deliveries = AsyncMock(
+            side_effect=RuntimeError("dispatcher unavailable")
+        )
+        bot._queue_manager = None
+        bot._runtime_status_store = None
+        bot._announcement_repository = announcement_repository
+        bot._publish_runtime_status = AsyncMock()
+
+        ready = await bot._startup_queue_path_ready()
+
+        assert ready is False
+        assert bot._startup_blocker is not None
+        assert "announcement_dispatcher" in bot._startup_blocker["details"]["issues"]
+        bot._publish_runtime_status.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_keep_warm_loop_covers_recent_and_stale_activity_paths(self, bot):
+        bot._agent = SimpleNamespace(keep_warm=AsyncMock())
+        bot._last_message_time = time.time()
+        with (
+            patch(
+                "zetherion_ai.discord.bot.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await bot._keep_warm_loop()
+        bot._agent.keep_warm.assert_awaited_once()
+
+        bot._agent.keep_warm.reset_mock()
+        bot._last_message_time = 0.0
+        with (
+            patch(
+                "zetherion_ai.discord.bot.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await bot._keep_warm_loop()
+        bot._agent.keep_warm.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_provider_watch_loop_covers_disabled_and_missing_probe_paths(self, bot):
+        bot._agent = SimpleNamespace(_inference_broker=SimpleNamespace())
+        settings = SimpleNamespace(provider_probe_interval_seconds=30, provider_probe_enabled=True)
+
+        def _disabled(_namespace: str, key: str, default):
+            if key == "provider_probe_enabled":
+                return False
+            return default
+
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=_disabled),
+            patch(
+                "zetherion_ai.discord.bot.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await bot._provider_watch_loop()
+
+    @pytest.mark.asyncio
+    async def test_provider_watch_loop_probes_and_logs_failures(self, bot):
+        settings = SimpleNamespace(provider_probe_interval_seconds=30, provider_probe_enabled=True)
+
+        def _enabled(_namespace: str, key: str, default):
+            if key == "provider_probe_enabled":
+                return True
+            if key == "provider_probe_interval_seconds":
+                return 15
+            return default
+
+        broker = SimpleNamespace(probe_paid_providers=AsyncMock(return_value=None))
+        bot._agent = SimpleNamespace(_inference_broker=broker)
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=_enabled),
+            patch(
+                "zetherion_ai.discord.bot.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await bot._provider_watch_loop()
+        broker.probe_paid_providers.assert_awaited_once()
+
+        failing_broker = SimpleNamespace(
+            probe_paid_providers=AsyncMock(side_effect=RuntimeError("probe failed"))
+        )
+        bot._agent = SimpleNamespace(_inference_broker=failing_broker)
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=_enabled),
+            patch(
+                "zetherion_ai.discord.bot.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            patch("zetherion_ai.discord.bot.log.warning") as log_warning,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await bot._provider_watch_loop()
+        failing_broker.probe_paid_providers.assert_awaited_once()
+        log_warning.assert_called_once()
+
+        def _enabled(_namespace: str, key: str, default):
+            if key == "provider_probe_enabled":
+                return True
+            if key == "provider_probe_interval_seconds":
+                return 15
+            return default
+
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=_enabled),
+            patch(
+                "zetherion_ai.discord.bot.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await bot._provider_watch_loop()
 
     @pytest.mark.asyncio
     async def test_emit_announcement_event_success(self, bot):
@@ -2623,6 +3792,22 @@ class TestBotRuntimeHelpers:
         dispatcher.start.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_on_ready_handles_dispatcher_failure_and_blocked_status(self, bot):
+        dispatcher = AsyncMock()
+        dispatcher.is_running = False
+        dispatcher.start = AsyncMock(side_effect=RuntimeError("dispatcher failed"))
+        bot._announcement_dispatcher = dispatcher
+        bot._startup_blocker = {"summary": "queue startup failed"}
+        bot._publish_runtime_status = AsyncMock()
+
+        await bot.on_ready()
+
+        bot._publish_runtime_status.assert_awaited_once_with(
+            status="blocked",
+            summary="queue startup failed",
+        )
+
+    @pytest.mark.asyncio
     async def test_close_stops_runtime_components(self, bot):
         dispatcher = AsyncMock()
         dispatcher.stop = AsyncMock()
@@ -2663,6 +3848,370 @@ class TestBotRuntimeHelpers:
         assert keep_warm_task.cancelled() is True
         assert provider_task.cancelled() is True
 
+    @pytest.mark.asyncio
+    async def test_close_stops_runtime_status_task_and_publishes_shutdown_status(self, bot):
+        async def _wait_forever():
+            await asyncio.sleep(3600)
+
+        runtime_status_task = asyncio.create_task(_wait_forever())
+        bot._runtime_status_task = runtime_status_task
+        bot._publish_runtime_status = AsyncMock()
+
+        with patch.object(discord.Client, "close", new_callable=AsyncMock) as client_close:
+            await bot.close()
+
+        assert runtime_status_task.cancelled() is True
+        bot._publish_runtime_status.assert_awaited_once_with(
+            status="stopped",
+            summary="Discord bot is shutting down.",
+        )
+        client_close.assert_awaited_once()
+
+    def test_release_revision_prefers_first_available_environment_value(self, bot):
+        with patch.dict(
+            os.environ,
+            {"APP_GIT_SHA": "", "GITHUB_SHA": "", "RELEASE_SHA": "release-1", "VERSION": ""},
+            clear=False,
+        ):
+            assert bot._release_revision() == "release-1"
+
+        with patch.dict(
+            os.environ,
+            {"APP_GIT_SHA": "", "GITHUB_SHA": "", "RELEASE_SHA": "", "VERSION": ""},
+            clear=False,
+        ):
+            assert bot._release_revision() is None
+
+    @pytest.mark.asyncio
+    async def test_runtime_status_details_handles_queue_failures_and_optional_sections(self, bot):
+        bot._queue_manager = SimpleNamespace(get_status=AsyncMock(side_effect=RuntimeError("boom")))
+        bot._announcement_dispatcher = SimpleNamespace(is_running=False)
+        bot._startup_blocker = {"summary": "blocked"}
+
+        details = await bot._runtime_status_details()
+
+        assert "queue" not in details
+        assert details["announcement_dispatcher"]["running"] is False
+        assert details["startup_blocker"]["summary"] == "blocked"
+
+    @pytest.mark.asyncio
+    async def test_runtime_status_details_includes_queue_and_dispatcher_sections(self, bot):
+        bot._queue_manager = SimpleNamespace(get_status=AsyncMock(return_value={"running": True}))
+        bot._announcement_dispatcher = SimpleNamespace(is_running=True)
+        bot._startup_blocker = {"summary": "blocked"}
+
+        details = await bot._runtime_status_details()
+
+        assert details["queue"] == {"running": True}
+        assert details["announcement_dispatcher"]["running"] is True
+        assert details["startup_blocker"]["summary"] == "blocked"
+
+    @pytest.mark.asyncio
+    async def test_runtime_status_details_omits_optional_sections_when_absent(self, bot):
+        bot._queue_manager = None
+        bot._announcement_dispatcher = None
+        bot._startup_blocker = None
+
+        details = await bot._runtime_status_details()
+
+        assert "queue" not in details
+        assert "announcement_dispatcher" not in details
+        assert "startup_blocker" not in details
+
+    @pytest.mark.asyncio
+    async def test_publish_runtime_status_returns_early_without_store_and_writes_when_present(
+        self, bot
+    ):
+        await bot._publish_runtime_status(status="healthy", summary="noop")
+
+        runtime_status_store = AsyncMock()
+        bot._runtime_status_store = runtime_status_store
+        bot._runtime_instance_id = "runtime-1"
+        bot._runtime_status_details = AsyncMock(return_value={"ready": True})  # type: ignore[method-assign]
+
+        with patch.object(bot, "_release_revision", return_value="sha-123"):
+            await bot._publish_runtime_status(status="healthy", summary="ready")
+
+        runtime_status_store.upsert_status.assert_awaited_once_with(
+            service_name="discord_bot",
+            status="healthy",
+            summary="ready",
+            details={"ready": True},
+            release_revision="sha-123",
+            instance_id="runtime-1",
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("startup_blocker", "ready", "expected_status", "expected_summary"),
+        [
+            (None, False, "starting", "Discord bot is still starting up."),
+            ({"summary": "blocked by startup"}, True, "blocked", "blocked by startup"),
+        ],
+    )
+    async def test_runtime_status_loop_publishes_expected_state(
+        self,
+        bot,
+        startup_blocker,
+        ready,
+        expected_status,
+        expected_summary,
+    ):
+        bot._startup_blocker = startup_blocker
+        bot._publish_runtime_status = AsyncMock()
+        bot.is_ready = MagicMock(return_value=ready)  # type: ignore[method-assign]
+
+        with (
+            patch(
+                "zetherion_ai.discord.bot.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await bot._runtime_status_loop()
+
+        bot._publish_runtime_status.assert_awaited_once_with(
+            status=expected_status,
+            summary=expected_summary,
+        )
+
+    @pytest.mark.asyncio
+    async def test_runtime_status_loop_logs_publish_failures(self, bot):
+        bot._publish_runtime_status = AsyncMock(side_effect=RuntimeError("publish failed"))
+        bot.is_ready = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+        with (
+            patch(
+                "zetherion_ai.discord.bot.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            patch("zetherion_ai.discord.bot.log.exception") as log_exception,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await bot._runtime_status_loop()
+
+        log_exception.assert_called_once()
+
+    def test_discord_e2e_lease_for_message_and_interaction_paths(self, bot):
+        class _FakeTextChannel:
+            def __init__(self, *, name: str, topic: str | None, category_id: int | None) -> None:
+                self.name = name
+                self.topic = topic
+                self.category_id = category_id
+
+        active_lease = DiscordE2ELease(
+            run_id="run-1",
+            mode="local_required",
+            target_bot_id=bot.user.id,
+            author_id=123456789,
+            created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            guild_id=77,
+            category_id=88,
+            channel_prefix="zeth-e2e",
+        )
+        expired_lease = DiscordE2ELease(
+            run_id="run-2",
+            mode="local_required",
+            target_bot_id=bot.user.id,
+            author_id=123456789,
+            created_at=datetime.now(UTC) - timedelta(minutes=30),
+            expires_at=datetime.now(UTC) - timedelta(minutes=5),
+            guild_id=77,
+            category_id=88,
+            channel_prefix="zeth-e2e",
+        )
+
+        def _message(
+            *,
+            author_id: int = 123456789,
+            guild_id: int = 77,
+            category_id: int = 88,
+            topic: str | None = None,
+        ):
+            author = SimpleNamespace(id=author_id, bot=False)
+            guild = SimpleNamespace(id=guild_id)
+            channel = _FakeTextChannel(
+                name="zeth-e2e-validation",
+                topic=topic,
+                category_id=category_id,
+            )
+            return SimpleNamespace(author=author, guild=guild, channel=channel)
+
+        settings = SimpleNamespace(
+            discord_e2e_enabled=True,
+            discord_e2e_allowed_author_ids=[123456789],
+            discord_e2e_guild_id=77,
+            discord_e2e_category_id=88,
+            discord_e2e_channel_prefix="zeth-e2e",
+        )
+
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=settings), patch(
+            "zetherion_ai.discord.bot.discord.TextChannel", _FakeTextChannel
+        ):
+            assert (
+                bot._discord_e2e_lease_for_message(_message(topic=active_lease.to_topic()))
+                == active_lease
+            )
+            assert (
+                bot._discord_e2e_lease_for_message(_message(topic=expired_lease.to_topic()))
+                is None
+            )
+            assert (
+                bot._discord_e2e_lease_for_message(
+                    _message(author_id=999, topic=active_lease.to_topic())
+                )
+                is None
+            )
+            assert (
+                bot._discord_e2e_lease_for_message(
+                    _message(guild_id=55, topic=active_lease.to_topic())
+                )
+                is None
+            )
+            assert (
+                bot._discord_e2e_lease_for_message(
+                    _message(category_id=999, topic=active_lease.to_topic())
+                )
+                is None
+            )
+
+            wrong_target = DiscordE2ELease(
+                run_id="run-3",
+                mode="local_required",
+                target_bot_id=111,
+                author_id=123456789,
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(minutes=15),
+                guild_id=77,
+                category_id=88,
+                channel_prefix="zeth-e2e",
+            )
+            assert (
+                bot._discord_e2e_lease_for_message(_message(topic=wrong_target.to_topic()))
+                is None
+            )
+
+            wrong_author = DiscordE2ELease(
+                run_id="run-4",
+                mode="local_required",
+                target_bot_id=bot.user.id,
+                author_id=999,
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(minutes=15),
+                guild_id=77,
+                category_id=88,
+                channel_prefix="zeth-e2e",
+            )
+            assert (
+                bot._discord_e2e_lease_for_message(_message(topic=wrong_author.to_topic()))
+                is None
+            )
+
+            wrong_guild = DiscordE2ELease(
+                run_id="run-5",
+                mode="local_required",
+                target_bot_id=bot.user.id,
+                author_id=123456789,
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(minutes=15),
+                guild_id=999,
+                category_id=88,
+                channel_prefix="zeth-e2e",
+            )
+            assert (
+                bot._discord_e2e_lease_for_message(_message(topic=wrong_guild.to_topic()))
+                is None
+            )
+
+            no_guild_message = _message(topic=active_lease.to_topic())
+            no_guild_message.guild = None
+            assert bot._discord_e2e_lease_for_message(no_guild_message) is None
+
+            blank_prefix_settings = SimpleNamespace(
+                discord_e2e_enabled=True,
+                discord_e2e_allowed_author_ids=[123456789],
+                discord_e2e_guild_id=77,
+                discord_e2e_category_id=88,
+                discord_e2e_channel_prefix="",
+            )
+            with patch("zetherion_ai.discord.bot.get_settings", return_value=blank_prefix_settings):
+                assert (
+                    bot._discord_e2e_lease_for_message(_message(topic=active_lease.to_topic()))
+                    is None
+                )
+
+            interaction = SimpleNamespace(
+                channel=_FakeTextChannel(
+                    name="zeth-e2e-validation",
+                    topic=active_lease.to_topic(),
+                    category_id=88,
+                ),
+                guild=SimpleNamespace(id=77),
+                user=SimpleNamespace(id=123456789),
+            )
+            interaction_lease = bot._discord_e2e_lease_for_interaction(interaction)
+            assert interaction_lease == active_lease
+
+        disabled_settings = SimpleNamespace(discord_e2e_enabled=False)
+        non_text_message = SimpleNamespace(
+            author=SimpleNamespace(id=123456789, bot=False),
+            guild=SimpleNamespace(id=77),
+            channel=SimpleNamespace(id=1),
+        )
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=disabled_settings):
+            assert bot._discord_e2e_lease_for_message(non_text_message) is None
+
+        enabled_settings = SimpleNamespace(
+            discord_e2e_enabled=True,
+            discord_e2e_allowed_author_ids=[123456789],
+            discord_e2e_guild_id=77,
+            discord_e2e_category_id=88,
+            discord_e2e_channel_prefix="zeth-e2e",
+        )
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=enabled_settings):
+            assert bot._discord_e2e_lease_for_message(non_text_message) is None
+
+    def test_discord_e2e_lease_for_message_rejects_embedded_category_mismatch(self, bot):
+        class _FakeTextChannel:
+            def __init__(self, *, name: str, topic: str | None, category_id: int | None) -> None:
+                self.name = name
+                self.topic = topic
+                self.category_id = category_id
+
+        mismatched_lease = DiscordE2ELease(
+            run_id="run-6",
+            mode="local_required",
+            target_bot_id=bot.user.id,
+            author_id=123456789,
+            created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            guild_id=77,
+            category_id=999,
+            channel_prefix="zeth-e2e",
+        )
+        settings = SimpleNamespace(
+            discord_e2e_enabled=True,
+            discord_e2e_allowed_author_ids=[123456789],
+            discord_e2e_guild_id=77,
+            discord_e2e_category_id=None,
+            discord_e2e_channel_prefix="zeth-e2e",
+        )
+        message = SimpleNamespace(
+            author=SimpleNamespace(id=123456789, bot=False),
+            guild=SimpleNamespace(id=77),
+            channel=_FakeTextChannel(
+                name="zeth-e2e-validation",
+                topic=mismatched_lease.to_topic(),
+                category_id=88,
+            ),
+        )
+
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=settings), patch(
+            "zetherion_ai.discord.bot.discord.TextChannel", _FakeTextChannel
+        ):
+            assert bot._discord_e2e_lease_for_message(message) is None
+
 
 class TestTenantAwareAllowlist:
     """Targeted tests for tenant-admin allowlist enforcement paths."""
@@ -2673,6 +4222,7 @@ class TestTenantAwareAllowlist:
         assert bot._as_bool("yes") is True
         assert bot._as_bool("off", default=True) is False
         assert bot._as_bool("unknown", default=True) is True
+        assert bot._as_bool(object(), default=False) is False
 
     @pytest.mark.asyncio
     async def test_resolve_tenant_for_message_handles_error(self, mock_memory):
@@ -2766,6 +4316,59 @@ class TestTenantAwareAllowlist:
         assert fallback_allowed is True
         assert dm_allowed is True
 
+    @pytest.mark.asyncio
+    async def test_message_and_interaction_allowlist_defaults_to_true_without_user_manager(
+        self,
+        mock_memory,
+    ):
+        bot = ZetherionAIBot(
+            memory=mock_memory,
+            user_manager=None,
+            tenant_admin_manager=AsyncMock(),
+        )
+
+        dm_message = MagicMock(spec=discord.Message)
+        dm_message.author.id = 123
+
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.user = MagicMock()
+        interaction.user.id = 42
+        interaction.guild_id = None
+        interaction.channel_id = None
+
+        assert await bot._is_message_user_allowed(message=dm_message, is_dm=True) is True
+        assert await bot._is_interaction_user_allowed(interaction) is True
+
+    @pytest.mark.asyncio
+    async def test_allowlist_paths_default_to_true_without_user_manager_after_tenant_resolution(
+        self,
+        mock_memory,
+    ):
+        tenant_admin = AsyncMock()
+        tenant_admin.resolve_tenant_for_discord = AsyncMock(return_value="tenant-1")
+        bot = ZetherionAIBot(
+            memory=mock_memory,
+            user_manager=None,
+            tenant_admin_manager=tenant_admin,
+        )
+
+        message = MagicMock(spec=discord.Message)
+        message.author.id = 321
+        message.guild = MagicMock()
+        message.guild.id = 10
+        message.channel = MagicMock()
+        message.channel.id = 20
+
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.user = MagicMock()
+        interaction.user.id = 321
+        interaction.guild_id = 10
+        interaction.channel_id = 20
+
+        with patch("zetherion_ai.discord.bot.get_dynamic_for_tenant", return_value=False):
+            assert await bot._is_message_user_allowed(message=message, is_dm=False) is True
+            assert await bot._is_interaction_user_allowed(interaction) is True
+
 
 class TestWorkerOperatorCommands:
     """Tests for worker operator command parsing and routing."""
@@ -2840,6 +4443,38 @@ class TestWorkerOperatorCommands:
         pending_handler.assert_awaited_once_with(message=mock_dm_message)
 
     @pytest.mark.asyncio
+    async def test_worker_command_blank_and_tenant_resolution_failure_paths(
+        self,
+        bot,
+        mock_dm_message,
+    ):
+        handled = await bot._maybe_handle_worker_operator_command(
+            message=mock_dm_message,
+            content="   ",
+            is_dm=True,
+        )
+        assert handled is False
+
+        with (
+            patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                bot,
+                "_resolve_worker_operator_tenant",
+                new_callable=AsyncMock,
+                return_value=(None, [], "Need a tenant."),
+            ),
+        ):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content="worker status",
+                is_dm=True,
+            )
+
+        assert handled is True
+        assert "Need a tenant." in mock_dm_message.reply.await_args.args[0]
+        assert "Worker operator commands" in mock_dm_message.reply.await_args.args[0]
+
+    @pytest.mark.asyncio
     async def test_worker_quarantine_requires_node_id(self, bot, mock_dm_message):
         with patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True):
             handled = await bot._maybe_handle_worker_operator_command(
@@ -2851,6 +4486,30 @@ class TestWorkerOperatorCommands:
         assert handled is True
         mock_dm_message.reply.assert_awaited_once()
         assert "Missing node_id" in mock_dm_message.reply.await_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_worker_unquarantine_routes_with_node_id(self, bot, mock_dm_message):
+        with (
+            patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                bot,
+                "_handle_worker_node_control_action",
+                new_callable=AsyncMock,
+            ) as node_handler,
+        ):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content=f"worker unquarantine {self._TENANT_ID} node-123",
+                is_dm=True,
+            )
+
+        assert handled is True
+        node_handler.assert_awaited_once_with(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+            action="unquarantine",
+            node_id="node-123",
+        )
 
     @pytest.mark.asyncio
     async def test_worker_retry_forwards_reason(self, bot, mock_dm_message):
@@ -2967,6 +4626,19 @@ class TestWorkerOperatorHelperCoverage:
         )
         assert bot._extract_error_message({"ok": True}, fallback="fallback") == "fallback"
 
+    def test_extract_error_message_blank_payloads(self, bot):
+        assert (
+            bot._extract_error_message(
+                {"error": {"code": "AI_DENY"}},
+                fallback="fallback",
+            )
+            == "fallback"
+        )
+        assert bot._extract_error_message({"error": "   "}, fallback="fallback") == "fallback"
+
+    def test_extract_error_message_non_dict_payload_falls_back(self, bot):
+        assert bot._extract_error_message("boom", fallback="fallback") == "fallback"
+
     @pytest.mark.asyncio
     async def test_build_worker_admin_actor_paths(self, bot, mock_dm_message):
         owner_settings = SimpleNamespace(owner_user_id=mock_dm_message.author.id)
@@ -2984,6 +4656,32 @@ class TestWorkerOperatorHelperCoverage:
         with patch("zetherion_ai.discord.bot.get_settings", return_value=user_settings):
             fallback_actor = await bot._build_worker_admin_actor(message=mock_dm_message)
         assert fallback_actor["actor_roles"] == ["admin"]
+
+    @pytest.mark.asyncio
+    async def test_build_worker_admin_actor_defaults_without_user_manager(
+        self,
+        bot,
+        mock_dm_message,
+    ):
+        bot._user_manager = None
+        with patch(
+            "zetherion_ai.discord.bot.get_settings",
+            return_value=SimpleNamespace(owner_user_id=None),
+        ):
+            actor = await bot._build_worker_admin_actor(message=mock_dm_message)
+
+        assert actor["actor_roles"] == ["admin"]
+
+    @pytest.mark.asyncio
+    async def test_build_worker_admin_actor_ignores_blank_role_values(self, bot, mock_dm_message):
+        bot._user_manager.get_role = AsyncMock(return_value="   ")
+        with patch(
+            "zetherion_ai.discord.bot.get_settings",
+            return_value=SimpleNamespace(owner_user_id=None),
+        ):
+            actor = await bot._build_worker_admin_actor(message=mock_dm_message)
+
+        assert actor["actor_roles"] == ["admin"]
 
     @pytest.mark.asyncio
     async def test_resolve_worker_operator_tenant_paths(self, bot, mock_dm_message):
@@ -3312,6 +5010,62 @@ class TestWorkerOperatorHelperCoverage:
         assert "...and `1` more" in send_long.await_args.args[1]
 
     @pytest.mark.asyncio
+    async def test_handle_worker_operator_status_normalizes_non_list_payloads(
+        self,
+        bot,
+        mock_dm_message,
+    ):
+        with (
+            patch.object(
+                bot,
+                "_request_worker_admin",
+                new_callable=AsyncMock,
+                side_effect=[
+                    (200, {"nodes": "bad-nodes"}),
+                    (200, {"jobs": "bad-jobs"}),
+                ],
+            ),
+            patch.object(
+                bot,
+                "_fetch_pending_dev_agent_approvals",
+                new_callable=AsyncMock,
+                return_value=([], None),
+            ),
+            patch.object(bot, "_send_long_reply", new_callable=AsyncMock) as send_long,
+        ):
+            await bot._handle_worker_operator_status(
+                message=mock_dm_message,
+                tenant_id=self._TENANT_ID,
+            )
+
+        body = send_long.await_args.args[1]
+        assert "- Nodes: `0`" in body
+        assert "- Jobs: `0`" in body
+        assert "Pending approvals note" not in body
+
+    @pytest.mark.asyncio
+    async def test_handle_worker_pending_approvals_without_overflow_suffix(
+        self,
+        bot,
+        mock_dm_message,
+    ):
+        approvals = [{"project_id": "proj-1", "requested_at": "2026-03-06T00:00:00Z"}]
+        with (
+            patch.object(
+                bot,
+                "_fetch_pending_dev_agent_approvals",
+                new_callable=AsyncMock,
+                return_value=(approvals, None),
+            ),
+            patch.object(bot, "_send_long_reply", new_callable=AsyncMock) as send_long,
+        ):
+            await bot._handle_worker_pending_approvals(message=mock_dm_message)
+
+        body = send_long.await_args.args[1]
+        assert "proj-1" in body
+        assert "...and" not in body
+
+    @pytest.mark.asyncio
     async def test_worker_action_handlers_and_command_fallbacks(self, bot, mock_dm_message):
         with patch.object(
             bot,
@@ -3439,3 +5193,27 @@ class TestWorkerOperatorHelperCoverage:
             await bot.on_message(mock_dm_message)
         watcher_handler.assert_not_awaited()
         mock_agent.generate_response.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_message_rate_limit_without_warning_silently_drops(
+        self,
+        bot,
+        mock_dm_message,
+    ):
+        bot._rate_limiter.check = MagicMock(return_value=(False, None))
+        with (
+            patch.object(
+                bot,
+                "_is_message_user_allowed",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                bot,
+                "_discord_e2e_lease_for_message",
+                return_value=None,
+            ),
+        ):
+            await bot.on_message(mock_dm_message)
+
+        mock_dm_message.reply.assert_not_awaited()

@@ -154,6 +154,79 @@ async def test_bootstrap_worker_session_validation_errors() -> None:
     with pytest.raises(ValueError, match="Missing signing_secret"):
         await manager.bootstrap_worker_node_session(**{**base_kwargs, "signing_secret": ""})
 
+    missing_node_conn = _FakeConn()
+    missing_node_conn.fetchrow = AsyncMock(return_value=None)
+    missing_node_manager = TenantAdminManager(pool=_FakePool(missing_node_conn))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="already exists under a different tenant"):
+        await missing_node_manager.bootstrap_worker_node_session(**base_kwargs)
+
+    missing_session_conn = _FakeConn()
+    missing_session_conn.fetchrow.side_effect = [
+        {
+            "node_id": "node-1",
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "node_name": "laptop",
+            "status": "bootstrap_pending",
+            "health_status": "unknown",
+            "metadata": {},
+            "last_heartbeat_at": None,
+            "created_by": "worker-bootstrap",
+            "updated_by": "worker-bootstrap",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+        None,
+    ]
+    missing_session_manager = TenantAdminManager(pool=_FakePool(missing_session_conn))  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="Failed to create worker session"):
+        await missing_session_manager.bootstrap_worker_node_session(**base_kwargs)
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    assert (
+        await manager.get_worker_session_auth(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            session_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        )
+        is None
+    )
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.get_worker_session_auth(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="",
+            session_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        )
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "session_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "node_id": "node-1",
+            "token_hash": "a" * 64,
+            "signing_secret_enc": "signing-secret",
+            "issued_at": datetime.now(UTC),
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
+            "rotated_at": None,
+            "revoked_at": None,
+            "last_seen_at": None,
+            "session_metadata": {},
+            "node_name": "laptop",
+            "status": "registered",
+            "health_status": "healthy",
+            "node_metadata": {},
+            "last_heartbeat_at": datetime.now(UTC),
+        }
+    )
+    manager._decrypt = lambda _ciphertext: None  # type: ignore[method-assign]
+    assert (
+        await manager.get_worker_session_auth(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            session_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        )
+        is None
+    )
+
 
 @pytest.mark.asyncio
 async def test_worker_registry_mutations_and_queries_paths() -> None:
@@ -233,6 +306,39 @@ async def test_worker_registry_mutations_and_queries_paths() -> None:
         actor_sub="worker-heartbeat",
     )
     assert heartbeat["status"] == "active"
+
+    conn.fetchrow.side_effect = [
+        {
+            "status": "active",
+            "health_status": "healthy",
+            "health_score": 85,
+            "consecutive_job_failures": 0,
+            "metadata": {},
+        },
+        {
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "node_id": "node-1",
+            "status": "active",
+            "health_status": "degraded",
+            "health_score": 75,
+            "consecutive_job_failures": 0,
+            "metadata": {},
+            "last_heartbeat_at": datetime.now(UTC),
+            "created_by": "worker-bootstrap",
+            "updated_by": "worker-heartbeat",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+    ]
+    degraded_heartbeat = await manager.heartbeat_worker_node(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        node_id="node-1",
+        health_status="degraded",
+        metadata={},
+        actor_sub="worker-heartbeat",
+    )
+    assert degraded_heartbeat["health_status"] == "degraded"
+    assert degraded_heartbeat["health_score"] == 75
 
     manager._fetchval = AsyncMock(return_value=2)  # type: ignore[method-assign]
     assert (

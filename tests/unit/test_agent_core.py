@@ -751,6 +751,110 @@ class TestGenerateResponseSkillIntents:
         )
         agent._handle_skill_intent.assert_not_awaited()
 
+    async def test_memory_recall_knowledge_phrase_uses_unified_handler(self):
+        """MEMORY_RECALL with a knowledge-summary phrase should use the unified summary."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.MEMORY_RECALL),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_user_knowledge_summary = AsyncMock(return_value="Unified summary")
+        agent._handle_memory_recall = AsyncMock(return_value="Recall summary")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="what do you know about me",
+        )
+
+        assert result == "Unified summary"
+        agent._handle_user_knowledge_summary.assert_awaited_once_with(
+            123,
+            "what do you know about me",
+        )
+        agent._handle_memory_recall.assert_not_awaited()
+
+    async def test_personal_model_knowledge_phrase_uses_unified_handler(self):
+        """PERSONAL_MODEL with a knowledge-summary phrase should use the unified summary."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.PERSONAL_MODEL),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_user_knowledge_summary = AsyncMock(return_value="Personal summary")
+        agent._handle_skill_intent = AsyncMock(return_value="Skill summary")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="what do you know about me",
+        )
+
+        assert result == "Personal summary"
+        agent._handle_user_knowledge_summary.assert_awaited_once_with(
+            123,
+            "what do you know about me",
+        )
+        agent._handle_skill_intent.assert_not_awaited()
+
+    async def test_personal_model_intent_routes_to_skill_handler(self):
+        """PERSONAL_MODEL routes to the personal_model skill for non-summary prompts."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.PERSONAL_MODEL),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_skill_intent = AsyncMock(return_value="Personal model response")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="show my personal model policies",
+        )
+
+        assert result == "Personal model response"
+        agent._handle_skill_intent.assert_awaited_once_with(
+            123,
+            "show my personal model policies",
+            "personal_model",
+        )
+
+    @pytest.mark.parametrize(
+        ("intent", "expected_skill"),
+        [
+            (MessageIntent.YOUTUBE_INTELLIGENCE, "youtube_intelligence"),
+            (MessageIntent.YOUTUBE_MANAGEMENT, "youtube_management"),
+            (MessageIntent.YOUTUBE_STRATEGY, "youtube_strategy"),
+        ],
+    )
+    async def test_youtube_intents_route_to_correct_skills(self, intent, expected_skill):
+        """YouTube intent branches should dispatch to the corresponding skill."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(return_value=_routing(intent))
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_skill_intent = AsyncMock(return_value=f"{expected_skill} response")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="show youtube status",
+        )
+
+        assert result == f"{expected_skill} response"
+        agent._handle_skill_intent.assert_awaited_once_with(
+            123,
+            "show youtube status",
+            expected_skill,
+        )
+
     async def test_unified_summary_includes_profile_and_memory_facts(self):
         """Unified summary should include profile entries and remembered long-term facts."""
         mock_memory = AsyncMock()
@@ -1236,6 +1340,14 @@ class TestOwnerGuardrailHelpers:
             "final_intent": "dev_watcher"
         }
         assert agent._extract_routing_trace("bad") is None
+        assert agent._find_last_message_by_role([{"role": "system"}], "assistant") is None
+        assert (
+            agent._find_previous_user_turn(
+                recent_messages,
+                before_message={"role": "assistant", "content": "not in list"},
+            )
+            == recent_messages[0]
+        )
 
     def test_owner_repair_response_without_trace_uses_generic_explanation(self):
         """Repair explanation should still work when no routing trace was stored yet."""
@@ -1273,6 +1385,101 @@ class TestAdditionalIntentParsers:
         assert agent._parse_personal_model_intent("show my policies") == "personal_policies"
         assert agent._parse_personal_model_intent("set my timezone to PST") == "personal_update"
         assert agent._parse_personal_model_intent("what do you know about me") == "personal_summary"
+
+    async def test_profile_memory_helpers_cover_filtering_and_error_branches(self):
+        """Profile and memory helpers should filter malformed and duplicate entries."""
+        agent = _make_agent()
+
+        async def _filter_by_field(*, collection_name, field, value, limit=100):
+            assert collection_name == "long_term_memory"
+            assert field == "user_id"
+            assert limit == 200
+            if value == 123:
+                raise RuntimeError("temporary store issue")
+            return [
+                {"id": "m1", "type": "profile", "content": "  Likes tea  "},
+                {"id": "m1", "type": "profile", "content": "Likes tea"},
+                {"id": "m2", "type": "other", "content": "Skip me"},
+                {"id": "m3", "type": "fact", "content": "  "},
+                {"id": "m4", "type": "general", "content": "Works remotely"},
+                "bad-record",
+            ]
+
+        agent._memory.filter_scoped_by_field = AsyncMock(side_effect=_filter_by_field)
+
+        memories = await agent._list_long_term_memories_for_user(123)
+        facts = await agent._collect_profile_memory_facts(123)
+
+        assert [memory["id"] for memory in memories] == ["m1", "m2", "m3", "m4"]
+        assert facts == ["Likes tea", "Works remotely"]
+        assert agent._format_profile_entries_for_summary("bad") == []
+        assert agent._format_profile_entries_for_summary(
+            [
+                {"key": "timezone", "value": "UTC"},
+                {"key": "timezone", "value": "UTC"},
+                {"key": "", "value": "Remote"},
+                {"key": "empty", "value": "   "},
+                "bad-entry",
+            ]
+        ) == [
+            "- timezone: UTC",
+            "- Remote",
+        ]
+
+    async def test_user_knowledge_summary_returns_empty_state_without_sections(self):
+        """Unified summary should fall back when neither skills nor memories return content."""
+        agent = _make_agent()
+        agent._get_skills_client = AsyncMock(return_value=None)
+        agent._collect_profile_memory_facts = AsyncMock(return_value=[])
+
+        result = await agent._handle_user_knowledge_summary(123, "what do you know about me")
+
+        assert result == "I don't have any profile data for you yet."
+
+    def test_task_format_helpers_cover_fallback_and_deadline_branches(self):
+        """Task formatting helpers should cover fallback, overdue, and priority branches."""
+        agent = _make_agent()
+
+        fallback = agent._format_task_list_response(
+            SkillResponse(
+                request_id=uuid4(),
+                success=True,
+                message="raw fallback",
+                data={"tasks": "not-a-list"},
+            )
+        )
+        detailed = agent._format_task_list_response(
+            SkillResponse(
+                request_id=uuid4(),
+                success=True,
+                data={
+                    "tasks": [
+                        {
+                            "title": "",
+                            "status": "cancelled",
+                            "priority": "1",
+                            "deadline": "2000-01-01T00:00:00Z",
+                        },
+                        {
+                            "title": "Pay invoice",
+                            "status": "todo",
+                            "priority": "4",
+                            "deadline": "2000-01-01T00:00:00Z",
+                        },
+                    ]
+                },
+            )
+        )
+
+        assert fallback == "raw fallback"
+        assert "You have 1 active task(s)." in detailed
+        assert "Overdue: 1." in detailed
+        assert "1. Untitled task - Cancelled - Low - due 2000-01-01" in detailed
+        assert "2. Pay invoice - Todo - Critical - due 2000-01-01" in detailed
+        assert agent._format_task_status("") == "Todo"
+        assert agent._format_task_priority("") == "Medium"
+        assert agent._format_task_priority("5") == "Medium"
+        assert agent._format_task_priority("urgent_high") == "Urgent High"
 
     def test_parse_email_intent_branches(self):
         """Email parser should cover branch-specific intents."""

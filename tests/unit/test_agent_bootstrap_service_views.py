@@ -316,6 +316,138 @@ async def test_read_stripe_service_view_covers_supported_views_and_error_transla
 
 
 @pytest.mark.asyncio
+async def test_read_service_view_dispatches_to_provider_handlers_and_records_unsupported_view_gaps(
+) -> None:
+    storage = MagicMock()
+    storage.record_agent_audit_event = AsyncMock(return_value={"audit_id": "audit-1"})
+
+    skill = _skill(storage)
+    skill._read_github_service_view = AsyncMock(return_value={"service_kind": "github"})  # type: ignore[method-assign]
+    skill._read_vercel_service_view = AsyncMock(return_value={"service_kind": "vercel"})  # type: ignore[method-assign]
+    skill._read_clerk_service_view = AsyncMock(return_value={"service_kind": "clerk"})  # type: ignore[method-assign]
+    skill._read_stripe_service_view = AsyncMock(return_value={"service_kind": "stripe"})  # type: ignore[method-assign]
+
+    github = await skill._read_service_view(  # noqa: SLF001
+        owner_id="owner-1",
+        principal_id="codex-1",
+        app_id="catalyst-group-solutions",
+        app_profile=_app_profile(),
+        service_kind="github",
+        view="overview",
+        public_base_url="https://cgs.example.com",
+        request_context={"session_id": "sess-1"},
+    )
+    vercel = await skill._read_service_view(  # noqa: SLF001
+        owner_id="owner-1",
+        principal_id="codex-1",
+        app_id="catalyst-group-solutions",
+        app_profile=_app_profile(),
+        service_kind="vercel",
+        view="overview",
+        public_base_url="https://cgs.example.com",
+        request_context={"session_id": "sess-1"},
+    )
+    clerk = await skill._read_service_view(  # noqa: SLF001
+        owner_id="owner-1",
+        principal_id="codex-1",
+        app_id="catalyst-group-solutions",
+        app_profile=_app_profile(),
+        service_kind="clerk",
+        view="overview",
+        public_base_url="https://cgs.example.com",
+        request_context={"session_id": "sess-1"},
+    )
+    stripe = await skill._read_service_view(  # noqa: SLF001
+        owner_id="owner-1",
+        principal_id="codex-1",
+        app_id="catalyst-group-solutions",
+        app_profile=_app_profile(),
+        service_kind="stripe",
+        view="overview",
+        public_base_url="https://cgs.example.com",
+        request_context={"session_id": "sess-1"},
+    )
+
+    assert github["service_kind"] == "github"
+    assert vercel["service_kind"] == "vercel"
+    assert clerk["service_kind"] == "clerk"
+    assert stripe["service_kind"] == "stripe"
+    skill._read_github_service_view.assert_awaited_once()  # type: ignore[attr-defined]
+    skill._read_vercel_service_view.assert_awaited_once()  # type: ignore[attr-defined]
+    skill._read_clerk_service_view.assert_awaited_once()  # type: ignore[attr-defined]
+    skill._read_stripe_service_view.assert_awaited_once()  # type: ignore[attr-defined]
+    assert storage.record_agent_audit_event.await_count == 4
+
+    with pytest.raises(ValueError, match="Unsupported `github` broker view `unknown`"):
+        await skill._read_service_view(  # noqa: SLF001
+            owner_id="owner-1",
+            principal_id="codex-1",
+            app_id="catalyst-group-solutions",
+            app_profile=_app_profile(),
+            service_kind="github",
+            view="unknown",
+            public_base_url="https://cgs.example.com",
+            request_context={"session_id": "sess-1"},
+        )
+
+    assert skill._record_gap.await_args.kwargs["required_capability"] == "github:unknown"  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_read_service_view_helpers_cover_validation_errors() -> None:
+    skill = _skill()
+    missing_repo_profile = _app_profile()
+    missing_repo_profile["profile"]["github_repos"] = []
+    skill._require_github_connector = AsyncMock(return_value={"secret_value": "gh-secret"})  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="does not declare a GitHub repository"):
+        await skill._read_github_service_view(  # noqa: SLF001
+            owner_id="owner-1",
+            app_profile=missing_repo_profile,
+            connector_id="github-primary",
+            view="overview",
+            request_context={},
+        )
+
+    repository = SimpleNamespace(default_branch="main", to_dict=lambda: {"name": "cgs"})
+    github_client = MagicMock()
+    github_client.get_repository = AsyncMock(return_value=repository)
+    github_client.close = AsyncMock()
+
+    with patch("zetherion_ai.skills.agent_bootstrap.GitHubClient", return_value=github_client):
+        with pytest.raises(ValueError, match="base and head are required for GitHub compare"):
+            await skill._read_github_service_view(  # noqa: SLF001
+                owner_id="owner-1",
+                app_profile=_app_profile(),
+                connector_id="github-primary",
+                view="compare",
+                request_context={},
+            )
+        with pytest.raises(ValueError, match="Unsupported GitHub broker view `unknown`"):
+            await skill._read_github_service_view(  # noqa: SLF001
+                owner_id="owner-1",
+                app_profile=_app_profile(),
+                connector_id="github-primary",
+                view="unknown",
+                request_context={},
+            )
+
+    assert github_client.close.await_count == 2
+
+    skill._require_connector = AsyncMock(  # type: ignore[method-assign]
+        return_value={"secret_value": "vercel-secret", "metadata": {}}
+    )
+    with pytest.raises(ValueError, match="project_ref is required for Vercel broker access"):
+        await skill._read_vercel_service_view(  # noqa: SLF001
+            owner_id="owner-1",
+            app_profile={"app_id": "", "profile": {"service_connector_map": {}}},
+            connector_id="vercel-primary",
+            view="overview",
+            request_context={},
+        )
+
+
+@pytest.mark.asyncio
 async def test_read_service_view_execute_service_action_and_execute_stripe_actions_cover_dispatch(
 ) -> None:
     storage = MagicMock()

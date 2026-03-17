@@ -6088,10 +6088,11 @@ class OwnerCiStorage:
                 json.dumps(dict(raw_chunk.get("metadata") or {})),
             )
 
-        resource_samples = list(result_json.get("resource_samples") or [])
-        for raw_sample in resource_samples:
+        resource_samples: list[dict[str, Any]] = []
+        for raw_sample in list(result_json.get("resource_samples") or []):
             if not isinstance(raw_sample, dict):
                 continue
+            resource_samples.append(raw_sample)
             await conn.execute(
                 f"""
                 INSERT INTO {samples_table} (

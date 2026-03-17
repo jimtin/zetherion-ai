@@ -1,0 +1,135 @@
+{
+  "mode_id": "combined_system",
+  "mode_label": "CGS + Zetherion together",
+  "description": "Controlled local contract validation across the CGS and Zetherion control-plane boundary.",
+  "repo_ids": ["zetherion-ai", "catalyst-group-solutions"],
+  "shards": [
+    {
+      "shard_id": "combined-control-plane-contract",
+      "lane_family": "combined_system",
+      "scenario_family": "control_plane_contract",
+      "purpose": "Validate CGS owner-CI and agent route contracts against Zetherion owner-CI controller and observer behavior.",
+      "blocking": true,
+      "resource_class": "cpu",
+      "depends_on": ["c-int-owner-ci", "z-unit-owner-ci"],
+      "expected_artifacts": ["stdout", "stderr", "contract-summary.json"],
+      "commands": [
+        {
+          "repo_id": "catalyst-group-solutions",
+          "cwd": "../catalyst-group-solutions",
+          "command": [
+            "bash",
+            "-lc",
+            "scripts/cgs-ai/docker-node-tool.sh yarn jest --ci --runInBand src/__tests__/api/service-ai-v1/owner-ci-routes.test.ts src/__tests__/api/service-ai-v1/agent-routes.test.ts"
+          ]
+        },
+        {
+          "repo_id": "zetherion-ai",
+          "cwd": ".",
+          "command": [
+            "bash",
+            "-lc",
+            "scripts/docker-python-tool.sh -m pytest tests/unit/test_owner_ci_skills.py tests/unit/test_agent_bootstrap_operation_helpers.py -q --tb=short --no-cov"
+          ]
+        }
+      ]
+    },
+    {
+      "shard_id": "combined-run-report-diagnostics",
+      "lane_family": "combined_system",
+      "scenario_family": "run_report_and_diagnostics",
+      "purpose": "Validate run reports, diagnostics, evidence, and correlation retrieval across the CGS control plane and Zetherion owner-CI storage.",
+      "blocking": true,
+      "resource_class": "cpu",
+      "depends_on": ["combined-control-plane-contract"],
+      "expected_artifacts": [
+        "stdout",
+        "stderr",
+        "run_graph.json",
+        "correlation_context.json",
+        "diagnostic_summary.json",
+        "diagnostic_findings.json"
+      ],
+      "commands": [
+        {
+          "repo_id": "catalyst-group-solutions",
+          "cwd": "../catalyst-group-solutions",
+          "command": [
+            "bash",
+            "-lc",
+            "scripts/cgs-ai/docker-node-tool.sh yarn jest --ci --runInBand src/__tests__/api/service-ai-v1/owner-ci-routes.test.ts src/__tests__/api/service-ai-v1/internal-agent-routes.test.ts src/__tests__/api/admin-ai-ci-route.test.ts"
+          ]
+        },
+        {
+          "repo_id": "zetherion-ai",
+          "cwd": ".",
+          "command": [
+            "bash",
+            "-lc",
+            "scripts/docker-python-tool.sh -m pytest tests/unit/test_agent_bootstrap_operation_helpers.py tests/unit/test_owner_ci_storage_crud.py -q --tb=short --no-cov"
+          ]
+        }
+      ]
+    },
+    {
+      "shard_id": "combined-ai-ops-health",
+      "lane_family": "combined_system",
+      "scenario_family": "ai_ops_health_aggregation",
+      "purpose": "Validate AI Ops health aggregation between CGS admin health reporting and Zetherion runtime-health providers.",
+      "blocking": true,
+      "resource_class": "cpu",
+      "depends_on": ["c-int-ai-ops", "z-int-runtime-queue"],
+      "expected_artifacts": ["stdout", "stderr", "health-snapshot.json"],
+      "commands": [
+        {
+          "repo_id": "catalyst-group-solutions",
+          "cwd": "../catalyst-group-solutions",
+          "command": [
+            "bash",
+            "-lc",
+            "scripts/cgs-ai/docker-node-tool.sh yarn jest --ci --runInBand src/__tests__/api/admin-ai-health.test.ts src/__tests__/admin/ai-page.test.tsx"
+          ]
+        },
+        {
+          "repo_id": "zetherion-ai",
+          "cwd": ".",
+          "command": [
+            "bash",
+            "-lc",
+            "scripts/docker-python-tool.sh -m pytest tests/unit/test_skills_server.py tests/integration/test_queue_runtime_service.py -k 'runtime_status_store or announcement_claim_probe_round_trip' -q --tb=short --no-cov"
+          ]
+        }
+      ]
+    },
+    {
+      "shard_id": "combined-coaching-preflight",
+      "lane_family": "combined_system",
+      "scenario_family": "coaching_and_preflight",
+      "purpose": "Validate preflight rejection, structured coaching, and AGENTS.md guidance surfacing through CGS against Zetherion deterministic policy checks.",
+      "blocking": true,
+      "resource_class": "cpu",
+      "depends_on": ["combined-run-report-diagnostics"],
+      "expected_artifacts": ["stdout", "stderr", "coaching-summary.json"],
+      "commands": [
+        {
+          "repo_id": "catalyst-group-solutions",
+          "cwd": "../catalyst-group-solutions",
+          "command": [
+            "bash",
+            "-lc",
+            "scripts/cgs-ai/docker-node-tool.sh yarn jest --ci --runInBand src/__tests__/api/admin-ai-ci-route.test.ts src/__tests__/api/service-ai-v1/agent-routes.test.ts"
+          ]
+        },
+        {
+          "repo_id": "zetherion-ai",
+          "cwd": ".",
+          "command": [
+            "bash",
+            "-lc",
+            "scripts/docker-python-tool.sh -m pytest tests/unit/test_ci_controller_helpers.py tests/unit/test_owner_ci_storage_crud.py -q --tb=short --no-cov"
+          ]
+        }
+      ]
+    }
+  ]
+}

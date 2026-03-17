@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import FormData, web
@@ -114,6 +114,54 @@ async def test_runtime_create_conversation_validation_error() -> None:
         assert resp.status == 400
         body = await resp.json()
         assert body["error"]["code"] == "AI_BAD_REQUEST"
+
+
+@pytest.mark.asyncio
+async def test_runtime_create_conversation_upstream_error_variants() -> None:
+    app, storage, public_client = _runtime_app()
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_api_key": "sk_live_abc",
+        }
+    )
+    storage.get_idempotency_record = AsyncMock(return_value=None)
+    storage.create_conversation = AsyncMock()
+    public_client.request_json = AsyncMock(
+        side_effect=[
+            (500, {"detail": "boom"}, {}),
+            (200, ["not-a-dict"], {}),
+            (200, {"session_id": "only-session"}, {}),
+        ]
+    )
+
+    payload = {
+        "tenant_id": "tenant-a",
+        "app_user_id": "app-user-1",
+        "external_user_id": "ext-1",
+        "metadata": {"app": "portal"},
+    }
+
+    async with TestClient(TestServer(app)) as client:
+        upstream_failed = await client.post("/service/ai/v1/conversations", json=payload)
+        assert upstream_failed.status == 503
+        upstream_failed_body = await upstream_failed.json()
+        assert upstream_failed_body["error"]["code"] == "AI_UPSTREAM_5XX"
+
+        invalid_shape = await client.post("/service/ai/v1/conversations", json=payload)
+        assert invalid_shape.status == 502
+        invalid_shape_body = await invalid_shape.json()
+        assert invalid_shape_body["error"]["code"] == "AI_UPSTREAM_ERROR"
+        assert invalid_shape_body["error"]["message"] == "Invalid upstream response"
+
+        missing_fields = await client.post("/service/ai/v1/conversations", json=payload)
+        assert missing_fields.status == 502
+        missing_fields_body = await missing_fields.json()
+        assert missing_fields_body["error"]["code"] == "AI_UPSTREAM_ERROR"
+        assert "missing session fields" in missing_fields_body["error"]["message"]
+
+    storage.create_conversation.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -484,6 +532,36 @@ async def test_runtime_document_routes_success_and_binary_proxy() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_get_messages_query_and_error_paths() -> None:
+    app, storage, public_client = _runtime_app()
+    storage.get_conversation = AsyncMock(return_value=_conversation_row())
+    public_client.request_json = AsyncMock(
+        side_effect=[
+            (200, ["not-a-dict"], {}),
+            (500, {"detail": "boom"}, {}),
+        ]
+    )
+
+    async with TestClient(TestServer(app)) as client:
+        listed = await client.get(
+            "/service/ai/v1/conversations/cgs_conv_123/messages?limit=10&before=msg-2"
+        )
+        assert listed.status == 200
+        listed_body = await listed.json()
+        assert listed_body["data"] == {"messages": []}
+
+        failed = await client.get("/service/ai/v1/conversations/cgs_conv_123/messages?limit=5")
+        assert failed.status == 503
+        failed_body = await failed.json()
+        assert failed_body["error"]["code"] == "AI_UPSTREAM_5XX"
+
+    first_call = public_client.request_json.await_args_list[0]
+    assert first_call.kwargs["params"] == {"limit": "10", "before": "msg-2"}
+    second_call = public_client.request_json.await_args_list[1]
+    assert second_call.kwargs["params"] == {"limit": "5"}
+
+
+@pytest.mark.asyncio
 async def test_runtime_document_complete_upload_supports_multipart_passthrough() -> None:
     app, storage, public_client = _runtime_app()
     storage.get_tenant_mapping = AsyncMock(
@@ -511,6 +589,183 @@ async def test_runtime_document_complete_upload_supports_multipart_passthrough()
     kwargs = public_client.request_json.await_args.kwargs
     assert isinstance(kwargs["data"], bytes | bytearray)
     assert kwargs["headers"]["Content-Type"].startswith("multipart/form-data")
+
+
+@pytest.mark.asyncio
+async def test_runtime_document_mutation_replay_paths() -> None:
+    app, storage, public_client = _runtime_app()
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_api_key": "sk_live_abc",
+        }
+    )
+    public_client.request_json = AsyncMock()
+
+    replay_payload = {
+        "status": 200,
+        "body": {"request_id": "req_cached", "data": {"replayed": True}, "error": None},
+    }
+
+    form = FormData()
+    form.add_field("file", b"hello-world", filename="note.txt", content_type="text/plain")
+
+    with patch(
+        "zetherion_ai.cgs_gateway.routes.runtime._idempotency_check",
+        AsyncMock(return_value=("idem-1", "fp-1", replay_payload)),
+    ):
+        async with TestClient(TestServer(app)) as client:
+            created = await client.post(
+                "/service/ai/v1/documents/uploads",
+                headers={"Idempotency-Key": "idem-1"},
+                json={
+                    "tenant_id": "tenant-a",
+                    "file_name": "proposal.pdf",
+                    "mime_type": "application/pdf",
+                    "size_bytes": 10,
+                },
+            )
+            assert created.status == 200
+            assert created.headers["X-Idempotent-Replay"] == "true"
+
+            multipart = await client.post(
+                "/service/ai/v1/documents/uploads/u1/complete?tenant_id=tenant-a",
+                headers={"Idempotency-Key": "idem-1"},
+                data=form,
+            )
+            assert multipart.status == 200
+            assert multipart.headers["X-Idempotent-Replay"] == "true"
+
+            completed = await client.post(
+                "/service/ai/v1/documents/uploads/u1/complete",
+                headers={"Idempotency-Key": "idem-1"},
+                json={"tenant_id": "tenant-a", "file_base64": "aGVsbG8="},
+            )
+            assert completed.status == 200
+            assert completed.headers["X-Idempotent-Replay"] == "true"
+
+            reindexed = await client.post(
+                "/service/ai/v1/documents/d1/index",
+                headers={"Idempotency-Key": "idem-1"},
+                json={"tenant_id": "tenant-a"},
+            )
+            assert reindexed.status == 200
+            assert reindexed.headers["X-Idempotent-Replay"] == "true"
+
+    public_client.request_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_runtime_document_routes_cover_upstream_error_and_binary_failure_paths() -> None:
+    app, storage, public_client = _runtime_app()
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_api_key": "sk_live_abc",
+        }
+    )
+    public_client.request_json = AsyncMock(
+        side_effect=[
+            (500, {"detail": "upload failed"}, {}),
+            (500, {"detail": "complete failed"}, {}),
+            (500, {"detail": "list failed"}, {}),
+            (500, {"detail": "get failed"}, {}),
+            (500, {"detail": "reindex failed"}, {}),
+            (500, {"detail": "rag failed"}, {}),
+            (500, {"detail": "providers failed"}, {}),
+        ]
+    )
+    public_client.request_raw = AsyncMock(
+        side_effect=[
+            (404, b'{\"detail\":\"missing\"}', {"Content-Type": "application/json"}),
+            (500, b"plain failure", {"Content-Type": "text/plain"}),
+        ]
+    )
+
+    async with TestClient(TestServer(app)) as client:
+        upload = await client.post(
+            "/service/ai/v1/documents/uploads",
+            json={
+                "tenant_id": "tenant-a",
+                "file_name": "proposal.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 10,
+            },
+        )
+        assert upload.status == 503
+
+        completed = await client.post(
+            "/service/ai/v1/documents/uploads/u1/complete",
+            json={"tenant_id": "tenant-a", "file_base64": "aGVsbG8="},
+        )
+        assert completed.status == 503
+
+        listed = await client.get("/service/ai/v1/documents?tenant_id=tenant-a")
+        assert listed.status == 503
+
+        got = await client.get("/service/ai/v1/documents/d1?tenant_id=tenant-a")
+        assert got.status == 503
+
+        preview = await client.get("/service/ai/v1/documents/d1/preview?tenant_id=tenant-a")
+        assert preview.status == 404
+        preview_body = await preview.json()
+        assert preview_body["error"]["code"] == "AI_UPSTREAM_404"
+
+        download = await client.get("/service/ai/v1/documents/d1/download?tenant_id=tenant-a")
+        assert download.status == 503
+        download_body = await download.json()
+        assert download_body["error"]["code"] == "AI_UPSTREAM_5XX"
+
+        reindexed = await client.post(
+            "/service/ai/v1/documents/d1/index",
+            json={"tenant_id": "tenant-a"},
+        )
+        assert reindexed.status == 503
+
+        rag = await client.post(
+            "/service/ai/v1/rag/query",
+            json={"tenant_id": "tenant-a", "query": "hello"},
+        )
+        assert rag.status == 503
+
+        providers = await client.get("/service/ai/v1/models/providers?tenant_id=tenant-a")
+        assert providers.status == 503
+
+
+@pytest.mark.asyncio
+async def test_runtime_document_complete_upload_multipart_empty_body_and_upstream_error() -> None:
+    app, storage, public_client = _runtime_app()
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_api_key": "sk_live_abc",
+        }
+    )
+    public_client.request_json = AsyncMock(return_value=(500, {"detail": "bad"}, {}))
+
+    async with TestClient(TestServer(app)) as client:
+        empty = await client.post(
+            "/service/ai/v1/documents/uploads/u1/complete?tenant_id=tenant-a",
+            headers={"Content-Type": "multipart/form-data; boundary=empty"},
+            data=b"",
+        )
+        assert empty.status == 400
+        empty_body = await empty.json()
+        assert empty_body["error"]["code"] == "AI_BAD_REQUEST"
+        assert "multipart body is required" in empty_body["error"]["message"]
+
+        form = FormData()
+        form.add_field("file", b"hello-world", filename="note.txt", content_type="text/plain")
+        failed = await client.post(
+            "/service/ai/v1/documents/uploads/u1/complete?tenant_id=tenant-a",
+            data=form,
+        )
+        assert failed.status == 503
+        failed_body = await failed.json()
+        assert failed_body["error"]["code"] == "AI_UPSTREAM_5XX"
 
 
 @pytest.mark.asyncio

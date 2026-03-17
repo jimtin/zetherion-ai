@@ -397,7 +397,6 @@ fi
 require_env_var "DISCORD_E2E_ENABLED"
 require_env_var "DISCORD_E2E_ALLOWED_AUTHOR_IDS"
 require_env_var "OPENAI_API_KEY"
-require_env_var "GEMINI_API_KEY"
 if [[ "$DISCORD_E2E_PROVIDER" == "groq" ]]; then
     require_env_var "GROQ_API_KEY"
 fi

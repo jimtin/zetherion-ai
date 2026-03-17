@@ -178,6 +178,125 @@ def test_normalize_shard_receipt_backfills_missing_expected_artifacts() -> None:
     assert receipt.release_blocking is False
 
 
+def test_normalize_release_and_worker_receipts_cover_blank_keys_and_status_derivation(
+) -> None:
+    release_receipt = normalize_release_verification_receipt(
+        {
+            "required_checks": [
+                {"key": "", "status": "passed"},
+                {"key": "delivery_canary_passed", "status": "passed"},
+            ],
+            "delivery_canary_passed": True,
+            "security_canary_passed": True,
+            "queue_worker_healthy": True,
+            "runtime_status_persistence": True,
+            "skills_reachable": True,
+            "cgs_auth_flow_passed": True,
+            "cgs_login_redirect_passed": True,
+            "ai_ops_schema_passed": True,
+            "cgs_admin_ai_page_passed": True,
+            "cgs_owner_ci_reporting_passed": True,
+            "cgs_chatbot_runtime_proxy_passed": True,
+            "runtime_drift_zero": True,
+            "back_to_back_deploy_passed": True,
+        }
+    )
+    assert release_receipt.status == "healthy"
+    assert release_receipt.delivery_canary_passed is True
+
+    worker_receipt = normalize_worker_certification_receipt(
+        {
+            "required_checks": [
+                {"key": "", "status": "passed"},
+                {"key": "bootstrap_succeeded", "status": "passed"},
+                {"key": "status_publication_succeeded", "status": "degraded"},
+            ],
+        }
+    )
+    assert worker_receipt.status == "degraded"
+    assert worker_receipt.bootstrap_succeeded is True
+    assert worker_receipt.degraded_count == 1
+
+
+def test_normalize_shard_receipt_merges_debug_artifacts_without_duplicates() -> None:
+    receipt = normalize_shard_receipt(
+        "zetherion-ai",
+        {
+            "lane_id": "z-int-runtime",
+            "status": "failed",
+            "metadata": {"resource_reservation": "skip"},
+            "result": {
+                "artifacts": [".artifacts/existing.log"],
+                "debug_bundle": {
+                    "artifact_receipt_paths": {
+                        "existing": ".artifacts/existing.log",
+                        "new": ".artifacts/new.json",
+                    }
+                },
+            },
+            "error": {},
+            "artifact_contract": {"expects": ["stdout.log"]},
+        },
+    )
+
+    assert receipt.evidence_paths == [
+        ".artifacts/existing.log",
+        ".artifacts/new.json",
+    ]
+    assert receipt.missing_evidence == []
+    assert receipt.resource_reservation is None
+
+
+def test_build_repo_readiness_receipt_uses_local_release_and_preserves_failed_local_paths(
+) -> None:
+    local_receipt = RepoReadinessReceipt(
+        repo_id="catalyst-group-solutions",
+        merge_ready=False,
+        deploy_ready=False,
+        failed_required_paths=["cgs_release_verification"],
+        missing_evidence=[],
+        shard_receipts=[
+            ShardReceipt(
+                repo_id="catalyst-group-solutions",
+                lane_id="c-unit-coverage",
+                shard_id="c-unit-coverage",
+                status="failed",
+                required_paths=["cgs_release_verification"],
+                execution_target="local_mac",
+            )
+        ],
+        release_verification=normalize_release_verification_receipt(
+            {"status": "healthy", "blocker_count": 0}
+        ),
+        summary="local receipt failed",
+    )
+
+    repo_receipt = build_repo_readiness_receipt(
+        repo={"repo_id": "catalyst-group-solutions"},
+        run={
+            "repo_id": "catalyst-group-solutions",
+            "shards": [
+                {
+                    "lane_id": "c-release",
+                    "status": "queued_local",
+                    "execution_target": "local_mac",
+                    "metadata": {"covered_required_paths": ["cgs_release_verification"]},
+                    "result": {},
+                    "error": {},
+                    "artifact_contract": {},
+                }
+            ],
+        },
+        review={"merge_blocked": False},
+        release_receipt={},
+        local_receipt=local_receipt,
+    )
+
+    assert repo_receipt.release_verification.status == "healthy"
+    assert repo_receipt.shard_receipts[0].status == "queued_local"
+    assert repo_receipt.failed_required_paths == []
+
+
 def test_build_repo_readiness_receipt_treats_pending_and_disconnected_shards_as_not_ready() -> None:
     repo_receipt = build_repo_readiness_receipt(
         repo={"repo_id": "catalyst-group-solutions"},

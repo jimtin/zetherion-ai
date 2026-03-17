@@ -375,6 +375,15 @@ def _required_category_for_family(gate_family: str) -> str | None:
     return None
 
 
+def _validation_mode_for_repo(repo_id: str) -> str:
+    normalized = str(repo_id or "").strip().lower()
+    if normalized == "zetherion-ai":
+        return "zetherion_alone"
+    if normalized == "catalyst-group-solutions":
+        return "cgs_alone"
+    return "repo_only"
+
+
 def _resource_reservation_for_shard(repo_id: str, shard: dict[str, Any]) -> dict[str, Any]:
     metadata = dict(shard.get("metadata") or {})
     return {
@@ -1512,6 +1521,7 @@ class CiControllerSkill(Skill):
         required_gate_categories = (
             list(_REQUIRED_CERTIFICATION_GATE_CATEGORIES) if mode == "certification" else []
         )
+        validation_mode = _validation_mode_for_repo(str(repo["repo_id"]))
 
         for lane in selected:
             shard = deepcopy(lane)
@@ -1524,6 +1534,11 @@ class CiControllerSkill(Skill):
             shard.setdefault("workspace_root", workspace_root)
             shard.setdefault("payload", {})
             shard.setdefault("metadata", {})
+            shard.setdefault("validation_mode", validation_mode)
+            shard.setdefault(
+                "shard_purpose",
+                str(shard.get("lane_label") or shard.get("lane_id") or "").strip(),
+            )
             shard["metadata"].setdefault("workspace_root", shard.get("workspace_root"))
             resource_class = str(
                 shard["metadata"].get("resource_class") or shard.get("resource_class") or "cpu"
@@ -1568,6 +1583,11 @@ class CiControllerSkill(Skill):
             shard["metadata"]["gate_family"] = gate_family
             shard["metadata"]["gate_kind"] = gate_family
             shard["metadata"]["blocking"] = True
+            shard["blocking"] = True
+            shard["expected_artifacts"] = list(
+                dict(shard.get("artifact_contract") or {}).get("expects")
+                or ["stdout", "stderr"]
+            )
             if required_category is not None:
                 shard["metadata"]["required_category"] = required_category
             shard["metadata"]["resource_reservation"] = _resource_reservation_for_shard(
@@ -1589,6 +1609,8 @@ class CiControllerSkill(Skill):
             repo_id=str(repo["repo_id"]),
             git_ref=git_ref,
             mode=mode,
+            validation_mode=validation_mode,
+            mode_label=validation_mode.replace("_", " "),
             windows_execution_mode=windows_execution_mode,
             resource_budget=resource_budget,
             schedule_tags=[mode, str(repo.get("stack_kind") or "")],

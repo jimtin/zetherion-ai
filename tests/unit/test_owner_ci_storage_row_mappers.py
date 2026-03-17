@@ -5,7 +5,22 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
-from zetherion_ai.owner_ci.storage import OwnerCiStorage
+import pytest
+
+from zetherion_ai.owner_ci.storage import (
+    OwnerCiStorage,
+    _fair_claim_order,
+    _filter_run_report_for_node,
+    _job_host_capacity_policy,
+    _job_host_id,
+    _job_resource_reservation,
+    _load_local_repo_readiness_from_shards,
+    _merge_json_dict,
+    _normalize_local_repo_readiness_payload,
+    _pending_repo_readiness,
+    _stable_feedback_key,
+    _validate_schema_identifier,
+)
 
 
 class _Encryptor:
@@ -28,7 +43,9 @@ def test_owner_ci_storage_encrypt_decrypt_and_core_row_mappers() -> None:
     storage = _storage(encrypted=True)
     now = datetime(2026, 3, 13, 6, 0, tzinfo=UTC)
 
+    assert storage._encrypt_text(None) is None  # noqa: SLF001
     assert storage._encrypt_text("secret") == "enc::secret"  # noqa: SLF001
+    assert storage._decrypt_text(None) is None  # noqa: SLF001
     assert storage._decrypt_text("enc::secret") == "secret"  # noqa: SLF001
     assert storage._decrypt_text("bad-value") == "bad-value"  # noqa: SLF001
     assert OwnerCiStorage._repo_profile_extensions(  # noqa: SLF001
@@ -778,3 +795,191 @@ def test_owner_ci_storage_row_mappers_accept_json_strings_from_asyncpg() -> None
     )
     assert incident["evidence_refs"] == ["bundle-1", "log-1"]
     assert incident["metadata"]["delivery_mode"] == "dm"
+
+
+def test_owner_ci_storage_helper_branches_cover_json_filtering_and_local_receipts() -> None:
+    storage = _storage(encrypted=False)
+
+    assert _stable_feedback_key([" Owner-1 ", "Run-1", None]) == _stable_feedback_key(
+        ["owner-1", "run-1", ""]
+    )
+    assert _pending_repo_readiness("repo-1", "pending").missing_evidence == [
+        "owner_ci_run_missing"
+    ]
+    assert _validate_schema_identifier("owner_personal") == "owner_personal"
+    with pytest.raises(ValueError, match="Invalid PostgreSQL schema name"):
+        _validate_schema_identifier("owner-personal")
+
+    assert OwnerCiStorage._coerce_json_value(None, "payload") is None  # noqa: SLF001
+    assert OwnerCiStorage._coerce_json_value("  ", "payload") is None  # noqa: SLF001
+    assert OwnerCiStorage._coerce_json_value('{"ok": true}', "payload") == {  # noqa: SLF001
+        "ok": True
+    }
+    with pytest.raises(ValueError, match="payload must contain valid JSON"):
+        OwnerCiStorage._coerce_json_value("{oops", "payload")  # noqa: SLF001
+    assert OwnerCiStorage._coerce_json_object(None, "payload") == {}  # noqa: SLF001
+    assert OwnerCiStorage._coerce_json_object('{"ok": true}', "payload") == {  # noqa: SLF001
+        "ok": True
+    }
+    with pytest.raises(ValueError, match="payload must be a JSON object"):
+        OwnerCiStorage._coerce_json_object('["oops"]', "payload")  # noqa: SLF001
+    assert OwnerCiStorage._coerce_json_list(None, "payload") == []  # noqa: SLF001
+    assert OwnerCiStorage._coerce_json_list((1, 2), "payload") == [1, 2]  # noqa: SLF001
+    with pytest.raises(ValueError, match="payload must be a JSON array"):
+        OwnerCiStorage._coerce_json_list('{"oops": true}', "payload")  # noqa: SLF001
+    assert storage._decrypt_text("plain") == "plain"  # noqa: SLF001
+
+    report = {
+        "artifacts": [
+            {"node_id": "run:1", "artifact_id": "a-run"},
+            {"node_id": "shard:1", "artifact_id": "a-shard"},
+        ],
+        "evidence": [
+            {"node_id": "run:1", "evidence_ref_id": "e-run"},
+            {"node_id": "shard:1", "evidence_ref_id": "e-shard"},
+        ],
+        "all_evidence_references": [
+            {"node_id": "run:1", "evidence_ref_id": "e-run"},
+            {"node_id": "shard:1", "evidence_ref_id": "e-shard"},
+        ],
+        "run_graph": {
+            "nodes": [{"node_id": "run:1"}, {"node_id": "shard:1"}],
+            "artifacts": [
+                {"node_id": "run:1", "artifact_id": "a-run"},
+                {"node_id": "shard:1", "artifact_id": "a-shard"},
+            ],
+            "diagnostics": [
+                {"node_id": "run:1", "diagnostic_id": "d-run"},
+                {"node_id": "shard:1", "diagnostic_id": "d-shard"},
+            ],
+            "evidence_references": [
+                {"node_id": "run:1", "evidence_ref_id": "e-run"},
+                {"node_id": "shard:1", "evidence_ref_id": "e-shard"},
+            ],
+        },
+        "diagnostic_findings": [
+            {"finding_id": "f-run", "shard_id": ""},
+            {"finding_id": "f-shard", "shard_id": "1"},
+        ],
+    }
+    assert _filter_run_report_for_node(report, node_id="") is report
+    filtered = _filter_run_report_for_node(report, node_id="shard:1")
+    assert [item["artifact_id"] for item in filtered["artifacts"]] == ["a-shard"]
+    assert [item["evidence_ref_id"] for item in filtered["evidence"]] == ["e-shard"]
+    assert [item["node_id"] for item in filtered["run_graph"]["nodes"]] == ["shard:1"]
+    assert [item["finding_id"] for item in filtered["diagnostic_findings"]] == ["f-shard"]
+
+    assert _normalize_local_repo_readiness_payload([], repo_id_fallback="repo-1") == (None, None)
+    assert _normalize_local_repo_readiness_payload({}, repo_id_fallback="") == (None, None)
+    receipt, normalized = _normalize_local_repo_readiness_payload(
+        {
+            "repo_id": "repo-1",
+            "merge_ready": True,
+            "deploy_ready": False,
+            "failed_required_paths": ["coverage"],
+            "missing_evidence": ["lcov.info"],
+            "release_verification": {"status": "healthy"},
+            "shard_receipts": [{"lane_id": "unit", "shard_id": "unit#1", "status": "succeeded"}],
+            "summary": "loaded",
+        },
+        repo_id_fallback="repo-fallback",
+    )
+    assert receipt is not None
+    assert normalized is not None
+    assert receipt.repo_id == "repo-1"
+    assert receipt.failed_required_paths == ["coverage"]
+    assert receipt.shard_receipts[0].lane_id == "unit"
+
+    from_shards = _load_local_repo_readiness_from_shards(
+        {"repo_id": "repo-1"},
+        [
+            "skip-me",
+            {"result": {"local_readiness_receipt": {"repo_id": "", "merge_ready": True}}},
+            {
+                "result": {
+                    "local_readiness_receipt": {
+                        "repo_id": "repo-1",
+                        "merge_ready": True,
+                        "deploy_ready": True,
+                        "summary": "from shard",
+                    }
+                }
+            },
+        ],
+    )
+    assert from_shards[0] is not None
+    assert from_shards[0].summary == "from shard"
+
+
+def test_storage_helper_merges_and_scheduler_reservations_cover_branch_paths() -> None:
+    merged = _merge_json_dict(
+        {"metadata": {"lane": "unit"}, "status": "queued"},
+        {"metadata": {"repo": "repo-1"}, "status": "running"},
+    )
+    assert merged == {
+        "metadata": {"lane": "unit", "repo": "repo-1"},
+        "status": "running",
+    }
+
+    explicit_reservation = _job_resource_reservation(
+        {
+            "repo_id": "repo-1",
+            "shard_id": "shard-1",
+            "payload_json": {
+                "resource_reservation": {
+                    "resource_class": "service",
+                    "units": 2,
+                }
+            },
+        }
+    )
+    assert explicit_reservation.repo_id == "repo-1"
+    assert explicit_reservation.shard_id == "shard-1"
+    assert explicit_reservation.resource_class == "service"
+    assert explicit_reservation.units == 2
+
+    implicit_reservation = _job_resource_reservation(
+        {
+            "repo_id": "repo-2",
+            "shard_id": "shard-2",
+            "execution_target": "windows_local",
+            "payload_json": {
+                "resource_class": "serial",
+                "resource_units": 0,
+                "parallel_group": "deploy",
+                "workspace_root": r"C:\\ZetherionCI\\workspaces\\run-1",
+            },
+        }
+    )
+    assert implicit_reservation.repo_id == "repo-2"
+    assert implicit_reservation.shard_id == "shard-2"
+    assert implicit_reservation.resource_class == "serial"
+    assert implicit_reservation.units == 1
+    assert implicit_reservation.parallel_group == "deploy"
+    assert implicit_reservation.metadata["execution_target"] == "windows_local"
+
+    run_rows = {
+        "run-1": {
+            "plan_json": {"host_capacity_policy": {"host_id": "windows-alpha", "cpu": 4}},
+            "metadata_json": {"host_capacity_policy": {"host_id": "windows-beta"}},
+        }
+    }
+    policy = _job_host_capacity_policy({"run_id": "run-1"}, run_rows)
+    assert policy["host_id"] == "windows-alpha"
+    assert _job_host_id({"run_id": "run-1"}, run_rows) == "windows-alpha"
+    assert _job_host_capacity_policy({"run_id": "missing"}, run_rows) == {}
+    assert _job_host_id({"run_id": "missing"}, run_rows) == "windows-owner-ci"
+
+    queued_jobs = [
+        {"repo_id": "repo-b", "created_at": "2026-03-17T07:00:01Z", "run_id": "run-b"},
+        {"repo_id": "repo-a", "created_at": "2026-03-17T07:00:00Z", "run_id": "run-a"},
+    ]
+    active_jobs = [
+        {"repo_id": "repo-a", "run_id": "run-a"},
+    ]
+    run_rows = {
+        "run-a": {"plan_json": {"host_capacity_policy": {"host_id": "windows-owner-ci"}}},
+        "run-b": {"plan_json": {"host_capacity_policy": {"host_id": "windows-owner-ci"}}},
+    }
+    ordered = _fair_claim_order(queued_jobs, active_jobs, run_rows)
+    assert [job["repo_id"] for job in ordered] == ["repo-b", "repo-a"]

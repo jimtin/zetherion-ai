@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -674,6 +674,40 @@ async def test_repo_profile_and_plan_snapshot_methods_round_trip_rows() -> None:
 
 
 @pytest.mark.asyncio
+async def test_repo_profile_and_plan_snapshot_methods_cover_no_row_and_version_paths() -> None:
+    no_repo_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert repo profile returned no row"):
+        await no_repo_storage.upsert_repo_profile(
+            "owner-1",
+            {
+                "repo_id": "zetherion-ai",
+                "display_name": "Zetherion AI",
+                "github_repo": "jimtin/zetherion-ai",
+                "stack_kind": "python",
+            },
+        )
+
+    no_plan_storage = _storage(_FakeConn(fetchrow_results=[{"current_version": 0}, None]))
+    with pytest.raises(RuntimeError, match="Create plan snapshot returned no row"):
+        await no_plan_storage.create_plan_snapshot(
+            owner_id="owner-1",
+            repo_id="zetherion-ai",
+            title="Plan",
+            content_markdown="# Plan",
+            tags=["repair"],
+            plan_id="plan-1",
+        )
+
+    version_conn = _FakeConn(fetchrow_results=[_plan_row(1)])
+    version_storage = _storage(version_conn)
+    versioned = await version_storage.get_plan_snapshot("owner-1", "plan-1", version=1)
+
+    assert versioned is not None
+    assert versioned["version"] == 1
+    assert version_conn.fetchrow_calls[0][1] == ("owner-1", "plan-1", 1)
+
+
+@pytest.mark.asyncio
 async def test_create_run_get_run_and_list_runs_include_worker_jobs() -> None:
     conn = _FakeConn(
         fetchrow_results=[
@@ -757,6 +791,140 @@ async def test_create_run_get_run_and_list_runs_include_worker_jobs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_run_covers_missing_rows_and_worker_payload_fallback_metadata() -> None:
+    missing_run_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Create run returned no row"):
+        await missing_run_storage.create_run(
+            owner_id="owner-1",
+            scope_id="owner:owner-1:repo:zetherion-ai",
+            repo_id="zetherion-ai",
+            git_ref="main",
+            trigger="manual",
+            plan={"compiled_plan": {"compiled_plan_id": "compiled-1"}},
+            metadata={},
+            shards=[],
+        )
+
+    missing_shard_storage = _storage(_FakeConn(fetchrow_results=[_run_row(), None]))
+    with pytest.raises(RuntimeError, match="Create shard returned no row"):
+        await missing_shard_storage.create_run(
+            owner_id="owner-1",
+            scope_id="owner:owner-1:repo:zetherion-ai",
+            repo_id="zetherion-ai",
+            git_ref="main",
+            trigger="manual",
+            plan={"compiled_plan": {"compiled_plan_id": "compiled-1"}},
+            metadata={},
+            shards=[
+                {
+                    "shard_id": "shard-win",
+                    "lane_id": "windows-dispatch",
+                    "execution_target": "windows_local",
+                }
+            ],
+        )
+
+    conn = _FakeConn(
+        fetchrow_results=[
+            _run_row(status="queued_local"),
+            _shard_row(
+                "shard-win",
+                "windows-dispatch",
+                status="queued_local",
+                execution_target="windows_local",
+            ),
+        ]
+    )
+    storage = _storage(conn)
+    storage.get_run = AsyncMock(return_value={**_run_row(status="queued_local"), "shards": []})  # type: ignore[method-assign]
+
+    created = await storage.create_run(
+        owner_id="owner-1",
+        scope_id="owner:owner-1:repo:zetherion-ai",
+        repo_id="zetherion-ai",
+        git_ref="main",
+        trigger="manual",
+        plan={"compiled_plan": {"compiled_plan_id": "compiled-1"}},
+        metadata={},
+        shards=[
+            {
+                "shard_id": "shard-win",
+                "lane_id": "windows-dispatch",
+                "execution_target": "windows_local",
+                "runner": "docker",
+                "command": ["pytest", "-q"],
+                "payload": {
+                    "container_spec": {"image": "python:3.12"},
+                    "compose_project": "zetherion-ci",
+                    "cleanup_labels": {"app": "zetherion"},
+                    "network_contract": {"service": "discord"},
+                },
+                "metadata": {"resource_class": "service", "parallel_group": "discord"},
+            }
+        ],
+    )
+
+    assert created["status"] == "queued_local"
+    payload = json.loads(str(conn.execute_calls[0][1][8]))
+    assert payload["container_spec"] == {"image": "python:3.12"}
+    assert payload["compose_project"] == "zetherion-ci"
+    assert payload["cleanup_labels"] == {"app": "zetherion"}
+    assert payload["network_contract"] == {"service": "discord"}
+    assert payload["resource_class"] == "service"
+    assert payload["parallel_group"] == "discord"
+
+
+@pytest.mark.asyncio
+async def test_create_run_promotes_top_level_container_spec_into_worker_payload() -> None:
+    conn = _FakeConn(
+        fetchrow_results=[
+            _run_row(status="queued_local"),
+            _shard_row(
+                "shard-win",
+                "windows-dispatch",
+                status="queued_local",
+                execution_target="windows_local",
+            ),
+        ]
+    )
+    storage = _storage(conn)
+    storage.get_run = AsyncMock(return_value={**_run_row(status="queued_local"), "shards": []})  # type: ignore[method-assign]
+
+    created = await storage.create_run(
+        owner_id="owner-1",
+        scope_id="owner:owner-1:repo:zetherion-ai",
+        repo_id="zetherion-ai",
+        git_ref="main",
+        trigger="manual",
+        plan={"compiled_plan": {"compiled_plan_id": "compiled-1"}},
+        metadata={},
+        shards=[
+            {
+                "shard_id": "shard-win",
+                "lane_id": "windows-dispatch",
+                "execution_target": "windows_local",
+                "runner": "docker",
+                "command": ["pytest", "-q"],
+                "container_spec": {"image": "python:3.12"},
+                "payload": {
+                    "compose_project": "zetherion-ci",
+                    "cleanup_labels": {"app": "zetherion"},
+                    "network_contract": {"service": "discord"},
+                },
+                "metadata": {"resource_class": "service", "parallel_group": "discord"},
+            }
+        ],
+    )
+
+    assert created["status"] == "queued_local"
+    payload = json.loads(str(conn.execute_calls[0][1][8]))
+    assert payload["container_spec"] == {"image": "python:3.12"}
+    assert payload["compose_project"] == "zetherion-ci"
+    assert payload["cleanup_labels"] == {"app": "zetherion"}
+    assert payload["network_contract"] == {"service": "discord"}
+
+
+@pytest.mark.asyncio
 async def test_review_receipt_metadata_status_and_github_receipts_update_methods() -> None:
     conn = _FakeConn(
         fetchrow_results=[
@@ -795,6 +963,66 @@ async def test_review_receipt_metadata_status_and_github_receipts_update_methods
     assert status is not None and status["status"] == "ready_to_merge"
     with pytest.raises(ValueError, match="Invalid run status"):
         await storage.set_run_status("owner-1", "run-1", "bogus")
+
+
+@pytest.mark.asyncio
+async def test_run_accessors_cover_optional_filters_and_missing_update_rows() -> None:
+    list_conn = _FakeConn(fetch_results=[[_run_row(status="queued_local")]])
+    list_storage = _storage(list_conn)
+
+    listed = await list_storage.list_runs("owner-1", repo_id="zetherion-ai", limit=5)
+
+    assert listed[0]["repo_id"] == "zetherion-ai"
+    assert list_conn.fetch_calls[0][1] == ("owner-1", "zetherion-ai", 5)
+
+    missing_run_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    assert await missing_run_storage.get_run("owner-1", "missing-run") is None
+
+    review_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    review_storage._recompute_run_status = AsyncMock()  # type: ignore[attr-defined]
+    assert (
+        await review_storage.store_run_review(
+            "owner-1",
+            "missing-run",
+            {"verdict": "approved"},
+        )
+        is None
+    )
+    review_storage._recompute_run_status.assert_not_awaited()  # type: ignore[attr-defined]
+
+    github_missing_current = _storage(_FakeConn(fetchrow_results=[None]))
+    github_missing_current._recompute_run_status = AsyncMock()  # type: ignore[attr-defined]
+    assert (
+        await github_missing_current.store_run_github_receipt(
+            "owner-1",
+            "missing-run",
+            {"merge_readiness": {"state": "success"}},
+        )
+        is None
+    )
+    github_missing_current._recompute_run_status.assert_not_awaited()  # type: ignore[attr-defined]
+
+    github_missing_update = _storage(_FakeConn(fetchrow_results=[{"github_receipts": {}}, None]))
+    github_missing_update._recompute_run_status = AsyncMock()  # type: ignore[attr-defined]
+    assert (
+        await github_missing_update.store_run_github_receipt(
+            "owner-1",
+            "run-1",
+            {"merge_readiness": {"state": "success"}},
+        )
+        is None
+    )
+    github_missing_update._recompute_run_status.assert_not_awaited()  # type: ignore[attr-defined]
+
+    metadata_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    assert (
+        await metadata_storage.merge_run_metadata(
+            "owner-1",
+            "missing-run",
+            {"release_verification": {"status": "healthy"}},
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -861,6 +1089,411 @@ async def test_compiled_plan_schedule_and_reporting_helpers_aggregate_rows() -> 
     assert project_resources["totals"]["compute_minutes"] == 4.5
     assert failures["failures"][0]["status"] == "promotion_blocked"
     assert worker_resources["totals"]["peak_memory_mb"] == 1024.0
+
+
+@pytest.mark.asyncio
+async def test_plan_schedule_and_run_query_helpers_cover_filter_and_error_branches() -> None:
+    jobs_conn = _FakeConn(fetch_results=[[_worker_job_row()]])
+    jobs_storage = _storage(jobs_conn)
+
+    jobs = await jobs_storage.list_worker_jobs(
+        "owner:owner-1:repo:zetherion-ai",
+        status="queued",
+        limit=1,
+    )
+
+    assert jobs[0]["job_id"] == "job-1"
+    assert jobs_conn.fetch_calls[0][1] == (
+        "owner:owner-1:repo:zetherion-ai",
+        "queued",
+        1,
+    )
+
+    missing_plan_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Create compiled plan returned no row"):
+        await missing_plan_storage.create_compiled_plan(
+            owner_id="owner-1",
+            repo_id="zetherion-ai",
+            git_ref="main",
+            mode="certification",
+            plan={"shards": []},
+            metadata={},
+        )
+
+    missing_compiled_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    assert await missing_compiled_storage.get_compiled_plan("owner-1", "missing") is None
+
+    compiled_list_conn = _FakeConn(fetch_results=[[_compiled_plan_row()]])
+    compiled_list_storage = _storage(compiled_list_conn)
+
+    compiled_plans = await compiled_list_storage.list_compiled_plans(
+        "owner-1",
+        repo_id="zetherion-ai",
+        limit=2,
+    )
+
+    assert compiled_plans[0]["compiled_plan_id"] == "compiled-1"
+    assert compiled_list_conn.fetch_calls[0][1] == ("owner-1", "zetherion-ai", 2)
+
+    missing_schedule_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert schedule returned no row"):
+        await missing_schedule_storage.upsert_schedule(
+            owner_id="owner-1",
+            repo_id="zetherion-ai",
+            name="Daily",
+            schedule_kind="weekly",
+            schedule_spec={"hour": 9},
+        )
+
+    schedule_list_conn = _FakeConn(fetch_results=[[_schedule_row()]])
+    schedule_list_storage = _storage(schedule_list_conn)
+
+    schedules = await schedule_list_storage.list_schedules(
+        "owner-1",
+        repo_id="zetherion-ai",
+    )
+
+    assert schedules[0]["schedule_id"] == "schedule-1"
+    assert schedule_list_conn.fetch_calls[0][1] == ("owner-1", "zetherion-ai")
+
+    event_conn = _FakeConn(
+        fetch_results=[
+            [
+                {
+                    "event_type": "shard.started",
+                    "payload_json": {"status": "running"},
+                }
+            ]
+        ]
+    )
+    event_storage = _storage(event_conn)
+    event_storage._event_from_row = lambda row: {  # type: ignore[method-assign]
+        "event_type": row["event_type"],
+        "payload": row["payload_json"],
+    }
+
+    events = await event_storage.get_run_events(
+        "owner-1",
+        "run-1",
+        shard_id="shard-1",
+        limit=3,
+    )
+
+    assert events == [{"event_type": "shard.started", "payload": {"status": "running"}}]
+    assert event_conn.fetch_calls[0][1] == ("owner-1", "run-1", "shard-1", 3)
+
+    log_conn = _FakeConn(
+        fetch_results=[
+            [
+                {
+                    "message_value": "needle found",
+                }
+            ]
+        ]
+    )
+    log_storage = _storage(log_conn)
+    log_storage._log_chunk_from_row = lambda row: {  # type: ignore[method-assign]
+        "message": row["message_value"]
+    }
+
+    logs = await log_storage.get_run_log_chunks(
+        "owner-1",
+        "run-1",
+        shard_id="shard-1",
+        query_text="needle",
+        limit=4,
+    )
+
+    assert logs == [{"message": "needle found"}]
+    assert log_conn.fetch_calls[0][1] == (
+        "owner-1",
+        "run-1",
+        "shard-1",
+        "%needle%",
+        4,
+    )
+
+    debug_missing_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    debug_missing_storage._debug_bundle_from_row = lambda row: row  # type: ignore[method-assign]
+    assert (
+        await debug_missing_storage.get_run_debug_bundle(
+            "owner-1",
+            "run-1",
+            shard_id="shard-1",
+        )
+        is None
+    )
+
+    debug_conn = _FakeConn(fetchrow_results=[{"bundle_path": "/tmp/bundle.json"}])
+    debug_storage = _storage(debug_conn)
+    debug_storage._debug_bundle_from_row = lambda row: {  # type: ignore[method-assign]
+        "bundle_path": row["bundle_path"]
+    }
+
+    debug_bundle = await debug_storage.get_run_debug_bundle(
+        "owner-1",
+        "run-1",
+        shard_id="shard-1",
+    )
+
+    assert debug_bundle == {"bundle_path": "/tmp/bundle.json"}
+    assert debug_conn.fetchrow_calls[0][1] == ("owner-1", "run-1", "shard-1")
+
+
+@pytest.mark.asyncio
+async def test_run_query_helpers_cover_unfiltered_paths() -> None:
+    jobs_conn = _FakeConn(fetch_results=[[_worker_job_row()]])
+    jobs_storage = _storage(jobs_conn)
+    jobs = await jobs_storage.list_worker_jobs("owner:owner-1:repo:zetherion-ai")
+
+    assert jobs[0]["job_id"] == "job-1"
+    assert jobs_conn.fetch_calls[0][1] == ("owner:owner-1:repo:zetherion-ai", 100)
+
+    event_conn = _FakeConn(fetch_results=[[{"event_type": "run.started", "payload_json": {}}]])
+    event_storage = _storage(event_conn)
+    event_storage._event_from_row = lambda row: row  # type: ignore[method-assign]
+    events = await event_storage.get_run_events("owner-1", "run-1")
+
+    assert events == [{"event_type": "run.started", "payload_json": {}}]
+    assert event_conn.fetch_calls[0][1] == ("owner-1", "run-1", 200)
+
+    log_conn = _FakeConn(fetch_results=[[{"message_value": "line-1"}]])
+    log_storage = _storage(log_conn)
+    log_storage._log_chunk_from_row = lambda row: row  # type: ignore[method-assign]
+    logs = await log_storage.get_run_log_chunks("owner-1", "run-1")
+
+    assert logs == [{"message_value": "line-1"}]
+    assert log_conn.fetch_calls[0][1] == ("owner-1", "run-1", 500)
+
+    debug_conn = _FakeConn(fetchrow_results=[{"bundle_path": "/tmp/run-bundle.json"}])
+    debug_storage = _storage(debug_conn)
+    debug_storage._debug_bundle_from_row = lambda row: row  # type: ignore[method-assign]
+    debug_bundle = await debug_storage.get_run_debug_bundle("owner-1", "run-1")
+
+    assert debug_bundle == {"bundle_path": "/tmp/run-bundle.json"}
+    assert debug_conn.fetchrow_calls[0][1] == ("owner-1", "run-1")
+
+
+@pytest.mark.asyncio
+async def test_run_report_and_projection_accessors_cover_missing_and_node_filtered_paths() -> None:
+    missing_storage = _storage(_FakeConn())
+    missing_storage.get_run = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    assert await missing_storage.get_run_report("owner-1", "missing-run") is None
+
+    report_storage = _storage(_FakeConn())
+    report_storage.get_run = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "run_id": "run-1",
+            "repo_id": "zetherion-ai",
+            "metadata": {"principal_id": "codex-1"},
+        }
+    )
+    report_storage.get_run_log_chunks = AsyncMock(  # type: ignore[method-assign]
+        return_value=[{"message": "hello"}]
+    )
+    report_storage.get_run_debug_bundle = AsyncMock(  # type: ignore[method-assign]
+        return_value={"bundle_path": "/tmp/bundle.json"}
+    )
+    report_storage.list_agent_coaching_feedback = AsyncMock(  # type: ignore[method-assign]
+        return_value=[{"feedback_id": "feedback-1"}]
+    )
+
+    from zetherion_ai.owner_ci import storage as storage_module
+
+    base_report = {
+        "run_id": "run-1",
+        "run_graph": {"nodes": [{"node_id": "run:run-1"}]},
+        "correlation_context": {"trace_ids": ["trace-1"]},
+        "diagnostic_summary": {"status": "failed"},
+        "diagnostic_findings": [{"finding_id": "finding-1"}],
+        "diagnostic_artifacts": [{"artifact_id": "diag-1"}],
+        "coverage_summary": {"branches": 84.22},
+        "coverage_gaps": {"gaps": [{"file": "storage.py"}]},
+        "correlated_incidents": [{"incident_id": "incident-1"}],
+        "artifacts": [{"artifact_id": "artifact-1"}],
+        "evidence": [{"evidence_ref_id": "evidence-1"}],
+    }
+    filtered_report = {
+        **base_report,
+        "run_graph": {"nodes": [{"node_id": "shard:shard-1"}]},
+        "artifacts": [{"artifact_id": "artifact-node"}],
+        "evidence": [{"evidence_ref_id": "evidence-node"}],
+    }
+
+    with patch.object(
+        storage_module,
+        "build_run_report",
+        return_value=base_report,
+    ) as build_report, patch.object(
+        storage_module,
+        "_filter_run_report_for_node",
+        return_value=filtered_report,
+    ) as filter_report:
+        report = await report_storage.get_run_report(
+            "owner-1",
+            "run-1",
+            shard_id="shard-1",
+            log_limit=12,
+        )
+        filtered = await report_storage.get_run_report(
+            "owner-1",
+            "run-1",
+            shard_id="shard-1",
+            node_id="node-1",
+            log_limit=12,
+        )
+
+    assert report == base_report
+    assert filtered == filtered_report
+    build_report.assert_called()
+    filter_report.assert_called_once_with(base_report, node_id="node-1")
+    report_storage.get_run_log_chunks.assert_awaited_with(  # type: ignore[attr-defined]
+        "owner-1",
+        "run-1",
+        shard_id="shard-1",
+        limit=12,
+    )
+    report_storage.get_run_debug_bundle.assert_awaited_with(  # type: ignore[attr-defined]
+        "owner-1",
+        "run-1",
+        shard_id="shard-1",
+    )
+    report_storage.list_agent_coaching_feedback.assert_awaited_with(  # type: ignore[attr-defined]
+        "owner-1",
+        principal_id="codex-1",
+        repo_id="zetherion-ai",
+        run_id="run-1",
+        limit=50,
+    )
+
+    projection_storage = _storage(_FakeConn())
+    projection_storage.get_run_report = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {"run_graph": {"nodes": ["run-node"]}},
+            None,
+            {"correlation_context": {"trace_ids": ["trace-1"]}},
+            None,
+            {
+                "diagnostic_summary": {"status": "failed"},
+                "diagnostic_findings": [{"finding_id": "finding-1"}],
+                "diagnostic_artifacts": [{"artifact_id": "diag-1"}],
+                "coverage_summary": {"branches": 84.22},
+                "coverage_gaps": {"gaps": [{"file": "storage.py"}]},
+                "correlated_incidents": [{"incident_id": "incident-1"}],
+            },
+            None,
+            {"artifacts": [{"artifact_id": "artifact-1"}]},
+            None,
+            {"evidence": [{"evidence_ref_id": "evidence-1"}]},
+            None,
+        ]
+    )
+
+    assert await projection_storage.get_run_graph("owner-1", "run-1") == {
+        "nodes": ["run-node"]
+    }
+    assert await projection_storage.get_run_graph("owner-1", "missing-run") is None
+    assert await projection_storage.get_run_correlation_context("owner-1", "run-1") == {
+        "trace_ids": ["trace-1"]
+    }
+    assert (
+        await projection_storage.get_run_correlation_context("owner-1", "missing-run")
+        is None
+    )
+    assert await projection_storage.get_run_diagnostics(
+        "owner-1",
+        "run-1",
+        node_id="node-1",
+    ) == {
+        "diagnostic_summary": {"status": "failed"},
+        "diagnostic_findings": [{"finding_id": "finding-1"}],
+        "diagnostic_artifacts": [{"artifact_id": "diag-1"}],
+        "coverage_summary": {"branches": 84.22},
+        "coverage_gaps": {"gaps": [{"file": "storage.py"}]},
+        "correlated_incidents": [{"incident_id": "incident-1"}],
+    }
+    assert await projection_storage.get_run_diagnostics("owner-1", "missing-run") is None
+    assert await projection_storage.get_run_artifacts("owner-1", "run-1") == [
+        {"artifact_id": "artifact-1"}
+    ]
+    assert await projection_storage.get_run_artifacts("owner-1", "missing-run") == []
+    assert await projection_storage.get_run_evidence("owner-1", "run-1") == [
+        {"evidence_ref_id": "evidence-1"}
+    ]
+    assert await projection_storage.get_run_evidence("owner-1", "missing-run") == []
+    assert projection_storage.get_run_report.await_args_list[4].kwargs == {  # type: ignore[attr-defined]
+        "node_id": "node-1"
+    }
+
+
+@pytest.mark.asyncio
+async def test_coaching_feedback_and_local_readiness_delegate_cover_storage_wrappers() -> None:
+    coaching_storage = _storage(_FakeConn())
+    coaching_storage.list_agent_gap_events = AsyncMock(  # type: ignore[method-assign]
+        return_value=[
+            {
+                "gap_id": "gap-coaching",
+                "principal_id": "codex-1",
+                "repo_id": "catalyst-group-solutions",
+                "run_id": "run-1",
+                "status": "open",
+                "blocker": True,
+                "occurrence_count": 2,
+                "gap_type": "agent_instruction_update",
+                "suggested_fix": "Update AGENTS.md to require gitleaks.",
+                "metadata": {
+                    "record_kind": "agent_coaching",
+                    "coaching_kind": "preflight",
+                    "rule_code": "missing_gitleaks",
+                    "summary": "Missing gitleaks preflight attestation.",
+                    "findings": [
+                        {
+                            "finding_id": "finding-1",
+                            "rule_code": "missing_gitleaks",
+                            "summary": "Missing gitleaks preflight attestation.",
+                            "remediation": "Run gitleaks before certification.",
+                            "blocking": True,
+                        }
+                    ],
+                    "recommendations": [
+                        {
+                            "title": "Update AGENTS.md",
+                            "instructions": ["Require gitleaks in the common checks block."],
+                            "agents_md_update": "- Run gitleaks before certification.",
+                        }
+                    ],
+                },
+            }
+        ]
+    )
+
+    feedback = await coaching_storage.list_agent_coaching_feedback(
+        "owner-1",
+        principal_id="codex-1",
+        repo_id="catalyst-group-solutions",
+        run_id="run-1",
+        limit=25,
+    )
+
+    assert feedback[0]["principal_id"] == "codex-1"
+    assert feedback[0]["recommendations"][0]["title"] == "Update AGENTS.md"
+    coaching_storage.list_agent_gap_events.assert_awaited_once_with(  # type: ignore[attr-defined]
+        "owner-1",
+        principal_id="codex-1",
+        repo_id="catalyst-group-solutions",
+        run_id="run-1",
+        unresolved_only=False,
+        limit=25,
+    )
+
+    readiness_storage = _storage(_FakeConn())
+    readiness, payload = await readiness_storage.get_local_repo_readiness(
+        {"repo_id": "zetherion-ai", "allowed_paths": []}
+    )
+
+    assert readiness is None
+    assert payload is None
 
 
 @pytest.mark.asyncio
@@ -1024,6 +1657,213 @@ async def test_agent_bootstrap_docs_principal_connector_and_app_methods_round_tr
         == "catalyst-group-solutions"
     )
     assert any("DELETE FROM" in call[0] for call in conn.execute_calls)
+
+
+@pytest.mark.asyncio
+async def test_agent_bootstrap_connector_and_knowledge_pack_error_branches() -> None:
+    manifest_missing_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Store agent bootstrap manifest returned no row"):
+        await manifest_missing_storage.store_agent_bootstrap_manifest(
+            "owner-1",
+            "codex-desktop",
+            {"version": "v2"},
+        )
+
+    manifest_lookup_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    assert (
+        await manifest_lookup_storage.get_agent_bootstrap_manifest("owner-1", "codex-desktop")
+        is None
+    )
+
+    receipt_missing_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Store agent setup receipt returned no row"):
+        await receipt_missing_storage.store_agent_setup_receipt(
+            "owner-1",
+            client_id="codex-desktop",
+            receipt={"status": "stored"},
+        )
+
+    docs_missing_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert agent docs manifest returned no row"):
+        await docs_missing_storage.upsert_agent_docs_manifest(
+            "owner-1",
+            slug="doc-1",
+            title="Quickstart",
+            manifest={"content_markdown": "# Quickstart"},
+        )
+
+    docs_lookup_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    assert await docs_lookup_storage.get_agent_docs_manifest("owner-1", "doc-1") is None
+
+    principal_missing_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert agent principal returned no row"):
+        await principal_missing_storage.upsert_agent_principal(
+            "owner-1",
+            principal_id="codex-1",
+            display_name="Codex 1",
+        )
+
+    connector_without_secret_conn = _FakeConn(fetchrow_results=[_connector_row(has_secret=False)])
+    connector_without_secret_storage = _storage(connector_without_secret_conn)
+    connector_without_secret = (
+        await connector_without_secret_storage.upsert_external_service_connector(
+            "owner-1",
+            connector_id="github-primary",
+            service_kind="github",
+            display_name="GitHub",
+            auth_kind="token",
+            policy={"read_access": ["branch_metadata"]},
+            metadata={"scope": "repo"},
+        )
+    )
+
+    assert connector_without_secret["has_secret"] is False
+    assert connector_without_secret_conn.fetchrow_calls[0][1] == (
+        "owner-1",
+        "github-primary",
+        "github",
+        "GitHub",
+        "token",
+        json.dumps({"read_access": ["branch_metadata"]}),
+        json.dumps({"scope": "repo"}),
+        True,
+    )
+
+    connector_missing_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert external service connector returned no row"):
+        await connector_missing_storage.upsert_external_service_connector(
+            "owner-1",
+            connector_id="github-primary",
+            service_kind="github",
+            display_name="GitHub",
+            auth_kind="token",
+        )
+
+    connector_secret_lookup_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    assert (
+        await connector_secret_lookup_storage.get_external_service_connector_with_secret(
+            "owner-1",
+            "github-primary",
+        )
+        is None
+    )
+
+    connector_list_conn = _FakeConn(
+        fetch_results=[[_connector_row(), _connector_row("vercel-primary", service_kind="vercel")]]
+    )
+    connector_list_storage = _storage(connector_list_conn)
+    listed_connectors = await connector_list_storage.list_external_service_connectors("owner-1")
+
+    assert [connector["connector_id"] for connector in listed_connectors] == [
+        "github-primary",
+        "vercel-primary",
+    ]
+    assert connector_list_conn.fetch_calls[0][1] == ("owner-1",)
+
+    grant_list_conn = _FakeConn(fetch_results=[[_grant_row("grant-1"), _grant_row("grant-2")]])
+    grant_list_storage = _storage(grant_list_conn)
+    listed_grants = await grant_list_storage.list_external_access_grants("owner-1")
+
+    assert [grant["grant_key"] for grant in listed_grants] == ["grant-1", "grant-2"]
+    assert grant_list_conn.fetch_calls[0][1] == ("owner-1",)
+
+    app_profile_missing_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert agent app profile returned no row"):
+        await app_profile_missing_storage.upsert_agent_app_profile(
+            "owner-1",
+            app_id="catalyst-group-solutions",
+            display_name="Catalyst Group Solutions",
+            profile={"repo_ids": ["catalyst-group-solutions"]},
+        )
+
+    non_current_pack_conn = _FakeConn(fetchrow_results=[_pack_row(version="v2", current=False)])
+    non_current_pack_storage = _storage(non_current_pack_conn)
+    non_current_pack = await non_current_pack_storage.upsert_agent_knowledge_pack(
+        "owner-1",
+        app_id="catalyst-group-solutions",
+        version="v2",
+        pack={"workspace_manifest": {"repo_id": "catalyst-group-solutions"}},
+        current=False,
+    )
+
+    assert non_current_pack["version"] == "v2"
+    assert non_current_pack["current"] is False
+    assert non_current_pack_conn.execute_calls == []
+
+    missing_pack_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert agent knowledge pack returned no row"):
+        await missing_pack_storage.upsert_agent_knowledge_pack(
+            "owner-1",
+            app_id="catalyst-group-solutions",
+            version="v3",
+            pack={"workspace_manifest": {"repo_id": "catalyst-group-solutions"}},
+            current=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_agent_session_and_interaction_error_and_optional_touch_branches() -> None:
+    missing_session_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Create agent session returned no row"):
+        await missing_session_storage.create_agent_session(
+            "owner-1",
+            principal_id="codex-1",
+            app_id="catalyst-group-solutions",
+        )
+
+    interaction_storage = _storage(_FakeConn(fetchrow_results=[_interaction_row("int-optional")]))
+    interaction_storage.touch_agent_session = AsyncMock()  # type: ignore[method-assign]
+
+    interaction = await interaction_storage.create_agent_interaction(
+        "owner-1",
+        session_id=None,
+        principal_id="codex-1",
+        app_id="catalyst-group-solutions",
+        repo_id="catalyst-group-solutions",
+        route_path=None,
+        intent="diagnostics.read",
+        request_text=None,
+        request_payload=None,
+        normalized_intent=None,
+    )
+
+    assert interaction["interaction_id"] == "int-optional"
+    interaction_storage.touch_agent_session.assert_not_awaited()  # type: ignore[attr-defined]
+
+    missing_interaction_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Create agent interaction returned no row"):
+        await missing_interaction_storage.create_agent_interaction(
+            "owner-1",
+            session_id="sess-1",
+            principal_id="codex-1",
+            app_id="catalyst-group-solutions",
+            repo_id="catalyst-group-solutions",
+            route_path="/agent",
+            intent="diagnostics.read",
+            request_text="show me",
+            request_payload={"view": "run"},
+        )
+
+    missing_action_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Create agent action returned no row"):
+        await missing_action_storage.create_agent_action(
+            "owner-1",
+            interaction_id="int-1",
+            principal_id="codex-1",
+            app_id="catalyst-group-solutions",
+            action="publish",
+            status="requested",
+        )
+
+    missing_outcome_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Create agent outcome returned no row"):
+        await missing_outcome_storage.create_agent_outcome(
+            "owner-1",
+            interaction_id="int-1",
+            action_record_id=None,
+            status="failed",
+            summary="no row",
+        )
 
 
 @pytest.mark.asyncio
@@ -1196,6 +2036,269 @@ async def test_workspace_publish_session_and_service_request_methods_round_trip(
     assert outcome["summary"] == "Ready"
     assert service_request["approved"] is True
     assert any("downloaded_at = now()" in call[0] for call in conn.execute_calls)
+
+
+@pytest.mark.asyncio
+async def test_workspace_publish_session_and_secret_error_branches() -> None:
+    missing_bundle_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Create workspace bundle returned no row"):
+        await missing_bundle_storage.create_workspace_bundle(
+            "owner-1",
+            principal_id="codex-1",
+            app_id="catalyst-group-solutions",
+            repo_id="catalyst-group-solutions",
+            git_ref="main",
+            bundle={"download_mode": "inline_base64"},
+        )
+
+    missing_candidate_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Create publish candidate returned no row"):
+        await missing_candidate_storage.create_publish_candidate(
+            "owner-1",
+            principal_id="codex-1",
+            app_id="catalyst-group-solutions",
+            repo_id="catalyst-group-solutions",
+            base_sha="a" * 40,
+            candidate={"diff_text": "diff --git"},
+        )
+
+    missing_secret_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert secret ref returned no row"):
+        await missing_secret_storage.upsert_secret_ref(
+            "owner-1",
+            secret_ref_id="secret-1",
+            purpose="api-token",
+            secret_value="secret",
+        )
+
+    missing_audit_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Record agent audit event returned no row"):
+        await missing_audit_storage.record_agent_audit_event(
+            "owner-1",
+            principal_id="codex-1",
+            app_id="catalyst-group-solutions",
+            service_kind="github",
+            resource="repo",
+            action="read",
+            decision="allowed",
+            audit={"reason": "brokered"},
+        )
+
+    audit_list_conn = _FakeConn(fetch_results=[[_audit_row()]])
+    audit_list_storage = _storage(audit_list_conn)
+    audit_events = await audit_list_storage.list_agent_audit_events("owner-1")
+
+    assert audit_events[0]["audit_id"] == "audit-1"
+    assert audit_list_conn.fetch_calls[0][1] == ("owner-1", 100)
+
+
+@pytest.mark.asyncio
+async def test_external_access_grant_and_gap_query_branch_paths() -> None:
+    replace_conn = _FakeConn(
+        fetchrow_results=[None, {**_grant_row("grant-2"), "resource_type": "repo"}]
+    )
+    replace_storage = _storage(replace_conn)
+
+    grants = await replace_storage.replace_external_access_grants(
+        "owner-1",
+        principal_id="codex-1",
+        grants=[
+            {"resource_type": "app", "resource_id": "skip-missing-row"},
+            {"resource_type": "repo", "resource_id": "jimtin/zetherion-ai"},
+        ],
+    )
+
+    assert [grant["grant_key"] for grant in grants] == ["grant-2"]
+
+    grant_list_conn = _FakeConn(fetch_results=[[_grant_row("grant-1")]])
+    grant_list_storage = _storage(grant_list_conn)
+    listed_grants = await grant_list_storage.list_external_access_grants(
+        "owner-1",
+        principal_id="codex-1",
+    )
+
+    assert listed_grants[0]["grant_key"] == "grant-1"
+    assert grant_list_conn.fetch_calls[0][1] == ("owner-1", "codex-1")
+    assert "principal_id = $2" in grant_list_conn.fetch_calls[0][0]
+
+    gap_list_conn = _FakeConn(fetch_results=[[_gap_row(status="open")]])
+    gap_list_storage = _storage(gap_list_conn)
+    gaps = await gap_list_storage.list_agent_gap_events(
+        "owner-1",
+        session_id="sess-1",
+        principal_id="codex-1",
+        app_id="app-1",
+        repo_id="repo-1",
+        run_id="run-1",
+        status="open",
+        unresolved_only=True,
+        blocker_only=True,
+        limit=0,
+    )
+
+    assert gaps[0]["status"] == "open"
+    query, args = gap_list_conn.fetch_calls[0]
+    assert "run_id = $6" in query
+    assert "status = $7" in query
+    assert "status <> 'resolved'" not in query
+    assert args == ("owner-1", "sess-1", "codex-1", "app-1", "repo-1", "run-1", "open", 1)
+
+    missing_gap_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Record agent gap event returned no row"):
+        await missing_gap_storage.record_agent_gap_event(
+            "owner-1",
+            dedupe_key="gap:missing-row",
+            session_id=None,
+            principal_id="codex-1",
+            app_id="app-1",
+            repo_id="repo-1",
+            run_id="run-1",
+            gap_type="agent_instruction_update",
+            severity="medium",
+            blocker=False,
+            detected_from="ci_run_diagnostics",
+            required_capability=None,
+            observed_request=None,
+            suggested_fix=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_storage_filter_and_missing_record_paths_cover_blank_optional_inputs() -> None:
+    conn = _FakeConn(
+        fetchrow_results=[None, None, _operation_row(status="resolved")],
+        fetch_results=[
+            [_gap_row(status="open")],
+            [_secret_ref_row()],
+            [_operation_row(status="resolved")],
+        ],
+    )
+    storage = _storage(conn)
+
+    gaps = await storage.list_agent_gap_events(
+        "owner-1",
+        session_id="",
+        principal_id="",
+        app_id="",
+        repo_id="",
+        run_id="",
+        status="",
+        unresolved_only=True,
+        blocker_only=False,
+        limit=0,
+    )
+    missing_gap = await storage.get_agent_gap_event("owner-1", "missing-gap")
+    updated_gap = await storage.update_agent_gap_event(
+        "owner-1",
+        gap_id="missing-gap",
+        status="resolved",
+    )
+    secret_refs = await storage.list_secret_refs("owner-1", active_only=False)
+    operations = await storage.list_managed_operations(
+        "owner-1",
+        app_id="",
+        repo_id="",
+        service_kind="",
+        status="",
+        limit=0,
+    )
+    found_operation = await storage.find_managed_operation_by_ref(
+        "owner-1",
+        ref_kind="git_sha",
+        ref_value="a" * 40,
+        app_id="",
+    )
+
+    assert gaps[0]["status"] == "open"
+    gap_query, gap_args = conn.fetch_calls[0]
+    assert "status <> 'resolved'" in gap_query
+    assert "session_id =" not in gap_query
+    assert "principal_id =" not in gap_query
+    assert "app_id =" not in gap_query
+    assert "repo_id =" not in gap_query
+    assert "run_id =" not in gap_query
+    assert "blocker = TRUE" not in gap_query
+    assert gap_args == ("owner-1", 1)
+
+    assert missing_gap is None
+    assert updated_gap is None
+
+    assert secret_refs[0]["secret_ref_id"] == "secret-1"
+    secret_query, secret_args = conn.fetch_calls[1]
+    assert "active = TRUE" not in secret_query
+    assert secret_args == ("owner-1",)
+
+    assert operations[0]["status"] == "resolved"
+    operations_query, operations_args = conn.fetch_calls[2]
+    assert "op.app_id =" not in operations_query
+    assert "op.repo_id =" not in operations_query
+    assert "ref.service_kind =" not in operations_query
+    assert "op.status =" not in operations_query
+    assert operations_args == ("owner-1", 1)
+
+    assert found_operation is not None
+    find_query, find_args = conn.fetchrow_calls[2]
+    assert "op.app_id =" not in find_query
+    assert find_args == ("owner-1", "git_sha", "a" * 40)
+
+
+@pytest.mark.asyncio
+async def test_storage_missing_row_errors_cover_service_request_capability_and_operation_creation(
+) -> None:
+    missing_request_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Create agent service request returned no row"):
+        await missing_request_storage.create_agent_service_request(
+            "owner-1",
+            principal_id=None,
+            app_id="catalyst-group-solutions",
+            service_kind="stripe",
+            action_id="product.ensure",
+            target_ref="product:gold",
+            tenant_id="tenant-1",
+            change_reason=None,
+            request_payload={"name": "Gold"},
+            status="pending",
+            approved=False,
+            result=None,
+            audit_id=None,
+            executed=False,
+        )
+
+    missing_capability_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert service adapter capability returned no row"):
+        await missing_capability_storage.upsert_service_adapter_capability(
+            "owner-1",
+            service_kind="github",
+            manifest={},
+        )
+
+    missing_operation_storage = _storage(_FakeConn(fetchrow_results=[None, None]))
+    with pytest.raises(RuntimeError, match="Create managed operation returned no row"):
+        await missing_operation_storage.create_managed_operation(
+            "owner-1",
+            app_id="catalyst-group-solutions",
+            repo_id="catalyst-group-solutions",
+            operation_kind="deploy",
+            lifecycle_stage="verification",
+            status="active",
+            summary=None,
+            metadata=None,
+            correlation_key="deploy:missing",
+        )
+
+    with pytest.raises(RuntimeError, match="Create managed operation returned no row"):
+        await missing_operation_storage.create_managed_operation(
+            "owner-1",
+            app_id="catalyst-group-solutions",
+            repo_id="catalyst-group-solutions",
+            operation_kind="deploy",
+            lifecycle_stage="verification",
+            status="active",
+            summary=None,
+            metadata=None,
+            correlation_key=None,
+            operation_id="op-missing",
+        )
 
 
 @pytest.mark.asyncio
@@ -1412,6 +2515,187 @@ async def test_gap_capability_operation_and_evidence_methods_round_trip() -> Non
 
 
 @pytest.mark.asyncio
+async def test_operation_accessors_cover_missing_rows_blank_filters_and_hydration_none() -> None:
+    missing_ref_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Upsert operation ref returned no row"):
+        await missing_ref_storage.upsert_operation_ref(
+            "owner-1",
+            operation_id="op-1",
+            service_kind=None,
+            ref_kind="git_sha",
+            ref_value="A" * 40,
+            metadata=None,
+        )
+
+    missing_evidence_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Record operation evidence returned no row"):
+        await missing_evidence_storage.record_operation_evidence(
+            "owner-1",
+            operation_id="op-1",
+            service_kind="docker",
+            evidence_type="logs",
+            title="Compose logs",
+            payload=None,
+            log_text=None,
+            metadata=None,
+        )
+
+    missing_incident_storage = _storage(_FakeConn(fetchrow_results=[None]))
+    with pytest.raises(RuntimeError, match="Record operation incident returned no row"):
+        await missing_incident_storage.record_operation_incident(
+            "owner-1",
+            operation_id="op-1",
+            service_kind="discord",
+            incident_type="discord_delivery_failed",
+            severity="high",
+            blocking=True,
+            root_cause_summary="queue worker stalled",
+            recommended_fix=None,
+            evidence_refs=None,
+            metadata=None,
+        )
+
+    conn = _FakeConn(
+        fetch_results=[
+            [_evidence_row(), _evidence_row("evidence-2", log_text=None)],
+            [_incident_row()],
+            [_incident_row()],
+        ]
+    )
+    storage = _storage(conn)
+    evidence = await storage.list_operation_evidence(
+        "owner-1",
+        "op-1",
+        service_kind="",
+        evidence_type="",
+        limit=0,
+    )
+    incidents = await storage.list_operation_incidents(
+        "owner-1",
+        "op-1",
+        unresolved_only=False,
+        limit=0,
+    )
+    owner_incidents = await storage.list_operation_incidents_for_owner(
+        "owner-1",
+        repo_id="",
+        unresolved_only=False,
+        limit=0,
+    )
+
+    assert evidence[0]["evidence_id"] == "evidence-1"
+    evidence_query, evidence_args = conn.fetch_calls[0]
+    assert "service_kind =" not in evidence_query
+    assert "evidence_type =" not in evidence_query
+    assert evidence_args == ("owner-1", "op-1", 1)
+
+    assert incidents[0]["incident_id"] == "incident-1"
+    incidents_query, incidents_args = conn.fetch_calls[1]
+    assert "status <> 'resolved'" not in incidents_query
+    assert incidents_args == ("owner-1", "op-1", 1)
+
+    assert owner_incidents[0]["incident_id"] == "incident-1"
+    owner_query, owner_args = conn.fetch_calls[2]
+    assert "op.repo_id =" not in owner_query
+    assert "inc.status <> 'resolved'" not in owner_query
+    assert owner_args == ("owner-1", 1)
+
+    missing_hydrated_storage = _storage(_FakeConn())
+    missing_hydrated_storage.get_managed_operation = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    assert await missing_hydrated_storage.get_operation_hydrated("owner-1", "missing-op") is None
+
+
+@pytest.mark.asyncio
+async def test_get_operation_log_chunks_filters_and_limits_entries() -> None:
+    storage = _storage(_FakeConn())
+    storage.list_operation_evidence = AsyncMock(  # type: ignore[method-assign]
+        return_value=[
+            {
+                "evidence_id": "evidence-1",
+                "service_kind": "docker",
+                "payload": {"stream": "stdout"},
+                "log_text": "match this log",
+                "metadata": {"order": 1},
+                "updated_at": _dt().isoformat(),
+            },
+            {
+                "evidence_id": "evidence-2",
+                "service_kind": "docker",
+                "payload": {"stream": "stderr"},
+                "log_text": "skip this log",
+                "metadata": {"order": 2},
+                "updated_at": _dt().isoformat(),
+            },
+            {
+                "evidence_id": "evidence-3",
+                "service_kind": "docker",
+                "payload": {"stream": "stderr"},
+                "log_text": "match this too",
+                "metadata": {"order": 3},
+                "updated_at": _dt().isoformat(),
+            },
+        ]
+    )
+
+    filtered_logs = await storage.get_operation_log_chunks(
+        "owner-1",
+        "op-1",
+        query_text="match",
+        limit=5,
+    )
+    limited_logs = await storage.get_operation_log_chunks(
+        "owner-1",
+        "op-1",
+        query_text="",
+        limit=1,
+    )
+
+    assert [chunk["chunk_id"] for chunk in filtered_logs] == ["evidence-1", "evidence-3"]
+    assert [chunk["message"] for chunk in filtered_logs] == [
+        "match this log",
+        "match this too",
+    ]
+    assert len(limited_logs) == 1
+    assert limited_logs[0]["chunk_id"] == "evidence-1"
+
+
+@pytest.mark.asyncio
+async def test_claim_worker_job_skips_claim_race_when_update_returns_none() -> None:
+    queued_job = _worker_job_row()
+    conn = _FakeConn(
+        fetchrow_results=[None],
+        fetch_results=[
+            [queued_job],
+            [],
+            [
+                {
+                    "run_id": "run-1",
+                    "plan_json": {
+                        "host_capacity_policy": {
+                            "host_id": "windows-owner-ci",
+                            "resource_budget": {"cpu": 4},
+                        }
+                    },
+                    "metadata_json": {},
+                }
+            ],
+        ],
+    )
+    storage = _storage(conn)
+    storage._recompute_run_status = AsyncMock()  # type: ignore[method-assign]
+
+    claimed = await storage.claim_worker_job(
+        scope_id="owner:owner-1:repo:zetherion-ai",
+        node_id="node-1",
+        required_capabilities=["ci.test.run"],
+        session_id="sess-1",
+    )
+
+    assert claimed is None
+    storage._recompute_run_status.assert_not_awaited()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
 async def test_store_worker_observability_and_recompute_run_status_cover_state_transitions(
 ) -> None:
     conn = _FakeConn(
@@ -1550,6 +2834,159 @@ async def test_store_worker_observability_and_recompute_run_status_cover_state_t
         "ready_to_merge",
         "cancelled",
     ]
+
+
+@pytest.mark.asyncio
+async def test_store_worker_observability_covers_existing_log_chunks_and_non_dict_samples(
+) -> None:
+    conn = _FakeConn()
+    storage = _storage(conn)
+
+    await storage._store_worker_observability(  # noqa: SLF001
+        conn=conn,
+        owner_id="owner-1",
+        repo_id="zetherion-ai",
+        run_id="run-2",
+        shard_id="shard-2",
+        node_id="windows-secondary",
+        final_status="succeeded",
+        result_json={
+            "log_chunks": [
+                "skip-me",
+                {"stream": "stdout", "message": ""},
+                {"stream": "stderr", "message": "chunk log", "metadata": {"stdout": False}},
+            ],
+            "resource_samples": [
+                "skip-me",
+                {
+                    "memory_mb": 128,
+                    "disk_used_bytes": 512,
+                    "disk_free_bytes": 2048,
+                    "container_count": 1,
+                },
+            ],
+            "debug_bundle": {"bundle_path": "/tmp/bundle.json"},
+            "cleanup_receipt": None,
+            "container_receipts": None,
+            "elapsed_ms": -10,
+        },
+        error_json={},
+    )
+
+    log_inserts = [
+        call for call in conn.execute_calls if "owner_ci_log_chunks" in call[0]
+    ]
+    sample_inserts = [
+        call for call in conn.execute_calls if "owner_ci_resource_samples" in call[0]
+    ]
+    bundle_insert = next(
+        call for call in conn.execute_calls if "owner_ci_debug_bundles" in call[0]
+    )
+    summary_insert = next(
+        call
+        for call in conn.execute_calls
+        if "owner_ci_project_usage_summaries" in call[0]
+    )
+
+    assert len(log_inserts) == 1
+    assert len(sample_inserts) == 1
+    assert json.loads(str(bundle_insert[1][5])) == {"bundle_path": "/tmp/bundle.json"}
+    summary_payload = json.loads(str(summary_insert[1][3]))
+    assert summary_payload["compute_minutes"] == 0.0
+    assert summary_payload["container_count"] == 1
+    assert summary_payload["cleanup_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_recompute_run_status_covers_missing_run_repo_profile_and_local_receipt_fallbacks(
+) -> None:
+    missing_run_conn = _FakeConn(fetchrow_results=[None])
+    missing_run_storage = _storage(missing_run_conn)
+
+    await missing_run_storage._recompute_run_status("owner-1", "missing-run")  # noqa: SLF001
+
+    assert missing_run_conn.execute_calls == []
+
+    invalid_conn = _FakeConn(
+        fetchrow_results=[{**_run_row(status="planned"), "status": "mystery"}, None],
+        fetch_results=[[]],
+    )
+    invalid_storage = _storage(invalid_conn)
+
+    await invalid_storage._recompute_run_status("owner-1", "run-1")  # noqa: SLF001
+
+    invalid_update = next(
+        call for call in invalid_conn.execute_calls if call[0].lstrip().startswith("UPDATE")
+    )
+    assert invalid_update[1][2] == "planned"
+
+    from zetherion_ai.owner_ci import storage as storage_module
+
+    shard_receipt_conn = _FakeConn(
+        fetchrow_results=[_run_row(status="planned"), _repo_row()],
+        fetch_results=[
+            [
+                _shard_row(
+                    "shard-1",
+                    "lane-1",
+                    status="planned",
+                    execution_target="windows_local",
+                )
+            ]
+        ],
+    )
+    shard_receipt_storage = _storage(shard_receipt_conn)
+    with patch.object(
+        storage_module,
+        "_load_local_repo_readiness_from_shards",
+        return_value=({"source": "shards"}, {"source": "shards"}),
+    ) as from_shards, patch.object(
+        storage_module,
+        "_load_local_repo_readiness",
+        return_value=({"source": "filesystem"}, {"source": "filesystem"}),
+    ) as from_fs, patch.object(
+        storage_module,
+        "overlay_local_readiness_shards",
+        side_effect=lambda shards, receipt: shards,
+    ) as overlay:
+        await shard_receipt_storage._recompute_run_status("owner-1", "run-1")  # noqa: SLF001
+
+    from_shards.assert_called_once()
+    from_fs.assert_called_once()
+    assert overlay.call_args.args[1] == {"source": "shards"}
+
+    filesystem_receipt_conn = _FakeConn(
+        fetchrow_results=[_run_row(status="planned"), _repo_row()],
+        fetch_results=[
+            [
+                _shard_row(
+                    "shard-1",
+                    "lane-1",
+                    status="planned",
+                    execution_target="windows_local",
+                )
+            ]
+        ],
+    )
+    filesystem_receipt_storage = _storage(filesystem_receipt_conn)
+    with patch.object(
+        storage_module,
+        "_load_local_repo_readiness_from_shards",
+        return_value=(None, None),
+    ) as from_shards_none, patch.object(
+        storage_module,
+        "_load_local_repo_readiness",
+        return_value=({"source": "filesystem"}, {"source": "filesystem"}),
+    ) as from_fs_only, patch.object(
+        storage_module,
+        "overlay_local_readiness_shards",
+        side_effect=lambda shards, receipt: shards,
+    ) as overlay_filesystem:
+        await filesystem_receipt_storage._recompute_run_status("owner-1", "run-1")  # noqa: SLF001
+
+    from_shards_none.assert_called_once()
+    from_fs_only.assert_called_once()
+    assert overlay_filesystem.call_args.args[1] == {"source": "filesystem"}
 
 
 @pytest.mark.asyncio
@@ -2018,3 +3455,101 @@ async def test_submit_worker_job_result_rejects_invalid_worker_job_states(
             job_id="job-1",
             payload=payload,
         )
+
+
+@pytest.mark.asyncio
+async def test_submit_worker_job_result_raises_when_update_row_is_missing() -> None:
+    claimed_job = {
+        **_worker_job_row(),
+        "status": "claimed",
+        "claimed_by_node_id": "node-1",
+        "claimed_session_id": "sess-1",
+    }
+    storage = _storage(_FakeConn(fetchrow_results=[claimed_job, None]))
+    storage._store_worker_observability = AsyncMock()  # type: ignore[method-assign]
+    storage._store_run_coaching_feedback = AsyncMock()  # type: ignore[method-assign]
+    storage._recompute_run_status = AsyncMock()  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="Worker job update returned no row"):
+        await storage.submit_worker_job_result(
+            scope_id="owner:owner-1:repo:zetherion-ai",
+            node_id="node-1",
+            job_id="job-1",
+            payload={"status": "failed", "output": {}, "error": {}},
+        )
+
+    storage._store_worker_observability.assert_awaited_once()  # type: ignore[attr-defined]
+    storage._recompute_run_status.assert_awaited_once()  # type: ignore[attr-defined]
+    storage._store_run_coaching_feedback.assert_awaited_once()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_store_run_coaching_feedback_covers_early_returns_and_recording_paths() -> None:
+    storage = _storage(_FakeConn())
+    storage.get_run = AsyncMock(
+        side_effect=[
+            None,
+            {"status": "succeeded"},
+            {"status": "failed", "metadata": {}},
+            {
+                "status": "failed",
+                "repo_id": "repo-1",
+                "metadata": {"principal_id": "codex-1"},
+            },
+            {
+                "status": "failed",
+                "repo_id": "repo-1",
+                "metadata": {
+                    "principal_id": "codex-1",
+                    "session_id": "sess-1",
+                    "app_id": "app-1",
+                },
+            },
+        ]
+    )  # type: ignore[method-assign]
+    storage.list_agent_coaching_feedback = AsyncMock(
+        return_value=[
+            {
+                "recurrence_count": 3,
+                "rule_violations": [
+                    {"rule_code": "missing_gitleaks"},
+                    {"rule_code": ""},
+                ],
+            }
+        ]
+    )  # type: ignore[method-assign]
+    storage.get_run_report = AsyncMock(side_effect=[None, {"run_id": "run-1"}])  # type: ignore[method-assign]
+    storage.record_agent_gap_event = AsyncMock(return_value=_gap_row())  # type: ignore[method-assign]
+
+    from zetherion_ai.owner_ci import storage as storage_module
+
+    with patch.object(
+        storage_module,
+        "build_recurring_diagnostic_coaching_payloads",
+        return_value=[
+            {
+                "gap_type": "agent_instruction_update",
+                "repo_id": "repo-1",
+                "run_id": "run-1",
+                "severity": "medium",
+                "blocker": False,
+                "detected_from": "ci_run_diagnostics",
+                "required_capability": "gitleaks",
+                "observed_request": {"tool": "gitleaks"},
+                "suggested_fix": "Update AGENTS.md to require gitleaks.",
+                "metadata": {"rule_code": "missing_gitleaks"},
+            }
+        ],
+    ):
+        await storage._store_run_coaching_feedback("owner-1", "run-1")  # noqa: SLF001
+        await storage._store_run_coaching_feedback("owner-1", "run-1")  # noqa: SLF001
+        await storage._store_run_coaching_feedback("owner-1", "run-1")  # noqa: SLF001
+        await storage._store_run_coaching_feedback("owner-1", "run-1")  # noqa: SLF001
+        await storage._store_run_coaching_feedback("owner-1", "run-1")  # noqa: SLF001
+
+    storage.record_agent_gap_event.assert_awaited_once()  # type: ignore[attr-defined]
+    kwargs = storage.record_agent_gap_event.await_args.kwargs  # type: ignore[attr-defined]
+    assert kwargs["principal_id"] == "codex-1"
+    assert kwargs["session_id"] == "sess-1"
+    assert kwargs["app_id"] == "app-1"
+    assert kwargs["required_capability"] == "gitleaks"

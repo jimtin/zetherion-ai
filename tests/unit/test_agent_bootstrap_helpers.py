@@ -6,6 +6,7 @@ import base64
 import io
 import tarfile
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -98,6 +99,27 @@ def test_git_helpers_resolve_head_refs_worktrees_and_packed_refs(tmp_path: Path)
     (worktree_root / ".git").write_text("gitdir: ../actual-git\n", encoding="utf-8")
     assert agent_bootstrap._resolve_git_dir(worktree_root) == actual_git_dir
 
+    detached_root = tmp_path / "detached"
+    detached_git_dir = detached_root / ".git"
+    detached_git_dir.mkdir(parents=True)
+    detached_root.mkdir(exist_ok=True)
+    (detached_git_dir / "HEAD").write_text(f"{tag_sha}\n", encoding="utf-8")
+    assert agent_bootstrap._resolve_git_ref(detached_root, "HEAD") == tag_sha
+
+    broken_worktree = tmp_path / "broken-worktree"
+    broken_worktree.mkdir()
+    (broken_worktree / ".git").write_text("gitdir: ../missing-git\n", encoding="utf-8")
+    assert agent_bootstrap._resolve_git_dir(broken_worktree) is None
+
+    invalid_git_file = tmp_path / "invalid-git-file"
+    invalid_git_file.mkdir()
+    (invalid_git_file / ".git").write_text("not-a-gitdir\n", encoding="utf-8")
+    assert agent_bootstrap._resolve_git_dir(invalid_git_file) is None
+
+    no_packed_refs = tmp_path / "no-packed-refs"
+    no_packed_refs.mkdir()
+    assert agent_bootstrap._resolve_packed_ref(no_packed_refs, "refs/heads/main") is None
+
 
 def test_tar_workspace_and_command_catalog_skip_generated_content(tmp_path: Path) -> None:
     repo_root = tmp_path / "sample-repo"
@@ -126,7 +148,7 @@ def test_tar_workspace_and_command_catalog_skip_generated_content(tmp_path: Path
 
     repo = {
         "mandatory_static_gates": [{"command": ["ruff", "check"]}],
-        "local_fast_lanes": [{"command": ["pytest", "-q"]}, "skip-me"],
+        "local_fast_lanes": [{"command": ["pytest", "-q"]}, {"command": []}, "skip-me"],
         "local_full_lanes": [{"command": ["pytest", "tests/integration"]}],
         "windows_full_lanes": [{"command": ["docker", "compose", "up"]}],
     }
@@ -216,6 +238,12 @@ def test_default_connector_maps_manifests_and_capabilities_cover_repo_variants()
     assert harness_manifest["resource_classes"] == {"service": {"max_parallel": 2}}
     assert command_catalog["mandatory_static_gates"] == [["eslint"]]
     assert "discord" in service_ops
+    assert agent_bootstrap._default_service_operations("generic-repo") == {
+        "github": {
+            "views": ["compare", "overview", "pulls", "workflows"],
+            "actions": [],
+        }
+    }
     assert capability_registry["supported_tooling"] == [
         "discord_e2e",
         "docker",
@@ -287,6 +315,47 @@ def test_misc_bootstrap_helpers_cover_routing_redaction_and_stable_keys() -> Non
         ["repo", "dm", ""]
     )
 
+    blocked = agent_bootstrap._connector_health_report(
+        {
+            "connector_id": "vercel-1",
+            "service_kind": "vercel",
+            "auth_kind": "token",
+            "has_secret": False,
+            "active": False,
+            "metadata": {},
+        },
+        None,
+    )
+    degraded = agent_bootstrap._connector_health_report(
+        {
+            "connector_id": "clerk-1",
+            "service_kind": "clerk",
+            "auth_kind": "token",
+            "has_secret": True,
+            "active": True,
+            "metadata": {},
+        },
+        {"manifest": {"ok": True}},
+    )
+    healthy = agent_bootstrap._connector_health_report(
+        {
+            "connector_id": "github-1",
+            "service_kind": "github",
+            "auth_kind": "none",
+            "has_secret": False,
+            "active": True,
+            "metadata": {},
+        },
+        {"manifest": {"ok": True}},
+    )
+
+    assert blocked["status"] == "blocked"
+    assert set(blocked["blocking_reasons"]) == {"connector_inactive", "missing_secret"}
+    assert "missing_service_capability_manifest" in blocked["warnings"]
+    assert degraded["status"] == "degraded"
+    assert degraded["warnings"] == ["missing_clerk_metadata"]
+    assert healthy["status"] == "healthy"
+
 
 def test_workspace_bundle_builder_keeps_inline_archives_small(tmp_path: Path) -> None:
     repo_root = tmp_path / "workspace"
@@ -305,3 +374,225 @@ def test_workspace_bundle_builder_keeps_inline_archives_small(tmp_path: Path) ->
     archive_bytes = base64.b64decode(bundle["archive_base64"])
     with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as archive:
         assert archive.getnames() == ["workspace/README.md"]
+
+
+def test_operation_ref_helpers_cover_base_sha_and_event_fallbacks() -> None:
+    skill = agent_bootstrap.AgentBootstrapSkill(storage=MagicMock())
+
+    refs = skill._extract_operation_refs(  # noqa: SLF001
+        {
+            "base_sha": "a" * 40,
+            "branch": "main",
+            "run_id": "run-1",
+        }
+    )
+
+    assert refs == {
+        "git_sha": "a" * 40,
+        "branch": "main",
+        "run_id": "run-1",
+    }
+    assert skill._normalize_event_payload({"ok": True}) == {"ok": True}  # noqa: SLF001
+    assert skill._normalize_event_payload('{"key":"value"}') == {"key": "value"}  # noqa: SLF001
+    assert skill._normalize_event_payload('["not","a","dict"]') == {}  # noqa: SLF001
+    assert skill._normalize_event_payload("{bad-json") == {}  # noqa: SLF001
+
+    github_from_pr = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "github",
+        {
+            "delivery_id": "delivery-1",
+            "pull_request": {
+                "number": 12,
+                "head": {"sha": "b" * 40, "ref": "feature/ref"},
+            },
+        },
+    )
+    github_from_check_run = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "github",
+        {"check_run": {"head_sha": "c" * 40}},
+    )
+    github_from_check_suite = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "github",
+        {
+            "check_suite": {"head_sha": "d" * 40, "head_branch": "suite-branch"},
+            "repository": {"full_name": "jimtin/zetherion-ai"},
+        },
+    )
+    github_from_push = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "github",
+        {"after": "e" * 40, "ref": "refs/heads/release"},
+    )
+    vercel_from_deployment = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "vercel",
+        {
+            "deployment": {
+                "id": "dep-9",
+                "meta": {
+                    "githubCommitRefSha": "f" * 40,
+                    "gitCommitRef": "deploy-preview",
+                },
+            }
+        },
+    )
+    vercel_from_event = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "vercel",
+        {
+            "id": "vercel-event-1",
+            "payload": {
+                "target": "preview",
+                "meta": {"gitCommitSha": "1" * 40},
+            },
+        },
+    )
+    vercel_branch_only = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "vercel",
+        {
+            "payload": {
+                "target": "production",
+                "meta": {},
+            },
+        },
+    )
+    clerk_refs = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "clerk",
+        {"id": "clerk-event-1", "data": {}},
+    )
+    clerk_instance_refs = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "clerk",
+        {"data": {"id": "instance-1"}},
+    )
+    stripe_refs = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "stripe",
+        {
+            "id": "stripe-event-1",
+            "type": "customer.created",
+            "data": {"object": {"id": "cus_obj", "customer": "cus_123"}},
+        },
+    )
+    stripe_subscription_refs = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "stripe",
+        {
+            "id": "stripe-event-2",
+            "type": "customer.subscription.updated",
+            "data": {"object": {"id": "sub_123", "customer": "cus_456"}},
+        },
+    )
+
+    assert github_from_pr == {
+        "github_delivery_id": "delivery-1",
+        "git_sha": "b" * 40,
+        "branch": "feature/ref",
+        "pr_number": "12",
+    }
+    assert github_from_check_run["git_sha"] == "c" * 40
+    assert github_from_check_suite["git_sha"] == "d" * 40
+    assert github_from_check_suite["branch"] == "suite-branch"
+    assert github_from_check_suite["repo_full_name"] == "jimtin/zetherion-ai"
+    assert github_from_push["git_sha"] == "e" * 40
+    assert github_from_push["branch"] == "release"
+    assert vercel_from_deployment == {
+        "vercel_deployment_id": "dep-9",
+        "git_sha": "f" * 40,
+        "branch": "deploy-preview",
+    }
+    assert vercel_from_event == {
+        "vercel_event_id": "vercel-event-1",
+        "git_sha": "1" * 40,
+        "branch": "preview",
+    }
+    assert vercel_branch_only == {"branch": "production"}
+    assert clerk_refs == {"clerk_event_id": "clerk-event-1"}
+    assert clerk_instance_refs == {"clerk_instance_ref": "instance-1"}
+    assert stripe_refs == {
+        "stripe_event_id": "stripe-event-1",
+        "customer_id": "cus_123",
+    }
+    assert stripe_subscription_refs == {
+        "stripe_event_id": "stripe-event-2",
+        "customer_id": "cus_456",
+        "subscription_id": "sub_123",
+    }
+
+
+@pytest.mark.asyncio
+async def test_agent_bootstrap_helper_methods_cover_default_seed_data_and_gap_paths(
+    tmp_path: Path,
+) -> None:
+    doc_path = tmp_path / "quickstart.md"
+    doc_path.write_text("# Quickstart\n\nInstall it.\n", encoding="utf-8")
+
+    storage = MagicMock()
+    storage.upsert_agent_docs_manifest = AsyncMock()
+    storage.list_agent_docs_manifests = AsyncMock(
+        return_value=[{"slug": "quickstart", "manifest": {"content_markdown": "# Quickstart"}}]
+    )
+    storage.get_agent_app_profile = AsyncMock(return_value=None)
+    storage.get_agent_knowledge_pack = AsyncMock(return_value=None)
+    storage.upsert_agent_app_profile = AsyncMock(return_value={"app_id": "sample-app"})
+    storage.upsert_agent_knowledge_pack = AsyncMock(
+        return_value={"app_id": "sample-app", "version": "current"}
+    )
+    storage.list_secret_refs = AsyncMock(return_value=[{"secret_ref_id": "present-secret"}])
+    storage.find_agent_app_profile = AsyncMock(
+        side_effect=[
+            {"owner_id": "owner-9"},
+            {"owner_id": ""},
+        ]
+    )
+
+    skill = agent_bootstrap.AgentBootstrapSkill(storage=storage)
+    skill._record_gap = AsyncMock(return_value={"gap_id": "gap-missing"})  # type: ignore[method-assign]
+
+    repo_profile = {
+        "repo_id": "sample-app",
+        "display_name": "Sample App",
+        "github_repo": "jimtin/sample-app",
+        "default_branch": "main",
+        "stack_kind": "python",
+        "allowed_paths": [str(tmp_path / "sample-app")],
+        "agent_bootstrap_profile": {"docs_slugs": ["quickstart"]},
+    }
+
+    with (
+        patch.object(
+            agent_bootstrap,
+            "_DEFAULT_DOCS",
+            [
+                {
+                    "slug": "quickstart",
+                    "title": "Quickstart",
+                    "path": "/docs/quickstart",
+                    "category": "guide",
+                    "source_path": doc_path,
+                }
+            ],
+        ),
+        patch.object(agent_bootstrap, "default_repo_profiles", return_value=[repo_profile]),
+    ):
+        await skill._ensure_default_docs("owner-1", "https://example.com")  # noqa: SLF001
+        await skill._ensure_default_apps("owner-1", "https://example.com")  # noqa: SLF001
+        storage.get_agent_app_profile.return_value = {"app_id": "sample-app"}
+        storage.get_agent_knowledge_pack.return_value = {"app_id": "sample-app"}
+        await skill._ensure_default_apps("owner-1", "https://example.com")  # noqa: SLF001
+
+    gaps = await skill._record_missing_secret_ref_gaps(  # noqa: SLF001
+        owner_id="owner-1",
+        principal_id="codex-1",
+        session_id="sess-1",
+        app_id="sample-app",
+        repo_id="sample-app",
+        required_secret_refs=["present-secret", "missing-secret"],
+        reason="compile_test_plan",
+    )
+    inferred_owner = await skill._infer_owner_id({"app_id": "sample-app"})  # noqa: SLF001
+    missing_owner = await skill._infer_owner_id({"app_id": "missing-owner-app"})  # noqa: SLF001
+    no_app_owner = await skill._infer_owner_id({})  # noqa: SLF001
+
+    storage.upsert_agent_docs_manifest.assert_awaited_once()
+    storage.upsert_agent_app_profile.assert_awaited_once()
+    storage.upsert_agent_knowledge_pack.assert_awaited_once()
+    skill._record_gap.assert_awaited_once()  # type: ignore[attr-defined]
+    assert gaps == [{"gap_id": "gap-missing"}]
+    assert inferred_owner == "owner-9"
+    assert missing_owner is None
+    assert no_app_owner is None

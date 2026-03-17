@@ -46,6 +46,19 @@ class LanePlan:
     release_blocking: bool = True
 
 
+def _lane_family_for_lane_id(lane_id: str) -> str:
+    normalized = str(lane_id or "").strip().lower()
+    if normalized.startswith("z-unit") or "unit" in normalized:
+        return "unit"
+    if normalized.startswith("z-int") or "integration" in normalized:
+        return "integration"
+    if normalized.startswith("z-e2e") or "e2e" in normalized:
+        return "e2e_authoritative"
+    if normalized in {"lint", "check"}:
+        return "static"
+    return "integration"
+
+
 def _normalize_paths(paths: list[str]) -> list[str]:
     normalized: list[str] = []
     for path in paths:
@@ -220,10 +233,15 @@ def build_plan(*, changed_paths: list[str], manifest: dict[str, Any]) -> dict[st
             {
                 "lane_id": lane.lane_id,
                 "lane_label": lane.lane_label,
+                "validation_mode": "zetherion_alone",
+                "lane_family": _lane_family_for_lane_id(lane.lane_id),
+                "shard_purpose": lane.lane_label,
+                "blocking": lane.release_blocking,
                 "resource_class": lane.resource_class,
                 "timeout_seconds": lane.timeout_seconds,
                 "depends_on": list(lane.depends_on),
                 "artifact_paths": list(lane.artifact_paths),
+                "expected_artifacts": list(lane.artifact_paths),
                 "covered_required_paths": list(lane.covered_required_paths),
                 "cleanup_receipt_path": lane.cleanup_receipt_path,
                 "service_slot": lane.service_slot,
