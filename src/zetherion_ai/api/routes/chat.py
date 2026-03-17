@@ -46,6 +46,34 @@ def _serialise(record: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _normalize_optional_string(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
+
+
+def _normalize_optional_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
+def _runtime_selection_from_body(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "selection_mode": _normalize_optional_string(data.get("selection_mode")) or "auto",
+        "provider": _normalize_optional_string(data.get("provider")),
+        "model": _normalize_optional_string(data.get("model")),
+        "task_type": _normalize_optional_string(data.get("task_type")),
+        "agent_profile_id": _normalize_optional_string(data.get("agent_profile_id")),
+        "fallback_allowed": _normalize_optional_bool(data.get("fallback_allowed")),
+    }
+
+
 def _get_chat_skill(request: web.Request) -> ClientChatSkill:
     """Get or lazily create a ClientChatSkill from the app's inference broker."""
     skill = request.app.get("client_chat_skill")
@@ -163,6 +191,7 @@ async def handle_chat(request: web.Request) -> web.Response:
 
     if len(message) > 10000:
         return web.json_response({"error": "Message too long (max 10000 chars)"}, status=400)
+    runtime_selection = _runtime_selection_from_body(data)
 
     # Store the user's message
     await tenant_manager.add_message(
@@ -176,6 +205,9 @@ async def handle_chat(request: web.Request) -> web.Response:
 
     conversation_runtime = _get_conversation_runtime(request)
     history: list[dict[str, Any]] = []
+    provider_used = None
+    usage_payload: dict[str, Any] | None = None
+    selection_payload: dict[str, Any] | None = None
     try:
         history = await tenant_manager.get_messages(
             session_id=session_id,
@@ -210,12 +242,23 @@ async def handle_chat(request: web.Request) -> web.Response:
                 message=message,
                 history=context.history,
                 context_notes=context.context_notes,
+                selection_mode=runtime_selection["selection_mode"],
+                provider=runtime_selection["provider"],
+                model=runtime_selection["model"],
+                task_type=runtime_selection["task_type"],
+                agent_profile_id=runtime_selection["agent_profile_id"],
+                fallback_allowed=runtime_selection["fallback_allowed"],
             )
             assistant_content = result.content
             model_used = result.model
+            provider_used = getattr(result, "provider", None)
+            usage_payload = dict(getattr(result, "usage", {}) or {})
+            selection_payload = dict(getattr(result, "selection", {}) or {})
             assistant_metadata = None
     except SandboxSimulationError as exc:
         return web.json_response(exc.body, status=exc.status)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
     except Exception:
         log.exception("chat_inference_failed", tenant_id=tenant_id, session_id=session_id)
         assistant_content = "I'm sorry, I encountered an error. Please try again."
@@ -249,6 +292,12 @@ async def handle_chat(request: web.Request) -> web.Response:
     response = _serialise(assistant_msg)
     if model_used:
         response["model"] = model_used
+    if provider_used:
+        response["provider"] = provider_used
+    if usage_payload:
+        response["usage"] = usage_payload
+    if selection_payload:
+        response["selection"] = selection_payload
 
     # Async post-response extraction for tenant CRM (L1b).
     if execution_mode != "test":
@@ -335,6 +384,7 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
 
     if len(message) > 10000:
         return web.json_response({"error": "Message too long (max 10000 chars)"}, status=400)
+    runtime_selection = _runtime_selection_from_body(data)
 
     # Store the user's message
     await tenant_manager.add_message(
@@ -348,8 +398,11 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
 
     assistant_content = ""
     model_used = None
+    provider_used = None
     history: list[dict[str, Any]] = []
     assistant_metadata: dict[str, Any] | None = None
+    usage_payload: dict[str, Any] | None = None
+    selection_payload: dict[str, Any] | None = None
 
     conversation_runtime = _get_conversation_runtime(request)
     broker = request.app.get("inference_broker")
@@ -393,16 +446,47 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
                 message=message,
                 history=context.history,
                 context_notes=context.context_notes,
+                selection_mode=runtime_selection["selection_mode"],
+                provider=runtime_selection["provider"],
+                model=runtime_selection["model"],
+                task_type=runtime_selection["task_type"],
+                agent_profile_id=runtime_selection["agent_profile_id"],
+                fallback_allowed=runtime_selection["fallback_allowed"],
             )
 
             async for chunk in stream:
                 if chunk.done:
                     model_used = chunk.model
+                    provider_used = chunk.provider or None
+                    usage_payload = {
+                        "input_tokens": chunk.input_tokens,
+                        "output_tokens": chunk.output_tokens,
+                        "total_tokens": chunk.input_tokens + chunk.output_tokens,
+                        "estimated_cost_usd": chunk.estimated_cost_usd,
+                        "model": chunk.model or None,
+                        "provider": chunk.provider or None,
+                    }
+                    selection_payload = {
+                        "selection_mode": runtime_selection["selection_mode"],
+                        "requested_provider": runtime_selection["provider"],
+                        "requested_model": runtime_selection["model"],
+                        "task_type": runtime_selection["task_type"] or "conversation",
+                        "agent_profile_id": runtime_selection["agent_profile_id"],
+                        "fallback_allowed": (
+                            runtime_selection["fallback_allowed"]
+                            if runtime_selection["fallback_allowed"] is not None
+                            else runtime_selection["selection_mode"] == "prefer"
+                        ),
+                        "effective_provider": provider_used,
+                        "effective_model": model_used,
+                    }
                 else:
                     assistant_content += chunk.content
                     stream_events.append({"type": "token", "content": chunk.content})
     except SandboxSimulationError as exc:
         return web.json_response(exc.body, status=exc.status)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
     except Exception:
         log.exception("chat_stream_failed", tenant_id=tenant_id, session_id=session_id)
         if not assistant_content:
@@ -459,6 +543,12 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
     }
     if model_used:
         done_payload["model"] = model_used
+    if provider_used:
+        done_payload["provider"] = provider_used
+    if usage_payload:
+        done_payload["usage"] = usage_payload
+    if selection_payload:
+        done_payload["selection"] = selection_payload
     await response.write(f"data: {json.dumps(done_payload)}\n\n".encode())
 
     # Async post-response extraction for tenant CRM (L1b).

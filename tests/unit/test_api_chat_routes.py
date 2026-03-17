@@ -15,8 +15,11 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from zetherion_ai.api.routes.chat import (
+    _dispatch_message_extraction,
     _format_messages_for_llm,
     _get_chat_skill,
+    _normalize_optional_bool,
+    _runtime_selection_from_body,
     _serialise,
     handle_chat,
     handle_chat_history,
@@ -29,6 +32,10 @@ class _FakeStreamChunk:
     content: str
     done: bool = False
     model: str = ""
+    provider: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost_usd: float = 0.0
 
 
 def _parse_sse_events(raw: bytes) -> list[dict[str, object]]:
@@ -131,6 +138,68 @@ def test_get_chat_skill_creates_new_from_broker() -> None:
         mock_skill_cls.assert_called_once_with(inference_broker="broker")
 
 
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("true", True),
+        ("off", False),
+        ("maybe", None),
+        (None, None),
+    ],
+)
+def test_normalize_optional_bool_handles_supported_values(
+    raw_value: object,
+    expected: bool | None,
+) -> None:
+    assert _normalize_optional_bool(raw_value) is expected
+
+
+def test_runtime_selection_from_body_defaults_and_normalizes() -> None:
+    selection = _runtime_selection_from_body(
+        {
+            "selection_mode": "  lock ",
+            "provider": " anthropic ",
+            "model": " claude-3-5-sonnet ",
+            "task_type": " planning ",
+            "agent_profile_id": " planner ",
+            "fallback_allowed": "off",
+        }
+    )
+
+    assert selection == {
+        "selection_mode": "lock",
+        "provider": "anthropic",
+        "model": "claude-3-5-sonnet",
+        "task_type": "planning",
+        "agent_profile_id": "planner",
+        "fallback_allowed": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_extract_message_entities_logs_failed_background_extraction() -> None:
+    request = MagicMock()
+    request.app = {}
+    skill = MagicMock()
+    skill.safe_handle = AsyncMock(return_value=SimpleNamespace(success=False, error="boom"))
+
+    with (
+        patch(
+            "zetherion_ai.api.routes.chat._get_tenant_intelligence_skill",
+            AsyncMock(return_value=skill),
+        ),
+        patch("zetherion_ai.api.routes.chat.log.warning") as warning,
+    ):
+        await _dispatch_message_extraction(
+            request,
+            tenant_id="tenant-1",
+            session_id="session-1",
+            message="hello",
+        )
+
+    warning.assert_called_once()
+
+
 @pytest.mark.asyncio
 async def test_handle_chat_rejects_invalid_json(chat_routes_client) -> None:
     """Invalid JSON body returns 400."""
@@ -205,6 +274,52 @@ async def test_handle_chat_success_with_context_and_model(chat_routes_client) ->
     ]
     assert args["context_notes"] is None
     tenant_manager.persist_session_context.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_returns_runtime_selection_metadata(chat_routes_client) -> None:
+    """Runtime-selection requests are forwarded and reflected in the response."""
+    client, _, _, _ = chat_routes_client
+
+    skill = MagicMock()
+    skill.generate_response = AsyncMock(
+        return_value=SimpleNamespace(
+            content="Selected response",
+            model="claude-3-5-sonnet",
+            provider="claude",
+            usage={"input_tokens": 11, "output_tokens": 7, "provider": "claude"},
+            selection={
+                "selection_mode": "lock",
+                "requested_provider": "claude",
+                "requested_model": "claude-3-5-sonnet",
+                "task_type": "conversation",
+                "fallback_allowed": False,
+            },
+        )
+    )
+    client.app["client_chat_skill"] = skill
+
+    response = await client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Use Claude",
+            "selection_mode": "lock",
+            "provider": "anthropic",
+            "model": "claude-3-5-sonnet",
+            "fallback_allowed": False,
+        },
+    )
+
+    assert response.status == 200
+    body = await response.json()
+    assert body["provider"] == "claude"
+    assert body["usage"]["provider"] == "claude"
+    assert body["selection"]["selection_mode"] == "lock"
+    args = skill.generate_response.call_args.kwargs
+    assert args["selection_mode"] == "lock"
+    assert args["provider"] == "anthropic"
+    assert args["model"] == "claude-3-5-sonnet"
+    assert args["fallback_allowed"] is False
 
 
 @pytest.mark.asyncio
@@ -286,6 +401,25 @@ async def test_handle_chat_inference_error_returns_safe_fallback(chat_routes_cli
     body = await response.json()
     assert "encountered an error" in body["content"]
     assert "model" not in body
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_invalid_runtime_selection_returns_400(chat_routes_client) -> None:
+    """Invalid runtime selection stays deterministic instead of falling back."""
+    client, _, _, _ = chat_routes_client
+    skill = MagicMock()
+    skill.generate_response = AsyncMock(
+        side_effect=ValueError("selection_mode must be one of ['auto', 'lock', 'prefer']")
+    )
+    client.app["client_chat_skill"] = skill
+
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "Hello", "selection_mode": "sometimes"},
+    )
+
+    assert response.status == 400
+    assert "selection_mode" in (await response.json())["error"]
 
 
 @pytest.mark.asyncio
@@ -390,7 +524,15 @@ async def test_handle_chat_stream_success(chat_routes_client) -> None:
     async def _stream():
         yield _FakeStreamChunk(content="Hello")
         yield _FakeStreamChunk(content=" there")
-        yield _FakeStreamChunk(content="", done=True, model="stream-model")
+        yield _FakeStreamChunk(
+            content="",
+            done=True,
+            model="stream-model",
+            provider="groq",
+            input_tokens=8,
+            output_tokens=5,
+            estimated_cost_usd=0.0123,
+        )
 
     skill = MagicMock()
     skill.generate_stream = AsyncMock(return_value=(None, _stream()))
@@ -405,6 +547,9 @@ async def test_handle_chat_stream_success(chat_routes_client) -> None:
 
     assert "".join(str(e["content"]) for e in token_events) == "Hello there"
     assert done_event["model"] == "stream-model"
+    assert done_event["provider"] == "groq"
+    assert done_event["usage"]["total_tokens"] == 13
+    assert done_event["selection"]["selection_mode"] == "auto"
 
     assistant_call = tenant_manager.add_message.call_args_list[1].kwargs
     assert assistant_call["role"] == "assistant"
@@ -471,3 +616,26 @@ async def test_handle_chat_stream_error_after_partial_keeps_partial(chat_routes_
 
     assistant_call = tenant_manager.add_message.call_args_list[1].kwargs
     assert assistant_call["content"] == "partial"
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_stream_invalid_runtime_selection_returns_400(
+    chat_routes_client,
+) -> None:
+    """Invalid streaming selection returns a client error before SSE starts."""
+    client, _, _, _ = chat_routes_client
+    skill = MagicMock()
+    skill.generate_stream = AsyncMock(
+        side_effect=ValueError(
+            "provider or model is required when selection_mode is prefer or lock"
+        )
+    )
+    client.app["client_chat_skill"] = skill
+
+    response = await client.post(
+        "/api/v1/chat/stream",
+        json={"message": "Hello", "selection_mode": "lock"},
+    )
+
+    assert response.status == 400
+    assert "provider or model is required" in (await response.json())["error"]

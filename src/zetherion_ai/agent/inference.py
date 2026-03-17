@@ -510,6 +510,7 @@ class InferenceBroker:
         temperature: float = 0.7,
         forced_provider: Provider | None = None,
         forced_model: str | None = None,
+        allow_forced_fallback: bool = False,
     ) -> InferenceResult:
         """Make an inference call with smart provider selection.
 
@@ -567,7 +568,8 @@ class InferenceBroker:
                 error=str(e),
             )
             if forced_provider is not None:
-                raise
+                if not allow_forced_fallback:
+                    raise
             # Try fallbacks
             result = await self._try_fallbacks(
                 task_type=task_type,
@@ -618,6 +620,9 @@ class InferenceBroker:
         messages: list[dict[str, str]] | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = 0.7,
+        forced_provider: Provider | None = None,
+        forced_model: str | None = None,
+        allow_forced_fallback: bool = False,
     ) -> AsyncGenerator[StreamChunk, None]:
         """Stream an inference call, yielding text chunks as they arrive.
 
@@ -630,11 +635,14 @@ class InferenceBroker:
         """
         start_time = time.time()
 
-        provider = get_provider_for_task(
+        provider = forced_provider or get_provider_for_task(
             task_type=task_type,
             ollama_model=self._ollama_model,
             available_providers=self._available_providers,
         )
+
+        if forced_provider is not None and forced_provider not in self._available_providers:
+            raise RuntimeError(f"Forced provider is not available: {forced_provider.value}")
 
         full_content: list[str] = []
         input_tokens = 0
@@ -650,6 +658,7 @@ class InferenceBroker:
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                model_override=forced_model,
             ):
                 if chunk.done:
                     model = chunk.model
@@ -665,6 +674,8 @@ class InferenceBroker:
                 provider=provider.value,
                 error=str(e),
             )
+            if forced_provider is not None and not allow_forced_fallback:
+                raise
             # Fall back to non-streaming with simulated chunks
             result = await self._try_fallbacks(
                 task_type=task_type,

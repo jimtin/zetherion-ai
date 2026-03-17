@@ -17,6 +17,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from zetherion_ai.agent.providers import Provider, TaskType
+from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 from zetherion_ai.skills.base import (
     Skill,
@@ -93,6 +95,105 @@ _RETURNING_CUSTOMER_PATTERNS = re.compile(
     r"my\s+previous|we\s+(?:spoke|talked|discussed)|came\s+back"
     r")\b"
 )
+
+_PROVIDER_ALIASES = {
+    "anthropic": "claude",
+}
+_TASK_TYPE_ALIASES = {
+    "chat": "conversation",
+    "planning": "complex_reasoning",
+}
+_DEFAULT_SELECTION_MODE = "auto"
+_ALLOWED_SELECTION_MODES = {"auto", "prefer", "lock"}
+
+
+def _normalize_provider_override(value: str | None) -> Provider | None:
+    if value is None:
+        return None
+    normalized = _PROVIDER_ALIASES.get(value.strip().lower(), value.strip().lower())
+    if not normalized:
+        return None
+    try:
+        return Provider(normalized)
+    except ValueError as exc:
+        raise ValueError(f"Unsupported provider `{value}`") from exc
+
+
+def _normalize_task_type(value: str | None) -> TaskType:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return TaskType.CONVERSATION
+    normalized = _TASK_TYPE_ALIASES.get(normalized, normalized)
+    try:
+        return TaskType(normalized)
+    except ValueError as exc:
+        raise ValueError(f"Unsupported task_type `{value}`") from exc
+
+
+def _provider_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(getattr(value, "value", value) or "").strip() or None
+
+
+def _resolve_model_selection(
+    *,
+    selection_mode: str | None,
+    provider: str | None,
+    model: str | None,
+    task_type: str | None,
+    agent_profile_id: str | None,
+    fallback_allowed: bool | None,
+) -> dict[str, Any]:
+    normalized_mode = str(selection_mode or _DEFAULT_SELECTION_MODE).strip().lower()
+    if normalized_mode not in _ALLOWED_SELECTION_MODES:
+        raise ValueError(
+            f"selection_mode must be one of {sorted(_ALLOWED_SELECTION_MODES)}"
+        )
+
+    forced_provider = _normalize_provider_override(provider)
+    forced_model = str(model or "").strip() or None
+    normalized_task_type = _normalize_task_type(task_type)
+    normalized_agent_profile_id = str(agent_profile_id or "").strip() or None
+
+    if forced_model and forced_provider is None:
+        settings = get_settings()
+        provider_defaults = {
+            getattr(settings, "groq_model", ""): Provider.GROQ,
+            getattr(settings, "openai_model", ""): Provider.OPENAI,
+            getattr(settings, "claude_model", ""): Provider.CLAUDE,
+        }
+        forced_provider = provider_defaults.get(forced_model)
+        if forced_provider is None:
+            raise ValueError(
+                "provider is required when model is not mapped to a known runtime default"
+            )
+
+    if normalized_mode in {"prefer", "lock"} and forced_provider is None and forced_model is None:
+        raise ValueError("provider or model is required when selection_mode is prefer or lock")
+
+    allow_forced_fallback = (
+        bool(fallback_allowed)
+        if fallback_allowed is not None
+        else normalized_mode == "prefer"
+    )
+    if normalized_mode == "lock":
+        allow_forced_fallback = False
+
+    return {
+        "forced_provider": forced_provider,
+        "forced_model": forced_model,
+        "task_type": normalized_task_type,
+        "selection": {
+            "selection_mode": normalized_mode,
+            "requested_provider": forced_provider.value if forced_provider is not None else None,
+            "requested_model": forced_model,
+            "task_type": normalized_task_type.value,
+            "agent_profile_id": normalized_agent_profile_id,
+            "fallback_allowed": allow_forced_fallback,
+        },
+        "allow_forced_fallback": allow_forced_fallback,
+    }
 
 
 @dataclass
@@ -238,12 +339,21 @@ class ChatResponse:
 
     content: str
     model: str | None = None
+    provider: str | None = None
+    usage: dict[str, Any] = field(default_factory=dict)
+    selection: dict[str, Any] = field(default_factory=dict)
     signals: L1aSignals = field(default_factory=L1aSignals)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"content": self.content}
         if self.model:
             d["model"] = self.model
+        if self.provider:
+            d["provider"] = self.provider
+        if self.usage:
+            d["usage"] = self.usage
+        if self.selection:
+            d["selection"] = self.selection
         if self.signals.has_signals:
             d["signals"] = self.signals.to_dict()
         return d
@@ -334,6 +444,12 @@ class ClientChatSkill(Skill):
         message: str,
         history: list[dict[str, str]] | None = None,
         context_notes: str | None = None,
+        selection_mode: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        task_type: str | None = None,
+        agent_profile_id: str | None = None,
+        fallback_allowed: bool | None = None,
     ) -> ChatResponse:
         """Generate a chat response for a tenant's end-user.
 
@@ -367,19 +483,43 @@ class ClientChatSkill(Skill):
             )
 
         system_prompt = build_system_prompt(tenant, signals, context_notes=context_notes)
-
-        from zetherion_ai.agent.providers import TaskType
+        selection = _resolve_model_selection(
+            selection_mode=selection_mode,
+            provider=provider,
+            model=model,
+            task_type=task_type,
+            agent_profile_id=agent_profile_id,
+            fallback_allowed=fallback_allowed,
+        )
 
         result = await self._broker.infer(
             prompt=message,
-            task_type=TaskType.CONVERSATION,
+            task_type=selection["task_type"],
             system_prompt=system_prompt,
             messages=history or [],
+            forced_provider=selection["forced_provider"],
+            forced_model=selection["forced_model"],
+            allow_forced_fallback=selection["allow_forced_fallback"],
         )
 
+        provider_value = _provider_value(getattr(result, "provider", None))
         return ChatResponse(
             content=result.content,
             model=result.model,
+            provider=provider_value,
+            usage={
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+                "total_tokens": result.input_tokens + result.output_tokens,
+                "estimated_cost_usd": result.estimated_cost_usd,
+                "model": result.model,
+                "provider": provider_value,
+            },
+            selection={
+                **selection["selection"],
+                "effective_provider": provider_value,
+                "effective_model": result.model,
+            },
             signals=signals,
         )
 
@@ -390,6 +530,12 @@ class ClientChatSkill(Skill):
         message: str,
         history: list[dict[str, str]] | None = None,
         context_notes: str | None = None,
+        selection_mode: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        task_type: str | None = None,
+        agent_profile_id: str | None = None,
+        fallback_allowed: bool | None = None,
     ) -> tuple[L1aSignals, AsyncGenerator[StreamChunk, None]]:
         """Stream a chat response for a tenant's end-user.
 
@@ -413,14 +559,23 @@ class ClientChatSkill(Skill):
             raise RuntimeError("No InferenceBroker configured for streaming.")
 
         system_prompt = build_system_prompt(tenant, signals, context_notes=context_notes)
-
-        from zetherion_ai.agent.providers import TaskType
+        selection = _resolve_model_selection(
+            selection_mode=selection_mode,
+            provider=provider,
+            model=model,
+            task_type=task_type,
+            agent_profile_id=agent_profile_id,
+            fallback_allowed=fallback_allowed,
+        )
 
         stream = self._broker.infer_stream(
             prompt=message,
-            task_type=TaskType.CONVERSATION,
+            task_type=selection["task_type"],
             system_prompt=system_prompt,
             messages=history or [],
+            forced_provider=selection["forced_provider"],
+            forced_model=selection["forced_model"],
+            allow_forced_fallback=selection["allow_forced_fallback"],
         )
 
         return signals, stream

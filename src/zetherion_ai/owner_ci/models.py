@@ -329,6 +329,59 @@ class AgentCoachingFeedback(BaseModel):
     updated_at: str | None = None
 
 
+class IntegrationGap(BaseModel):
+    """One app-scoped integration or onboarding gap."""
+
+    gap_id: str
+    app_id: str
+    repo_id: str | None = None
+    service_kind: str | None = None
+    gap_type: str
+    status: str = "open"
+    severity: str = "medium"
+    blocking: bool = False
+    summary: str
+    remediation: str = ""
+    evidence_ref_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RecommendedNextStep(BaseModel):
+    """Explicit next action for app adoption or rollout."""
+
+    step_id: str
+    title: str
+    instructions: list[str] = Field(default_factory=list)
+    blocking: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RolloutReadinessCoaching(BaseModel):
+    """App-scoped rollout readiness summary."""
+
+    app_id: str
+    repo_id: str | None = None
+    status: str = "pending"
+    summary: str = ""
+    blocker_count: int = 0
+    degraded_count: int = 0
+    gaps: list[IntegrationGap] = Field(default_factory=list)
+    recommended_next_steps: list[RecommendedNextStep] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    checked_at: str | None = None
+
+
+class ServiceAdoptionCoaching(BaseModel):
+    """High-level app guidance for onboarding and runtime adoption."""
+
+    app_id: str
+    summary: str
+    blocking: bool = False
+    integration_gaps: list[IntegrationGap] = Field(default_factory=list)
+    recommended_next_steps: list[RecommendedNextStep] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class LocalGatePlan(BaseModel):
     """Compiled shard plan for a repo-local gate."""
 

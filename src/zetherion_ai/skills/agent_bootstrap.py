@@ -23,6 +23,16 @@ from zetherion_ai.owner_ci.diagnostics import (
     build_operation_diagnosis,
     build_run_diagnostics,
 )
+from zetherion_ai.owner_ci.models import (
+    AgentCoachingFeedback,
+    AgentCoachingFinding,
+    AgentInstructionRecommendation,
+    AgentRuleViolation,
+    IntegrationGap,
+    RecommendedNextStep,
+    RolloutReadinessCoaching,
+    ServiceAdoptionCoaching,
+)
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
 from zetherion_ai.skills.ci_controller import CiControllerSkill
 from zetherion_ai.skills.clerk.client import ClerkMetadataClient, ClerkMetadataError
@@ -807,6 +817,9 @@ class AgentBootstrapSkill(Skill):
                 "agent_session_gaps_list",
                 "agent_apps_list",
                 "agent_app_manifest_get",
+                "agent_app_coaching_get",
+                "agent_app_integration_gaps_get",
+                "agent_app_rollout_readiness_get",
                 "agent_app_services_list",
                 "agent_service_read",
                 "agent_service_request_submit",
@@ -880,6 +893,9 @@ class AgentBootstrapSkill(Skill):
             "agent_session_gaps_list": self._handle_session_gaps_list,
             "agent_apps_list": self._handle_apps_list,
             "agent_app_manifest_get": self._handle_app_manifest_get,
+            "agent_app_coaching_get": self._handle_app_coaching_get,
+            "agent_app_integration_gaps_get": self._handle_app_integration_gaps_get,
+            "agent_app_rollout_readiness_get": self._handle_app_rollout_readiness_get,
             "agent_app_services_list": self._handle_app_services_list,
             "agent_service_read": self._handle_service_read,
             "agent_service_request_submit": self._handle_service_request_submit,
@@ -1285,6 +1301,577 @@ class AgentBootstrapSkill(Skill):
                 "docs": docs,
                 "services": self._list_app_services(app_profile),
             },
+        )
+
+    def _app_repo_id(self, app_profile: dict[str, Any]) -> str | None:
+        profile = dict(app_profile.get("profile") or {})
+        repo_ids = [
+            str(repo_id).strip()
+            for repo_id in list(profile.get("repo_ids") or [])
+            if str(repo_id).strip()
+        ]
+        if repo_ids:
+            return repo_ids[0]
+        app_id = str(app_profile.get("app_id") or "").strip()
+        return app_id or None
+
+    def _app_runtime_policy(self, app_profile: dict[str, Any]) -> dict[str, Any]:
+        profile = dict(app_profile.get("profile") or {})
+        raw_policy = (
+            profile.get("ai_runtime_policy")
+            or profile.get("runtime_policy")
+            or profile.get("model_selection_policy")
+            or {}
+        )
+        policy = dict(raw_policy)
+        if not policy:
+            return {}
+        allowed_providers = [
+            str(provider).strip().lower()
+            for provider in list(policy.get("allowed_providers") or [])
+            if str(provider).strip()
+        ]
+        allowed_models = [
+            str(model).strip()
+            for model in list(policy.get("allowed_models") or [])
+            if str(model).strip()
+        ]
+        return {
+            **policy,
+            "allowed_providers": sorted(dict.fromkeys(allowed_providers)),
+            "allowed_models": sorted(dict.fromkeys(allowed_models)),
+        }
+
+    def _app_agent_profiles(self, app_profile: dict[str, Any]) -> list[dict[str, Any]]:
+        profile = dict(app_profile.get("profile") or {})
+        raw = list(profile.get("ai_agent_profiles") or profile.get("agent_profiles") or [])
+        normalized: list[dict[str, Any]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            normalized.append(dict(entry))
+        return normalized
+
+    async def _build_app_integration_gaps(
+        self,
+        *,
+        owner_id: str,
+        app_profile: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        app_id = str(app_profile.get("app_id") or "").strip()
+        repo_id = self._app_repo_id(app_profile)
+        profile = dict(app_profile.get("profile") or {})
+        service_map = dict(profile.get("service_connector_map") or {})
+        capability_registry = dict(profile.get("capability_registry") or {})
+        required_connectors = {
+            str(service_kind).strip()
+            for service_kind in list(capability_registry.get("required_connectors") or [])
+            if str(service_kind).strip()
+        }
+        if not required_connectors and repo_id:
+            required_connectors = set(_default_service_connector_map(repo_id).keys())
+        declared_service_kinds = {
+            str(key).strip() for key in service_map if str(key).strip()
+        }
+        candidate_service_kinds = sorted(required_connectors | declared_service_kinds)
+        connectors = await self._storage.list_external_service_connectors(owner_id)
+        connector_index = {
+            str(connector.get("connector_id") or "").strip(): connector
+            for connector in connectors
+            if str(connector.get("connector_id") or "").strip()
+        }
+        capabilities = _default_service_adapter_capabilities()
+        gaps: list[IntegrationGap] = []
+
+        for service_kind in candidate_service_kinds:
+            connector_binding = dict(service_map.get(service_kind) or {})
+            connector_id = str(connector_binding.get("connector_id") or "").strip() or None
+            if service_kind in required_connectors and not connector_binding:
+                gaps.append(
+                    IntegrationGap(
+                        gap_id=f"{app_id}:{service_kind}:binding",
+                        app_id=app_id,
+                        repo_id=repo_id,
+                        service_kind=service_kind,
+                        gap_type="missing_connector_binding",
+                        severity="high",
+                        blocking=True,
+                        summary=(
+                            f"`{app_id}` is missing a `{service_kind}` connector binding."
+                        ),
+                        remediation=(
+                            f"Attach a `{service_kind}` connector to the app profile before "
+                            "using brokered services or rollout automation."
+                        ),
+                    )
+                )
+                continue
+            if connector_id is None:
+                gaps.append(
+                    IntegrationGap(
+                        gap_id=f"{app_id}:{service_kind}:connector-id",
+                        app_id=app_id,
+                        repo_id=repo_id,
+                        service_kind=service_kind,
+                        gap_type="missing_connector_id",
+                        severity="high",
+                        blocking=service_kind in required_connectors,
+                        summary=(
+                            f"`{app_id}` declares `{service_kind}` support without a connector_id."
+                        ),
+                        remediation=(
+                            f"Set `service_connector_map.{service_kind}.connector_id` in the app "
+                            "profile so CGS and Zetherion can resolve the provider binding."
+                        ),
+                    )
+                )
+                continue
+            connector = connector_index.get(connector_id)
+            if connector is None:
+                gaps.append(
+                    IntegrationGap(
+                        gap_id=f"{app_id}:{service_kind}:connector-missing",
+                        app_id=app_id,
+                        repo_id=repo_id,
+                        service_kind=service_kind,
+                        gap_type="missing_connector_record",
+                        severity="high",
+                        blocking=True,
+                        summary=(
+                            f"`{app_id}` references connector `{connector_id}`, but it is not "
+                            "provisioned in owner-CI."
+                        ),
+                        remediation=(
+                            f"Provision connector `{connector_id}` and verify its secret/config "
+                            "before using `{service_kind}`."
+                        ),
+                    )
+                )
+                continue
+            health = _connector_health_report(connector, capabilities.get(service_kind))
+            if health["status"] == "blocked":
+                gaps.append(
+                    IntegrationGap(
+                        gap_id=f"{app_id}:{service_kind}:connector-blocked",
+                        app_id=app_id,
+                        repo_id=repo_id,
+                        service_kind=service_kind,
+                        gap_type="connector_blocked",
+                        severity="high",
+                        blocking=True,
+                        summary=(
+                            f"`{service_kind}` connector `{connector_id}` is blocked "
+                            f"for `{app_id}`."
+                        ),
+                        remediation=(
+                            "Fix the connector health blockers, then rerun connector verification "
+                            "before using this service in production."
+                        ),
+                        metadata={"health": health},
+                    )
+                )
+            elif health["status"] == "degraded":
+                gaps.append(
+                    IntegrationGap(
+                        gap_id=f"{app_id}:{service_kind}:connector-degraded",
+                        app_id=app_id,
+                        repo_id=repo_id,
+                        service_kind=service_kind,
+                        gap_type="connector_degraded",
+                        severity="medium",
+                        blocking=False,
+                        summary=(
+                            f"`{service_kind}` connector `{connector_id}` is degraded "
+                            f"for `{app_id}`."
+                        ),
+                        remediation=(
+                            "Complete the missing connector metadata so service correlation and "
+                            "runtime health stay reliable."
+                        ),
+                        metadata={"health": health},
+                    )
+                )
+
+        runtime_policy = self._app_runtime_policy(app_profile)
+        if not runtime_policy:
+            gaps.append(
+                IntegrationGap(
+                    gap_id=f"{app_id}:runtime-policy:missing",
+                    app_id=app_id,
+                    repo_id=repo_id,
+                    gap_type="missing_runtime_policy",
+                    severity="medium",
+                    blocking=False,
+                    summary=f"`{app_id}` has no declared AI runtime policy yet.",
+                    remediation=(
+                        "Add `ai_runtime_policy` to the app profile with allowed providers, "
+                        "allowed models, and defaults before exposing model selection controls."
+                    ),
+                )
+            )
+        else:
+            if not list(runtime_policy.get("allowed_providers") or []):
+                gaps.append(
+                    IntegrationGap(
+                        gap_id=f"{app_id}:runtime-policy:providers",
+                        app_id=app_id,
+                        repo_id=repo_id,
+                        gap_type="missing_allowed_providers",
+                        severity="medium",
+                        blocking=False,
+                        summary=(
+                            f"`{app_id}` runtime policy does not declare allowed providers."
+                        ),
+                        remediation=(
+                            "Populate `ai_runtime_policy.allowed_providers` so CGS can validate "
+                            "provider selection requests deterministically."
+                        ),
+                    )
+                )
+            if not list(runtime_policy.get("allowed_models") or []):
+                gaps.append(
+                    IntegrationGap(
+                        gap_id=f"{app_id}:runtime-policy:models",
+                        app_id=app_id,
+                        repo_id=repo_id,
+                        gap_type="missing_allowed_models",
+                        severity="medium",
+                        blocking=False,
+                        summary=f"`{app_id}` runtime policy does not declare allowed models.",
+                        remediation=(
+                            "Populate `ai_runtime_policy.allowed_models` so locked model requests "
+                            "and cost coaching can be enforced cleanly."
+                        ),
+                    )
+                )
+
+        if not self._app_agent_profiles(app_profile):
+            gaps.append(
+                IntegrationGap(
+                    gap_id=f"{app_id}:agent-profiles:missing",
+                    app_id=app_id,
+                    repo_id=repo_id,
+                    gap_type="missing_agent_profiles",
+                    severity="low",
+                    blocking=False,
+                    summary=f"`{app_id}` has no declared AI agent profiles.",
+                    remediation=(
+                        "Declare `ai_agent_profiles` so downstream agents can request a named "
+                        "runtime posture instead of repeating ad hoc instructions."
+                    ),
+                )
+            )
+
+        return [gap.model_dump(mode="json") for gap in gaps]
+
+    def _build_rollout_steps(
+        self,
+        *,
+        app_id: str,
+        gaps: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        steps: list[RecommendedNextStep] = []
+        for gap in gaps[:5]:
+            summary = str(gap.get("summary") or gap.get("gap_type") or "").strip()
+            remediation = str(gap.get("remediation") or "").strip()
+            gap_id = str(gap.get("gap_id") or summary or "gap").strip()
+            instructions = [remediation] if remediation else []
+            steps.append(
+                RecommendedNextStep(
+                    step_id=f"{app_id}:{gap_id}:next-step",
+                    title=summary or "Resolve rollout blocker",
+                    instructions=instructions,
+                    blocking=bool(gap.get("blocking", False)),
+                    metadata={
+                        "gap_id": gap.get("gap_id"),
+                        "gap_type": gap.get("gap_type"),
+                    },
+                )
+            )
+        if not steps:
+            steps.append(
+                RecommendedNextStep(
+                    step_id=f"{app_id}:ready",
+                    title="Ready for the next rollout checkpoint",
+                    instructions=[
+                        "Use the current runtime policy and connector set to onboard the next "
+                        "agent or integration client.",
+                    ],
+                    blocking=False,
+                )
+            )
+        return [step.model_dump(mode="json") for step in steps]
+
+    async def _build_rollout_readiness(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_profile: dict[str, Any],
+        limit: int,
+    ) -> dict[str, Any]:
+        app_id = str(app_profile.get("app_id") or "").strip()
+        repo_id = self._app_repo_id(app_profile)
+        integration_gaps = await self._build_app_integration_gaps(
+            owner_id=owner_id,
+            app_profile=app_profile,
+        )
+        recorded_gaps = await self._storage.list_agent_gap_events(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            unresolved_only=True,
+            limit=limit,
+        )
+        blocker_count = sum(1 for gap in integration_gaps if bool(gap.get("blocking")))
+        blocker_count += sum(1 for gap in recorded_gaps if bool(gap.get("blocker")))
+        degraded_count = len(integration_gaps) - sum(
+            1 for gap in integration_gaps if bool(gap.get("blocking"))
+        )
+        degraded_count += sum(
+            1 for gap in recorded_gaps if not bool(gap.get("blocker"))
+        )
+        if blocker_count > 0:
+            status = "blocked"
+            summary = (
+                f"`{app_id}` is not rollout-ready because {blocker_count} blocking "
+                "integration or coaching issues remain."
+            )
+        elif degraded_count > 0:
+            status = "degraded"
+            summary = (
+                f"`{app_id}` can proceed in a limited way, but {degraded_count} non-blocking "
+                "issues should be fixed before a production rollout."
+            )
+        else:
+            status = "ready"
+            summary = f"`{app_id}` is rollout-ready for the current offline validation stage."
+
+        readiness = RolloutReadinessCoaching(
+            app_id=app_id,
+            repo_id=repo_id,
+            status=status,
+            summary=summary,
+            blocker_count=blocker_count,
+            degraded_count=degraded_count,
+            gaps=[
+                IntegrationGap.model_validate(gap)
+                for gap in integration_gaps[:limit]
+            ],
+            recommended_next_steps=[
+                RecommendedNextStep.model_validate(step)
+                for step in self._build_rollout_steps(app_id=app_id, gaps=integration_gaps)
+            ],
+            metadata={
+                "recorded_gap_ids": [
+                    str(gap.get("gap_id") or "").strip()
+                    for gap in recorded_gaps
+                    if str(gap.get("gap_id") or "").strip()
+                ],
+                "open_recorded_gap_total": len(recorded_gaps),
+            },
+            checked_at=datetime.now(UTC).isoformat(),
+        )
+        return readiness.model_dump(mode="json")
+
+    async def _build_app_coaching(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_profile: dict[str, Any],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        app_id = str(app_profile.get("app_id") or "").strip()
+        repo_id = self._app_repo_id(app_profile)
+        integration_gaps = await self._build_app_integration_gaps(
+            owner_id=owner_id,
+            app_profile=app_profile,
+        )
+        recorded = await self._storage.list_agent_coaching_feedback(
+            owner_id,
+            principal_id=principal_id,
+            repo_id=repo_id,
+            limit=limit,
+        )
+        readiness = await self._build_rollout_readiness(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            app_profile=app_profile,
+            limit=limit,
+        )
+
+        if not integration_gaps:
+            return recorded
+
+        adoption = ServiceAdoptionCoaching(
+            app_id=app_id,
+            summary=(
+                f"`{app_id}` still needs onboarding work before CGS and Zetherion can guide "
+                "agents through a clean runtime and rollout path."
+            ),
+            blocking=any(bool(gap.get("blocking")) for gap in integration_gaps),
+            integration_gaps=[
+                IntegrationGap.model_validate(gap) for gap in integration_gaps[:limit]
+            ],
+            recommended_next_steps=[
+                RecommendedNextStep.model_validate(step)
+                for step in self._build_rollout_steps(app_id=app_id, gaps=integration_gaps)
+            ],
+            metadata={"rollout_readiness": readiness},
+        )
+        generated = AgentCoachingFeedback(
+            feedback_id=f"{app_id}:adoption:coaching",
+            principal_id=principal_id,
+            repo_id=repo_id,
+            scope="app",
+            status="open",
+            blocking=adoption.blocking,
+            recurrence_count=max(
+                1,
+                sum(
+                    int(gap.get("metadata", {}).get("occurrence_count") or 1)
+                    for gap in integration_gaps
+                ),
+            ),
+            confidence=0.95,
+            summary=adoption.summary,
+            findings=[
+                AgentCoachingFinding(
+                    finding_id=f"{gap['gap_id']}:finding",
+                    coaching_kind=(
+                        "runtime"
+                        if str(gap.get("gap_type") or "").startswith("missing_allowed_")
+                        or str(gap.get("gap_type") or "") == "missing_runtime_policy"
+                        else "integration"
+                    ),
+                    rule_code=str(gap.get("gap_type") or ""),
+                    summary=str(gap.get("summary") or ""),
+                    remediation=str(gap.get("remediation") or ""),
+                    blocking=bool(gap.get("blocking")),
+                    recurrence_count=1,
+                    confidence=0.95,
+                )
+                for gap in integration_gaps[:limit]
+            ],
+            recommendations=[
+                AgentInstructionRecommendation(
+                    title="Update AGENTS.md for CGS/Zetherion onboarding",
+                    instructions=[
+                        "Document the required connectors, runtime policy, and agent profiles "
+                        "for this app before asking CGS or Zetherion to operate it.",
+                        "Record the exact allowed providers/models and the validation path "
+                        "agents should run before requesting rollout help.",
+                    ],
+                    agents_md_update=(
+                        f"For `{app_id}`, declare the required connectors, ai_runtime_policy, "
+                        "and ai_agent_profiles in AGENTS.md before starting new agent work."
+                    ),
+                    patch_guidance={
+                        "target": "AGENTS.md",
+                        "section": f"App onboarding: {app_id}",
+                    },
+                )
+            ],
+            rule_violations=[
+                AgentRuleViolation(
+                    rule_code=str(gap.get("gap_type") or ""),
+                    summary=str(gap.get("summary") or ""),
+                    blocking=bool(gap.get("blocking")),
+                    metadata={"app_id": app_id},
+                )
+                for gap in integration_gaps[:limit]
+            ],
+            metadata={
+                "coaching_kind": "adoption",
+                "app_id": app_id,
+                "service_adoption": adoption.model_dump(mode="json"),
+                "rollout_readiness": readiness,
+            },
+            created_at=datetime.now(UTC).isoformat(),
+            updated_at=datetime.now(UTC).isoformat(),
+        )
+        return [generated.model_dump(mode="json"), *recorded]
+
+    async def _handle_app_coaching_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        limit = _normalize_limit(request.context.get("limit"), default=10, maximum=25)
+        coaching = await self._build_app_coaching(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            app_profile=app_profile,
+            limit=limit,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(coaching)} app coaching items for `{app_id}`.",
+            data={"coaching": coaching},
+        )
+
+    async def _handle_app_integration_gaps_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        gaps = await self._build_app_integration_gaps(
+            owner_id=owner_id,
+            app_profile=app_profile,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(gaps)} integration gaps for `{app_id}`.",
+            data={"integration_gaps": gaps},
+        )
+
+    async def _handle_app_rollout_readiness_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        readiness = await self._build_rollout_readiness(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            app_profile=app_profile,
+            limit=_normalize_limit(request.context.get("limit"), default=10, maximum=25),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded rollout readiness for `{app_id}`.",
+            data={"rollout_readiness": readiness},
         )
 
     async def _handle_app_services_list(

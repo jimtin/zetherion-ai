@@ -235,6 +235,78 @@ async def test_agent_app_services_list_returns_catalog() -> None:
     assert response.data["services"][0]["routes"]["read"].endswith("/services/github")
 
 
+@pytest.mark.asyncio
+async def test_agent_app_adoption_handlers_return_gaps_readiness_and_coaching() -> None:
+    storage = _storage()
+    storage.get_agent_app_profile.return_value = _app_profile()
+    storage.list_agent_app_profiles.return_value = [_app_profile()]
+    storage.list_external_access_grants.return_value = [
+        {
+            "resource_type": "app",
+            "resource_id": "catalyst-group-solutions",
+            "active": True,
+        }
+    ]
+    storage.list_external_service_connectors.return_value = []
+    storage.list_agent_gap_events.return_value = [
+        {"gap_id": "gap-auth-1", "blocker": True, "summary": "Missing auth verification"}
+    ]
+    storage.list_agent_coaching_feedback = AsyncMock(return_value=[])
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    coaching = await skill.handle(
+        SkillRequest(
+            intent="agent_app_coaching_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-1",
+                "app_id": "catalyst-group-solutions",
+            },
+        )
+    )
+    gaps = await skill.handle(
+        SkillRequest(
+            intent="agent_app_integration_gaps_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-1",
+                "app_id": "catalyst-group-solutions",
+            },
+        )
+    )
+    readiness = await skill.handle(
+        SkillRequest(
+            intent="agent_app_rollout_readiness_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-1",
+                "app_id": "catalyst-group-solutions",
+            },
+        )
+    )
+
+    assert coaching.success is True
+    assert coaching.data["coaching"][0]["scope"] == "app"
+    assert (
+        "AGENTS.md"
+        in coaching.data["coaching"][0]["recommendations"][0]["title"]
+    )
+    assert gaps.success is True
+    gap_types = {gap["gap_type"] for gap in gaps.data["integration_gaps"]}
+    assert "missing_connector_record" in gap_types
+    assert "missing_runtime_policy" in gap_types
+    assert "missing_agent_profiles" in gap_types
+    assert readiness.success is True
+    assert readiness.data["rollout_readiness"]["status"] == "blocked"
+    assert readiness.data["rollout_readiness"]["blocker_count"] >= 1
+    assert readiness.data["rollout_readiness"]["metadata"]["open_recorded_gap_total"] == 1
+
+
 def test_build_workspace_bundle_embeds_inline_archive(tmp_path: Path) -> None:
     repo_root = tmp_path / "sample-repo"
     repo_root.mkdir()

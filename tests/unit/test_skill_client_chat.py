@@ -12,6 +12,9 @@ from zetherion_ai.skills.base import SkillRequest, SkillStatus
 from zetherion_ai.skills.client_chat import (
     ClientChatSkill,
     L1aSignals,
+    _normalize_provider_override,
+    _provider_value,
+    _resolve_model_selection,
     build_system_prompt,
     detect_signals,
 )
@@ -227,6 +230,51 @@ class TestSkillInitialize:
 
 
 class TestGenerateResponse:
+    def test_provider_override_blank_string_returns_none(self) -> None:
+        assert _normalize_provider_override("   ") is None
+
+    def test_provider_value_none_returns_none(self) -> None:
+        assert _provider_value(None) is None
+
+    def test_resolve_model_selection_infers_provider_from_runtime_default(self) -> None:
+        selection = _resolve_model_selection(
+            selection_mode="auto",
+            provider=None,
+            model="llama-3.3-70b-versatile",
+            task_type="chat",
+            agent_profile_id="assistant",
+            fallback_allowed=None,
+        )
+
+        assert selection["forced_provider"].value == "groq"
+        assert selection["task_type"].value == "conversation"
+        assert selection["allow_forced_fallback"] is False
+
+    def test_resolve_model_selection_rejects_unmapped_model_without_provider(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match="provider is required when model is not mapped to a known runtime default",
+        ):
+            _resolve_model_selection(
+                selection_mode="auto",
+                provider=None,
+                model="custom-model-not-in-settings",
+                task_type=None,
+                agent_profile_id=None,
+                fallback_allowed=None,
+            )
+
+    def test_resolve_model_selection_requires_provider_or_model_for_prefer(self) -> None:
+        with pytest.raises(ValueError, match="provider or model is required"):
+            _resolve_model_selection(
+                selection_mode="prefer",
+                provider=None,
+                model=None,
+                task_type=None,
+                agent_profile_id=None,
+                fallback_allowed=None,
+            )
+
     @pytest.mark.asyncio
     async def test_basic_response(self, skill: ClientChatSkill) -> None:
         result = await skill.generate_response(
@@ -289,6 +337,42 @@ class TestGenerateResponse:
         call_kwargs = skill._broker.infer.call_args.kwargs
         assert "Known tenant user context" in call_kwargs["system_prompt"]
         assert "response style: brief" in call_kwargs["system_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_runtime_selection_is_forwarded_and_reflected(
+        self, skill: ClientChatSkill
+    ) -> None:
+        result = await skill.generate_response(
+            tenant=_TENANT,
+            message="Use the fast model",
+            selection_mode="prefer",
+            provider="anthropic",
+            model="claude-3-5-haiku-latest",
+            task_type="planning",
+            agent_profile_id="planner",
+        )
+
+        call_kwargs = skill._broker.infer.call_args.kwargs
+        assert call_kwargs["forced_provider"].value == "claude"
+        assert call_kwargs["forced_model"] == "claude-3-5-haiku-latest"
+        assert call_kwargs["allow_forced_fallback"] is True
+        assert call_kwargs["task_type"].value == "complex_reasoning"
+        assert result.provider == "ollama"
+        assert result.usage["provider"] == "ollama"
+        assert result.selection["requested_provider"] == "claude"
+        assert result.selection["requested_model"] == "claude-3-5-haiku-latest"
+        assert result.selection["agent_profile_id"] == "planner"
+
+    @pytest.mark.asyncio
+    async def test_invalid_selection_mode_raises_value_error(
+        self, skill: ClientChatSkill
+    ) -> None:
+        with pytest.raises(ValueError, match="selection_mode"):
+            await skill.generate_response(
+                tenant=_TENANT,
+                message="Hello",
+                selection_mode="sometimes",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +440,37 @@ class TestGenerateStream:
         # Consume the stream to trigger the call
         _ = [c async for c in stream]
         assert "urgent" in captured_kwargs["system_prompt"].lower()
+
+    @pytest.mark.asyncio
+    async def test_stream_runtime_selection_is_forwarded(self, skill: ClientChatSkill) -> None:
+        @dataclass
+        class _FakeChunk:
+            content: str = ""
+            done: bool = False
+            model: str = ""
+
+        captured_kwargs: dict[str, object] = {}
+
+        async def _fake_stream(**kwargs):
+            captured_kwargs.update(kwargs)
+            yield _FakeChunk(content="Hello")
+            yield _FakeChunk(done=True, model="claude-3-5-sonnet")
+
+        skill._broker.infer_stream = _fake_stream
+
+        _, stream = await skill.generate_stream(
+            tenant=_TENANT,
+            message="Stream with runtime policy",
+            selection_mode="lock",
+            provider="anthropic",
+            model="claude-3-5-sonnet",
+            fallback_allowed=True,
+        )
+        _ = [chunk async for chunk in stream]
+
+        assert captured_kwargs["forced_provider"].value == "claude"
+        assert captured_kwargs["forced_model"] == "claude-3-5-sonnet"
+        assert captured_kwargs["allow_forced_fallback"] is False
 
 
 # ---------------------------------------------------------------------------
