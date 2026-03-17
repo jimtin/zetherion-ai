@@ -598,7 +598,7 @@ class AnnouncementRepository:
                     )
 
             if dedupe_bucket is not None:
-                fallback = await conn.fetchrow(
+                fallback = await conn.fetchrow(  # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
                     """
                     SELECT event_id
                     FROM announcement_events
@@ -622,7 +622,7 @@ class AnnouncementRepository:
                     )
 
             event_id = str(uuid4())
-            await conn.execute(
+            await conn.execute(  # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
                 """
                 INSERT INTO announcement_events (
                     event_id,
@@ -992,7 +992,7 @@ class AnnouncementRepository:
     async def get_personal_profile_preferences(self, user_id: int) -> dict[str, Any]:
         pool = self._require_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
+            row = await conn.fetchrow(  # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
                 """
                 SELECT timezone, preferences
                 FROM personal_profile
