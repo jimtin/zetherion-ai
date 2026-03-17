@@ -4,6 +4,8 @@ from zetherion_ai.owner_ci.models import (
     AdmissionDecision,
     HostCapacitySnapshot,
     LocalGatePlan,
+    PrivateFeatureBoundary,
+    PublicCoreExportManifest,
     ReleaseVerificationReceipt,
     RepoReadinessReceipt,
     ResourceReservation,
@@ -11,6 +13,11 @@ from zetherion_ai.owner_ci.models import (
     SchedulerHostSummary,
     SchedulerOverview,
     ShardReceipt,
+    StorageBudgetPolicy,
+    StorageCategoryUsage,
+    StorageCleanupReceipt,
+    StorageInventorySnapshot,
+    StoragePressureIncident,
     WorkerCertificationReceipt,
     WorkspaceReadinessReceipt,
     build_repo_readiness_receipt,
@@ -24,6 +31,7 @@ from zetherion_ai.owner_ci.profiles import (
     default_repo_profile,
     default_repo_profiles,
 )
+from zetherion_ai.owner_ci.public_core import build_public_core_export_tree
 from zetherion_ai.owner_ci.storage import OwnerCiStorage, ensure_owner_ci_schema
 
 __all__ = [
@@ -33,6 +41,8 @@ __all__ = [
     "HostCapacitySnapshot",
     "LocalGatePlan",
     "OwnerCiStorage",
+    "PrivateFeatureBoundary",
+    "PublicCoreExportManifest",
     "ReleaseVerificationReceipt",
     "ResourceReservation",
     "RepoReadinessReceipt",
@@ -40,8 +50,14 @@ __all__ = [
     "SchedulerHostSummary",
     "SchedulerOverview",
     "ShardReceipt",
+    "StorageBudgetPolicy",
+    "StorageCategoryUsage",
+    "StorageCleanupReceipt",
+    "StorageInventorySnapshot",
+    "StoragePressureIncident",
     "WorkerCertificationReceipt",
     "WorkspaceReadinessReceipt",
+    "build_public_core_export_tree",
     "build_repo_readiness_receipt",
     "build_workspace_readiness_receipt",
     "default_repo_profile",

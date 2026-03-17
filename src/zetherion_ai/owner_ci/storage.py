@@ -1092,6 +1092,36 @@ def _job_host_id(
     return str(host_policy.get("host_id") or "windows-owner-ci").strip() or "windows-owner-ci"
 
 
+def _job_storage_blocking_reason(
+    host_policy: dict[str, Any],
+    reservation: ResourceReservation,
+    latest_sample: dict[str, Any],
+) -> str | None:
+    storage_policy = dict(host_policy.get("storage_budget_policy") or {})
+    if not storage_policy or not latest_sample:
+        return None
+    disk_free_bytes = int(latest_sample.get("disk_free_bytes") or 0)
+    if disk_free_bytes <= 0:
+        return None
+    low_disk_free_bytes = int(storage_policy.get("low_disk_free_bytes") or 0)
+    target_free_bytes = int(storage_policy.get("target_free_bytes") or 0)
+    if low_disk_free_bytes and disk_free_bytes < low_disk_free_bytes:
+        return (
+            "disk headroom below blocking watermark "
+            f"({disk_free_bytes}/{low_disk_free_bytes})"
+        )
+    if (
+        target_free_bytes
+        and disk_free_bytes < target_free_bytes
+        and reservation.resource_class.strip() in {"service", "serial"}
+    ):
+        return (
+            "disk headroom below heavy-shard target "
+            f"({disk_free_bytes}/{target_free_bytes})"
+        )
+    return None
+
+
 def _fair_claim_order(
     queued_jobs: list[dict[str, Any]],
     active_jobs: list[dict[str, Any]],
@@ -2719,6 +2749,7 @@ class OwnerCiStorage:
         jobs_table = f'"{self._schema}".owner_ci_worker_jobs'
         shards_table = f'"{self._schema}".owner_ci_shards'
         runs_table = f'"{self._schema}".owner_ci_runs'
+        samples_table = f'"{self._schema}".owner_ci_resource_samples'
         async with self._pool.acquire() as conn, conn.transaction():
             rows = await conn.fetch(
                 f"""
@@ -2762,6 +2793,34 @@ class OwnerCiStorage:
                     for row in fetched_runs
                     if str(row.get("run_id") or "").strip()
                 }
+            owner_ids = sorted(
+                {
+                    str(row.get("owner_id") or "").strip()
+                    for row in [*rows, *active_rows]
+                    if str(row.get("owner_id") or "").strip()
+                }
+            )
+            latest_samples_by_owner: dict[str, dict[str, Any]] = {}
+            if owner_ids and node_id:
+                sample_rows = await conn.fetch(
+                    f"""
+                        SELECT DISTINCT ON (owner_id) owner_id, sample_json
+                          FROM {samples_table}
+                         WHERE owner_id = ANY($1::text[])
+                           AND node_id = $2
+                         ORDER BY owner_id, created_at DESC
+                    """,
+                    owner_ids,
+                    node_id,
+                )
+                latest_samples_by_owner = {
+                    str(sample_row.get("owner_id") or "").strip(): self._coerce_json_object(
+                        sample_row.get("sample_json"),
+                        "sample_json",
+                    )
+                    for sample_row in (dict(row) for row in sample_rows)
+                    if str(sample_row.get("owner_id") or "").strip()
+                }
             claimed: dict[str, Any] | None = None
             capability_set = set(required_capabilities or [])
             usage_by_host: dict[str, dict[str, int]] = {}
@@ -2796,6 +2855,11 @@ class OwnerCiStorage:
                 resource_budget = dict(host_policy.get("resource_budget") or {})
                 usage = usage_by_host.setdefault(host_id, {"cpu": 0, "service": 0, "serial": 0})
                 busy_groups = busy_groups_by_host.setdefault(host_id, set())
+                latest_sample = dict(
+                    latest_samples_by_owner.get(str(job.get("owner_id") or "").strip()) or {}
+                )
+                if _job_storage_blocking_reason(host_policy, reservation, latest_sample):
+                    continue
                 resource_class = reservation.resource_class.strip() or "cpu"
                 units = max(1, int(reservation.units or 1))
                 total_slots = int(resource_budget.get(resource_class) or 0)

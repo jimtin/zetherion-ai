@@ -32,6 +32,7 @@ def _storage() -> MagicMock:
         return_value={"workspace_readiness": {"merge_ready": False, "deploy_ready": False}}
     )
     storage.get_reporting_summary = AsyncMock(return_value={})
+    storage.get_project_resource_report = AsyncMock(return_value={"items": [], "totals": {}})
     storage.get_worker_resource_report = AsyncMock(return_value={"samples": [], "totals": {}})
     storage.get_local_repo_readiness = AsyncMock(return_value=(None, None))
     storage.record_agent_gap_event = AsyncMock(
@@ -56,7 +57,10 @@ def _storage() -> MagicMock:
     storage.get_run_diagnostics = AsyncMock(return_value={})
     storage.get_run_artifacts = AsyncMock(return_value=[])
     storage.get_run_evidence = AsyncMock(return_value=[])
+    storage.get_run_debug_bundle = AsyncMock(return_value=None)
     storage.list_agent_coaching_feedback = AsyncMock(return_value=[])
+    storage.list_managed_operations = AsyncMock(return_value=[])
+    storage.get_operation_hydrated = AsyncMock(return_value=None)
     storage.store_run_github_receipt = AsyncMock()
     storage.merge_run_metadata = AsyncMock()
     storage.set_run_status = AsyncMock()
@@ -124,6 +128,7 @@ async def test_ci_controller_certification_run_seeds_platform_canary_and_windows
                     "checks": [
                         {"id": "ruff-check", "status": "passed", "tool": "ruff"},
                         {"id": "ruff-format-check", "status": "passed", "tool": "ruff"},
+                        {"id": "public-core-export", "status": "passed"},
                         {"id": "bandit", "status": "passed"},
                         {"id": "gitleaks", "status": "passed"},
                         {"id": "pip-audit", "status": "passed"},
@@ -157,6 +162,7 @@ async def test_ci_controller_certification_run_seeds_platform_canary_and_windows
     assert any(shard["lane_id"] == "discord-required-e2e" for shard in shards)
     assert any(shard["execution_target"] == "local_mac" for shard in shards)
     assert any(shard["lane_id"] == "ruff-check" for shard in shards)
+    assert any(shard["lane_id"] == "public-core-export" for shard in shards)
     assert any(shard["lane_id"] == "bandit" for shard in shards)
     assert all(
         shard.get("runner") == "docker"
@@ -168,6 +174,7 @@ async def test_ci_controller_certification_run_seeds_platform_canary_and_windows
             assert shard["metadata"]["depends_on"] == [
                 "ruff-check",
                 "ruff-format-check",
+                "public-core-export",
                 "bandit",
                 "gitleaks",
                 "pip-audit",
@@ -227,6 +234,7 @@ async def test_ci_controller_rejects_certification_when_gitleaks_is_missing() ->
                     "checks": [
                         {"id": "ruff-check", "status": "passed", "tool": "ruff"},
                         {"id": "ruff-format-check", "status": "passed", "tool": "ruff"},
+                        {"id": "public-core-export", "status": "passed"},
                         {"id": "bandit", "status": "passed"},
                         {"id": "pip-audit", "status": "passed"},
                     ],
@@ -266,6 +274,7 @@ async def test_ci_controller_rejects_certification_when_ruff_version_is_wrong() 
                     "checks": [
                         {"id": "ruff-check", "status": "passed", "tool": "ruff"},
                         {"id": "ruff-format-check", "status": "passed", "tool": "ruff"},
+                        {"id": "public-core-export", "status": "passed"},
                         {"id": "bandit", "status": "passed"},
                         {"id": "gitleaks", "status": "passed"},
                         {"id": "pip-audit", "status": "passed"},
@@ -384,6 +393,114 @@ async def test_ci_observer_loads_run_report_graph_and_coaching() -> None:
         "run-1",
         node_id="shard:run-1:shard-1",
     )
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_loads_storage_and_vercel_reporting() -> None:
+    storage = _storage()
+    storage.list_repo_profiles.return_value = [
+        {"repo_id": "zetherion-ai", "display_name": "Zetherion AI"}
+    ]
+    storage.list_runs.return_value = [
+        {"run_id": "run-1", "repo_id": "zetherion-ai", "metadata": {}, "plan": {}}
+    ]
+    storage.list_worker_nodes.return_value = [
+        {
+            "node_id": "windows-main",
+            "node_name": "Windows Main",
+            "status": "active",
+            "health_status": "healthy",
+            "metadata": {
+                "workspace_root": "C:/ZetherionCI/workspaces",
+                "runtime_root": "C:/ZetherionCI/runtime",
+            },
+        }
+    ]
+    storage.get_worker_resource_report.return_value = {
+        "samples": [
+            {
+                "sample": {
+                    "disk_used_bytes": 1200,
+                    "disk_free_bytes": 10_000_000_000,
+                }
+            }
+        ],
+        "totals": {"peak_disk_used_bytes": 1200},
+    }
+    storage.get_project_resource_report.return_value = {
+        "repo_id": "zetherion-ai",
+        "items": [{"cleanup_status": "cleanup_degraded"}],
+        "totals": {
+            "run_count": 1,
+            "compute_minutes": 3.2,
+            "peak_memory_mb": 256,
+            "peak_disk_used_bytes": 1200,
+            "peak_container_count": 2,
+        },
+    }
+    storage.get_run_debug_bundle.return_value = {
+        "bundle": {
+            "cleanup_receipt": {
+                "status": "cleanup_degraded",
+                "path": "C:/cleanup/receipt.json",
+                "deleted_paths": ["C:/ZetherionCI/workspaces/run-1/.artifacts/old.json"],
+                "pruned_logs": ["C:/ZetherionCI/logs/old.log"],
+                "docker_actions": [{"resource_kind": "image"}],
+                "warnings": ["disk_headroom_below_low_watermark_after_cleanup"],
+                "low_disk_free_bytes": 21_474_836_480,
+                "target_free_bytes": 42_949_672_960,
+            }
+        }
+    }
+    storage.list_managed_operations.return_value = [
+        {
+            "operation_id": "op-1",
+            "app_id": "cgs",
+            "repo_id": "catalyst-group-solutions",
+            "status": "failed",
+        }
+    ]
+    storage.get_operation_hydrated.return_value = {
+        "operation_id": "op-1",
+        "app_id": "cgs",
+        "repo_id": "catalyst-group-solutions",
+        "status": "failed",
+        "summary": {"route_path": "/admin/ai"},
+        "metadata": {},
+        "refs": [
+            {"ref_kind": "vercel_deployment_id", "ref_value": "dep_123"},
+            {"ref_kind": "branch", "ref_value": "main"},
+        ],
+        "incidents": [
+            {
+                "incident_type": "runtime_dependency_missing",
+                "blocking": True,
+            }
+        ],
+    }
+    skill = CiObserverSkill(storage=storage)
+
+    storage_response = await skill.handle(
+        SkillRequest(intent="ci_reporting_storage", user_id="owner-1")
+    )
+    vercel_response = await skill.handle(
+        SkillRequest(intent="ci_reporting_vercel", user_id="owner-1")
+    )
+
+    assert storage_response.success is True
+    assert storage_response.data["report"]["status"] == "blocked"
+    assert storage_response.data["report"]["alerts"]
+    assert storage_response.data["report"]["announcement_events"][0]["category"] == (
+        "ops.storage_pressure"
+    )
+    assert storage_response.data["report"]["top_consumers"][0]["repo_id"] == "zetherion-ai"
+    assert storage_response.data["report"]["workers"][0]["node_id"] == "windows-main"
+    assert vercel_response.success is True
+    assert vercel_response.data["report"]["summary"]["failed_operations"] == 1
+    assert vercel_response.data["report"]["announcement_events"][0]["category"] == (
+        "ops.vercel_reporting"
+    )
+    assert vercel_response.data["report"]["routes"][0]["route_path"] == "/admin/ai"
 
 
 @pytest.mark.asyncio
@@ -729,6 +846,7 @@ async def test_ci_controller_supports_retry_and_cancel_run_handlers() -> None:
                 "checks": [
                     {"id": "ruff-check", "status": "passed", "tool": "ruff"},
                     {"id": "ruff-format-check", "status": "passed", "tool": "ruff"},
+                    {"id": "public-core-export", "status": "passed"},
                     {"id": "bandit", "status": "passed"},
                     {"id": "gitleaks", "status": "passed"},
                     {"id": "pip-audit", "status": "passed"},

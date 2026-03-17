@@ -191,6 +191,9 @@ COVERAGE_ARTIFACTS_DIR="${COVERAGE_ARTIFACTS_DIR:-.artifacts/coverage}"
 VALIDATION_ARTIFACTS_DIR="${VALIDATION_ARTIFACTS_DIR:-.artifacts/validation}"
 VALIDATION_MATRIX_PATH="${VALIDATION_MATRIX_PATH:-$VALIDATION_ARTIFACTS_DIR/validation-matrix.json}"
 COMBINED_SYSTEM_SUMMARY_PATH="${COMBINED_SYSTEM_SUMMARY_PATH:-$VALIDATION_ARTIFACTS_DIR/combined-system-summary.json}"
+PUBLIC_CORE_EXPORT_STAGE_ROOT="${PUBLIC_CORE_EXPORT_STAGE_ROOT:-.artifacts/public-core-export/staged-tree}"
+PUBLIC_CORE_EXPORT_STAGE_REPORT_PATH="${PUBLIC_CORE_EXPORT_STAGE_REPORT_PATH:-$VALIDATION_ARTIFACTS_DIR/public-core-export-stage.json}"
+PUBLIC_CORE_EXPORT_REPORT_PATH="${PUBLIC_CORE_EXPORT_REPORT_PATH:-$VALIDATION_ARTIFACTS_DIR/public-core-export-report.json}"
 VALIDATION_SCOPE="${VALIDATION_SCOPE:-full}"
 RUN_COMBINED_SYSTEM_VALIDATION="${RUN_COMBINED_SYSTEM_VALIDATION:-auto}"
 COMBINED_SYSTEM_MAX_PARALLEL="${COMBINED_SYSTEM_MAX_PARALLEL:-2}"
@@ -737,6 +740,12 @@ start_static_check "route doc parity" "$PYTHON_BIN scripts/check-route-doc-parit
 start_static_check "cgs route-doc parity" "$PYTHON_BIN scripts/check-cgs-route-doc-parity.py"
 start_static_check "env doc parity" "$PYTHON_BIN scripts/check-env-doc-parity.py"
 start_static_check "docs build strict" "$PYTHON_BIN -m mkdocs build --strict"
+start_static_check \
+    "public core export stage" \
+    "$PYTHON_BIN scripts/testing/build_public_core_export.py --manifest .ci/public-core-export-manifest.json --source-root . --output-root $PUBLIC_CORE_EXPORT_STAGE_ROOT --report $PUBLIC_CORE_EXPORT_STAGE_REPORT_PATH"
+start_static_check \
+    "public core export boundary" \
+    "$PYTHON_BIN scripts/testing/validate_public_core_export.py --manifest .ci/public-core-export-manifest.json --root $PUBLIC_CORE_EXPORT_STAGE_ROOT --output $PUBLIC_CORE_EXPORT_REPORT_PATH"
 
 if command -v gitleaks >/dev/null 2>&1; then
     start_static_check "gitleaks" "gitleaks detect --no-git --redact --config=.gitleaks.toml"

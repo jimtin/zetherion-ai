@@ -1,0 +1,84 @@
+{
+  "manifest_version": "1",
+  "source_repo": "zetherion-ai-private-primary",
+  "target_repo": "zetherion-ai-public-core",
+  "default_action": "deny",
+  "public_include_globs": [
+    "README*",
+    "LICENSE*",
+    "pyproject.toml",
+    "requirements*.txt",
+    "sdk/**",
+    "src/zetherion_ai/api/**",
+    "src/zetherion_ai/agent/**",
+    "src/zetherion_ai/costs/**",
+    "src/zetherion_ai/integrations/**",
+    "src/zetherion_ai/models/**",
+    "src/zetherion_ai/observation/adapters/**",
+    "src/zetherion_ai/runtime/**",
+    "src/zetherion_ai/security/**",
+    "src/zetherion_ai/skills/github/**",
+    "src/zetherion_ai/skills/gmail/**",
+    "src/zetherion_ai/skills/stripe/**",
+    "src/zetherion_ai/skills/vercel/**"
+  ],
+  "private_block_globs": [
+    "src/zetherion_ai/admin/**",
+    "src/zetherion_ai/announcements/**",
+    "src/zetherion_ai/cgs_gateway/**",
+    "src/zetherion_ai/discord/**",
+    "src/zetherion_ai/owner_ci/**",
+    "src/zetherion_ai/queue/**",
+    "src/zetherion_ai/scheduler/**",
+    "src/zetherion_ai/skills/server.py",
+    "scripts/windows/**",
+    "updater_sidecar/**",
+    "zetherion-dev-agent/**"
+  ],
+  "allowed_doc_globs": [
+    "docs/user/**",
+    "docs/project/public-core/**"
+  ],
+  "forbidden_terms": [
+    "windows-owner-ci",
+    "owner_ci",
+    "zetherion-enterprise"
+  ],
+  "boundaries": [
+    {
+      "boundary_id": "public-runtime",
+      "label": "Public Runtime",
+      "include_globs": [
+        "src/zetherion_ai/api/**",
+        "src/zetherion_ai/runtime/**",
+        "src/zetherion_ai/security/**",
+        "src/zetherion_ai/integrations/**"
+      ]
+    },
+    {
+      "boundary_id": "public-sdk-docs",
+      "label": "Public SDK and Docs",
+      "include_globs": [
+        "sdk/**",
+        "docs/user/**",
+        "README*"
+      ]
+    },
+    {
+      "boundary_id": "private-platform",
+      "label": "Private Platform",
+      "include_globs": [
+        "src/zetherion_ai/owner_ci/**",
+        "src/zetherion_ai/cgs_gateway/**",
+        "scripts/windows/**",
+        "zetherion-dev-agent/**"
+      ]
+    }
+  ],
+  "metadata": {
+    "notes": [
+      "Use this manifest from the new private primary repo to curate the public core mirror.",
+      "The current public repository remains historical; this manifest is forward-looking."
+    ]
+  }
+}

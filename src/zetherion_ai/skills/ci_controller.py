@@ -440,6 +440,7 @@ def _host_capacity_policy_for(
         "host_id": "windows-owner-ci",
         "admission_mode": "dynamic_resource_based",
         "resource_budget": dict(resource_budget),
+        "storage_budget_policy": dict(scheduling_policy.get("storage_budget_policy") or {}),
         "resource_classes": resource_classes,
         "reserve_runtime_headroom": True,
         "runtime_root": runtime_root or None,

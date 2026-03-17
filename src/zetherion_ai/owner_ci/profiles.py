@@ -90,6 +90,7 @@ def _local_gate(
     timeout_seconds: int = 1200,
     required_paths: list[str] | None = None,
     gate_kind: str | None = None,
+    expected_artifacts: list[str] | None = None,
 ) -> dict[str, Any]:
     normalized_lane_id = lane_id.strip().lower()
     inferred_gate_kind = gate_kind or (
@@ -117,7 +118,7 @@ def _local_gate(
         "timeout_seconds": timeout_seconds,
         "artifact_contract": {
             "kind": "ci_shard",
-            "expects": ["stdout", "stderr"],
+            "expects": list(expected_artifacts or ["stdout", "stderr"]),
         },
         "metadata": {
             "gate_kind": inferred_gate_kind,
@@ -485,6 +486,13 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
             "max_parallel_local": 8,
             "max_parallel_windows": 2,
             "resource_budgets": {"cpu": 8, "service": 2, "serial": 1},
+            "storage_budget_policy": {
+                "low_disk_free_bytes": 25 * 1024**3,
+                "target_free_bytes": 40 * 1024**3,
+                "artifact_retention_hours": 24,
+                "log_retention_days": 7,
+                "cleanup_enabled": True,
+            },
             "rebalance_enabled": True,
         },
         "resource_classes": {
@@ -571,6 +579,35 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
                 ["bash", "-lc", "scripts/docker-python-tool.sh -m ruff format --check ."],
                 workspace_root=_ZETHERION_ROOT,
                 required_paths=["zetherion_repo_integrity"],
+            ),
+            _local_gate(
+                "public-core-export",
+                "Public core export boundary",
+                [
+                    "bash",
+                    "-lc",
+                    (
+                        "scripts/docker-python-tool.sh "
+                        "scripts/testing/build_public_core_export.py "
+                        "--manifest .ci/public-core-export-manifest.json "
+                        "--source-root . "
+                        "--output-root .artifacts/public-core-export/staged-tree "
+                        "--report .artifacts/validation/public-core-export-stage.json && "
+                        "scripts/docker-python-tool.sh "
+                        "scripts/testing/validate_public_core_export.py "
+                        "--manifest .ci/public-core-export-manifest.json "
+                        "--root .artifacts/public-core-export/staged-tree "
+                        "--output .artifacts/validation/public-core-export-report.json"
+                    ),
+                ],
+                workspace_root=_ZETHERION_ROOT,
+                required_paths=["zetherion_repo_integrity", "public_core_export_boundary"],
+                expected_artifacts=[
+                    "stdout",
+                    "stderr",
+                    "public-core-export-stage.json",
+                    "public-core-export-report.json",
+                ],
             ),
         ],
         "mandatory_security_gates": [
@@ -825,6 +862,13 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
                 "cpu": 8,
                 "service": 2,
                 "serial": 1,
+            },
+            "storage_budget_policy": {
+                "low_disk_free_bytes": 25 * 1024**3,
+                "target_free_bytes": 40 * 1024**3,
+                "artifact_retention_hours": 24,
+                "log_retention_days": 7,
+                "cleanup_enabled": True,
             },
             "rebalance_enabled": True,
         },

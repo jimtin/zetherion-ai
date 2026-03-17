@@ -96,7 +96,7 @@
           "command": [
             "bash",
             "-lc",
-            "scripts/docker-python-tool.sh -m pytest tests/unit/test_skills_server.py tests/integration/test_queue_runtime_service.py -k 'runtime_status_store or announcement_claim_probe_round_trip' -q --tb=short --no-cov"
+            "scripts/docker-python-tool.sh -m pytest tests/unit/test_owner_ci_skills.py tests/unit/test_discord_bot.py tests/unit/test_announcement_dispatcher.py -k 'ci_observer_loads_storage_and_vercel_reporting or startup_queue_path_ready_returns_true_when_all_checks_pass or dispatcher_publishes_runtime_status_on_lifecycle_transitions' -q --tb=short --no-cov"
           ]
         }
       ]

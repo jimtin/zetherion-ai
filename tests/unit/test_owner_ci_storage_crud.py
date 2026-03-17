@@ -3326,6 +3326,78 @@ async def test_claim_worker_job_returns_none_when_host_budget_is_exhausted() -> 
 
 
 @pytest.mark.asyncio
+async def test_claim_worker_job_skips_heavy_shards_when_disk_headroom_is_below_target() -> None:
+    heavy_job = {
+        **_worker_job_row(),
+        "job_id": "job-heavy",
+        "shard_id": "shard-heavy",
+        "payload_json": {
+            "execution_target": "windows_local",
+            "resource_class": "service",
+        },
+    }
+    light_job = {
+        **_worker_job_row(),
+        "job_id": "job-light",
+        "shard_id": "shard-light",
+        "payload_json": {
+            "execution_target": "windows_local",
+            "resource_class": "cpu",
+        },
+    }
+    claimed_row = {
+        **light_job,
+        "status": "claimed",
+        "claimed_by_node_id": "node-1",
+        "claimed_session_id": "sess-1",
+    }
+    conn = _FakeConn(
+        fetchrow_results=[claimed_row],
+        fetch_results=[
+            [heavy_job, light_job],
+            [],
+            [
+                {
+                    "run_id": "run-1",
+                    "plan_json": {
+                        "host_capacity_policy": {
+                            "host_id": "windows-owner-ci",
+                            "resource_budget": {"cpu": 8, "service": 2},
+                            "storage_budget_policy": {
+                                "low_disk_free_bytes": 1024,
+                                "target_free_bytes": 4096,
+                            },
+                        }
+                    },
+                    "metadata_json": {},
+                }
+            ],
+            [
+                {
+                    "owner_id": "owner-1",
+                    "sample_json": {
+                        "disk_used_bytes": 8192,
+                        "disk_free_bytes": 2048,
+                    },
+                }
+            ],
+        ],
+    )
+    storage = _storage(conn)
+    storage._recompute_run_status = AsyncMock()  # type: ignore[method-assign]
+
+    claimed = await storage.claim_worker_job(
+        scope_id="owner:owner-1:repo:zetherion-ai",
+        node_id="node-1",
+        required_capabilities=["ci.test.run"],
+        session_id="sess-1",
+    )
+
+    assert claimed is not None
+    assert claimed["job_id"] == "job-light"
+
+
+@pytest.mark.asyncio
 async def test_claim_worker_job_prefers_repo_with_lower_active_pressure() -> None:
     queued_repo_a = {
         **_worker_job_row(),

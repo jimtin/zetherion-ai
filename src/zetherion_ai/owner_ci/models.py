@@ -185,6 +185,102 @@ class SchedulerOverview(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class StorageCategoryUsage(BaseModel):
+    """One storage category surfaced to dashboards and coaching."""
+
+    category: str
+    label: str
+    path: str | None = None
+    used_bytes: int | None = None
+    free_bytes: int | None = None
+    item_count: int = 0
+    cleanup_action_count: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StorageBudgetPolicy(BaseModel):
+    """Storage policy used for retention, cleanup, and admission guidance."""
+
+    low_disk_free_bytes: int = 0
+    target_free_bytes: int = 0
+    artifact_retention_hours: int | None = None
+    log_retention_days: int | None = None
+    cleanup_enabled: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StorageCleanupReceipt(BaseModel):
+    """Normalized cleanup receipt for one worker run."""
+
+    status: str = "unknown"
+    path: str | None = None
+    deleted_paths: list[str] = Field(default_factory=list)
+    pruned_logs: list[str] = Field(default_factory=list)
+    docker_actions: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StoragePressureIncident(BaseModel):
+    """Typed storage-pressure signal suitable for dashboards and coaching."""
+
+    incident_id: str
+    severity: str = "medium"
+    blocking: bool = False
+    summary: str
+    node_id: str | None = None
+    repo_id: str | None = None
+    run_id: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
+    recommended_fix: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StorageInventorySnapshot(BaseModel):
+    """Owner-CI storage inventory report."""
+
+    generated_at: str | None = None
+    status: str = "healthy"
+    summary: str = ""
+    budget_policy: StorageBudgetPolicy = Field(default_factory=StorageBudgetPolicy)
+    categories: list[StorageCategoryUsage] = Field(default_factory=list)
+    workers: list[dict[str, Any]] = Field(default_factory=list)
+    projects: list[dict[str, Any]] = Field(default_factory=list)
+    top_consumers: list[dict[str, Any]] = Field(default_factory=list)
+    cleanup_receipts: list[StorageCleanupReceipt] = Field(default_factory=list)
+    incidents: list[StoragePressureIncident] = Field(default_factory=list)
+    coaching: list[str] = Field(default_factory=list)
+    alerts: list[str] = Field(default_factory=list)
+    announcement_events: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PrivateFeatureBoundary(BaseModel):
+    """One boundary rule for the public-core export."""
+
+    boundary_id: str
+    label: str
+    include_globs: list[str] = Field(default_factory=list)
+    exclude_globs: list[str] = Field(default_factory=list)
+    notes: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PublicCoreExportManifest(BaseModel):
+    """Allowlist/blocklist manifest for the curated public-core mirror."""
+
+    manifest_version: str = "1"
+    source_repo: str
+    target_repo: str
+    default_action: str = "deny"
+    public_include_globs: list[str] = Field(default_factory=list)
+    private_block_globs: list[str] = Field(default_factory=list)
+    allowed_doc_globs: list[str] = Field(default_factory=list)
+    forbidden_terms: list[str] = Field(default_factory=list)
+    boundaries: list[PrivateFeatureBoundary] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class EvidenceReference(BaseModel):
     """Reference to external or local evidence correlated to a run node."""
 

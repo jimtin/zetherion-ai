@@ -423,11 +423,18 @@ async def test_ci_observer_success_paths_cover_reporting_branches() -> None:
 
     assert readiness.success is True
     assert readiness.message == "Loaded CI readiness summary."
-    assert readiness.data == {
-        "readiness": {
-            "repo_readiness": [{"repo_id": "zetherion-ai", "merge_ready": True}]
-        }
-    }
+    assert readiness.data["readiness"]["repo_readiness"] == [
+        {"repo_id": "zetherion-ai", "merge_ready": True, "github_security": None}
+    ]
+    github_security = readiness.data["readiness"]["github_security"]
+    assert github_security["available"] is False
+    assert github_security["blocking"] is False
+    assert github_security["reason"] == "github_token_missing"
+    assert github_security["status"] == "unavailable"
+    assert github_security["repos"] == []
+    assert github_security["summary"] == (
+        "GitHub security alerts could not be checked because GITHUB_TOKEN is missing."
+    )
 
     assert failures.success is True
     assert failures.message == "Loaded project failure report."

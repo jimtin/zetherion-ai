@@ -9,6 +9,10 @@ from pathlib import Path
 from subprocess import CompletedProcess
 
 from zetherion_ai.owner_ci.system_validation import (
+    _candidate_set_from_input,
+    _duration_seconds,
+    _normalized_state,
+    build_validation_matrix,
     build_system_coaching,
     build_system_rollout_readiness,
     build_system_run_plan,
@@ -110,6 +114,15 @@ def test_compile_validation_matrix_includes_repo_and_combined_modes(tmp_path: Pa
     assert {"static", "security", "unit", "integration"} <= set(
         zetherion_mode["lane_families"]
     )
+    public_core_gate = next(
+        shard for shard in zetherion_mode["shards"] if shard["shard_id"] == "public-core-export"
+    )
+    assert public_core_gate["expected_artifacts"] == [
+        "stdout",
+        "stderr",
+        "public-core-export-stage.json",
+        "public-core-export-report.json",
+    ]
 
     cgs_mode = next(mode for mode in payload["modes"] if mode["mode_id"] == "cgs_alone")
     assert cgs_mode["available"] is True
@@ -607,6 +620,127 @@ def test_system_coaching_blocks_when_validation_profiles_are_unavailable(tmp_pat
 
     assert coaching[0]["blocking"] is True
     assert coaching[0]["findings"][0]["rule_code"] == "missing_system_validation_profile"
+
+
+def test_validation_matrix_marks_missing_manifests_unavailable(tmp_path: Path) -> None:
+    matrix = build_validation_matrix(
+        cgs_manifest_path=tmp_path / "missing-cgs.json",
+        combined_manifest_path=tmp_path / "missing-combined.json",
+    )
+
+    modes = {mode["mode_id"]: mode for mode in matrix["modes"]}
+    assert modes["zetherion_alone"]["available"] is True
+    assert modes["cgs_alone"]["available"] is False
+    assert "missing manifest" in modes["cgs_alone"]["metadata"]["unavailable_reason"]
+    assert modes["combined_system"]["available"] is False
+    assert "missing manifest" in modes["combined_system"]["metadata"]["unavailable_reason"]
+
+
+def test_system_coaching_returns_ready_guidance_when_profiles_are_available(tmp_path: Path) -> None:
+    cgs_manifest_path = tmp_path / "cgs-shard-manifest.json"
+    cgs_manifest_path.write_text(
+        json.dumps(
+            {
+                "repo_id": "catalyst-group-solutions",
+                "validation_mode": "cgs_alone",
+                "resource_limits": {"cpu": 4},
+                "shards": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    combined_manifest_path = tmp_path / "system-validation.json"
+    combined_manifest_path.write_text(
+        json.dumps(
+            {
+                "mode_id": "combined_system",
+                "mode_label": "CGS + Zetherion together",
+                "repo_ids": ["zetherion-ai", "catalyst-group-solutions"],
+                "shards": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    coaching = build_system_coaching(
+        candidate_set={
+            "system_id": "cgs-zetherion",
+            "repos": [
+                {"repo_id": "zetherion-ai", "git_ref": "feature/z"},
+                {"repo_id": "catalyst-group-solutions", "git_ref": "feature/cgs"},
+            ],
+        },
+        principal_id="codex-agent-1",
+        cgs_manifest_path=cgs_manifest_path,
+        combined_manifest_path=combined_manifest_path,
+    )
+
+    assert coaching[0]["blocking"] is False
+    assert coaching[0]["findings"][0]["rule_code"] == "system_validation_ready"
+    assert "combined-system validation" in coaching[0]["recommendations"][0]["agents_md_update"]
+
+
+def test_system_validation_helper_paths_cover_state_normalization_and_defaults() -> None:
+    assert _normalized_state("running") == "running"
+    assert _normalized_state("queued") == "queued"
+    assert _normalized_state("skipped") == "skipped"
+    assert _normalized_state(None) == "unknown"
+
+    candidate_set = _candidate_set_from_input("invalid")
+    assert candidate_set.repos == []
+
+    assert _duration_seconds("", "2026-03-17T10:00:00Z") == 0.0
+    assert _duration_seconds("bad-date", "2026-03-17T10:00:00Z") == 0.0
+    assert _duration_seconds("2026-03-17T10:02:00Z", "2026-03-17T10:00:00Z") == 0.0
+
+
+def test_system_run_plan_handles_sparse_combined_manifest_defaults(tmp_path: Path) -> None:
+    cgs_manifest_path = tmp_path / "cgs-shard-manifest.json"
+    cgs_manifest_path.write_text(
+        json.dumps(
+            {
+                "repo_id": "catalyst-group-solutions",
+                "validation_mode": "cgs_alone",
+                "resource_limits": {"cpu": 4},
+                "shards": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    combined_manifest_path = tmp_path / "system-validation.json"
+    combined_manifest_path.write_text(
+        json.dumps(
+            {
+                "repo_ids": ["zetherion-ai", "catalyst-group-solutions"],
+                "shards": [
+                    "skip-me",
+                    {
+                        "repo_id": "zetherion-ai",
+                        "purpose": "Fallback shard",
+                        "depends_on": ["unknown-shard"],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = build_validation_matrix(
+        cgs_manifest_path=cgs_manifest_path,
+        combined_manifest_path=combined_manifest_path,
+    )
+    combined_mode = next(mode for mode in matrix["modes"] if mode["mode_id"] == "combined_system")
+    fallback_shard = combined_mode["shards"][0]
+    assert combined_mode["mode_label"] == "Validation mode"
+    assert combined_mode["description"] == (
+        "Controlled local contract validation across the CGS and Zetherion "
+        "control-plane boundary."
+    )
+    assert combined_mode["blocking_categories"] == ["combined_system"]
+    assert fallback_shard["repo_ids"] == ["zetherion-ai"]
+    assert fallback_shard["lane_family"] == "integration"
+    assert fallback_shard["validation_mode"] == "combined_system"
+    assert fallback_shard["shard_id"] == "Fallback shard"
 
 
 def test_system_run_helpers_cover_cycles_list_candidates_and_unplanned_shards(
