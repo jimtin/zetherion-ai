@@ -184,6 +184,32 @@ def test_jwt_verifier_invalid_token(monkeypatch: pytest.MonkeyPatch) -> None:
         verifier.verify("bad-token")
 
 
+def test_jwt_verifier_rejects_unsupported_crit_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyJWKClient:
+        def __init__(self, _: str) -> None:
+            pass
+
+        def get_signing_key_from_jwt(self, _: str) -> SimpleNamespace:
+            return SimpleNamespace(key="public-key")
+
+    def fail_decode(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("decode should not be called for unsupported crit headers")
+
+    monkeypatch.setattr(middleware_mod.jwt, "PyJWKClient", DummyJWKClient)
+    monkeypatch.setattr(
+        middleware_mod.jwt,
+        "get_unverified_header",
+        lambda _token: {"crit": ["exp"]},
+    )
+    monkeypatch.setattr(middleware_mod.jwt, "decode", fail_decode)
+
+    verifier = JWTVerifier(jwks_url="https://issuer/jwks")
+    with pytest.raises(GatewayError, match="Invalid or expired auth token"):
+        verifier.verify("bad-token")
+
+
 def test_jwt_verifier_handles_roles_list_and_optional_scope_shapes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -214,6 +214,33 @@ if [ "${ZETHERION_USE_DOCKER_PYTHON:-false}" != "true" ] && ! venv_has_required_
     fi
 fi
 
+auto_select_local_validation_scope() {
+    if [ -n "${VALIDATION_SCOPE+x}" ] || [ -n "${RUN_DISCORD_E2E_REQUIRED+x}" ]; then
+        return 0
+    fi
+
+    local missing=()
+    if [ -z "${GROQ_API_KEY:-}" ] && [ "${DISCORD_E2E_PROVIDER:-groq}" = "groq" ]; then
+        missing+=("GROQ_API_KEY")
+    fi
+    for var_name in TEST_DISCORD_BOT_TOKEN TEST_DISCORD_GUILD_ID DISCORD_E2E_ALLOWED_AUTHOR_IDS; do
+        if [ -z "${!var_name:-}" ]; then
+            missing+=("$var_name")
+        fi
+    done
+    if [ -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" ] && [ -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]; then
+        missing+=("TEST_DISCORD_E2E_CATEGORY_ID|TEST_DISCORD_E2E_CATEGORY_NAME")
+    fi
+
+    if [ "${#missing[@]}" -gt 0 ]; then
+        log "Full-gate E2E environment is incomplete (${missing[*]}). Falling back to offline validation scope for local execution."
+        export VALIDATION_SCOPE=offline
+        export RUN_DISCORD_E2E_REQUIRED=false
+    fi
+}
+
+auto_select_local_validation_scope
+
 # Enforce strict canonical defaults.
 export RUN_DISCORD_E2E_REQUIRED="${RUN_DISCORD_E2E_REQUIRED:-true}"
 export STRICT_REQUIRED_TESTS="${STRICT_REQUIRED_TESTS:-true}"

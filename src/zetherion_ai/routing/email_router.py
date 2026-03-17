@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
-from hashlib import sha1
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -1530,4 +1530,4 @@ class EmailRouter:
 
     def _email_local_id(self, email: NormalizedEmail) -> str:
         raw = f"{email.external_id}|{email.thread_id}|{email.received_at.isoformat()}"
-        return sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()

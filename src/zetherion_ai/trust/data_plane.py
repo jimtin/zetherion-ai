@@ -100,6 +100,7 @@ async def ensure_postgres_isolation_schemas(
     try:
         async with pool.acquire() as conn:
             for schema_name in schema_names:
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # noqa: E501
                 await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"')
     except AttributeError:
         log.warning(

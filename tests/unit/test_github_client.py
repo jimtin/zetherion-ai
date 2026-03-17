@@ -194,6 +194,30 @@ class TestGitHubClient:
         status_payload = mock_request.await_args.kwargs["json_body"]
         assert status_payload["target_url"] == "https://cgs.example.com"
 
+    @pytest.mark.asyncio
+    async def test_security_alert_helpers_return_raw_alert_lists(self, client):
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(
+                side_effect=[
+                    [{"number": 1, "security_vulnerability": {"severity": "high"}}],
+                    [{"number": 2, "rule": {"security_severity_level": "medium"}}],
+                ]
+            ),
+        ) as mock_request:
+            dependabot_alerts = await client.list_dependabot_alerts("owner", "repo")
+            code_scanning_alerts = await client.list_code_scanning_alerts("owner", "repo")
+
+        assert dependabot_alerts[0]["number"] == 1
+        assert code_scanning_alerts[0]["number"] == 2
+        first_call = mock_request.await_args_list[0]
+        second_call = mock_request.await_args_list[1]
+        assert first_call.args[:2] == ("GET", "/repos/owner/repo/dependabot/alerts")
+        assert first_call.kwargs["params"] == {"state": "open", "per_page": 100}
+        assert second_call.args[:2] == ("GET", "/repos/owner/repo/code-scanning/alerts")
+        assert second_call.kwargs["params"] == {"state": "open", "per_page": 100}
+
 
 class TestGitHubClientErrors:
     """Tests for error handling."""

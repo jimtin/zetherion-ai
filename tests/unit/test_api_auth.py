@@ -136,3 +136,14 @@ class TestSessionTokens:
         """Completely invalid token raises an error."""
         with pytest.raises(jwt.DecodeError):
             validate_session_token("zt_sess_not-a-real-jwt", self.JWT_SECRET)
+
+    def test_validate_rejects_unsupported_crit_header(self):
+        """Tokens with unknown critical headers are rejected deterministically."""
+        token = jwt.encode(
+            {"tenant_id": "tid", "session_id": "sid"},
+            self.JWT_SECRET,
+            algorithm="HS256",
+            headers={"crit": ["exp"]},
+        )
+        with pytest.raises(jwt.InvalidTokenError, match="Unsupported JWT critical header"):
+            validate_session_token(f"{SESSION_TOKEN_PREFIX}{token}", self.JWT_SECRET)

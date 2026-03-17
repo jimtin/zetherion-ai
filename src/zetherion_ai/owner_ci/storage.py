@@ -110,13 +110,7 @@ def _filter_run_report_for_node(
     filtered["diagnostic_findings"] = [
         entry
         for entry in list(report.get("diagnostic_findings") or [])
-        if (
-            not str(entry.get("shard_id") or "").strip()
-            and candidate
-            == str(
-                (report.get("run_graph") or {}).get("nodes", [{}])[0].get("node_id") or ""
-            )
-        )
+        if str(entry.get("node_id") or "").strip() == candidate
         or (
             str(entry.get("shard_id") or "").strip()
             and candidate.endswith(f":{str(entry.get('shard_id') or '').strip()}")
@@ -560,6 +554,34 @@ CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_project_usage_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_owner_ci_project_usage_summaries_owner_repo
     ON "{validated}".owner_ci_project_usage_summaries (owner_id, repo_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_system_runs (
+    owner_id            TEXT         NOT NULL,
+    system_run_id       TEXT         NOT NULL,
+    system_id           TEXT         NOT NULL,
+    mode_id             TEXT         NOT NULL,
+    status              TEXT         NOT NULL DEFAULT 'planned',
+    candidate_set_json  JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    plan_json           JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    readiness_json      JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    coaching_json       JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    execution_json      JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    usage_summary_json  JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    report_json         JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    error_json          JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    started_at          TIMESTAMPTZ,
+    completed_at        TIMESTAMPTZ,
+    PRIMARY KEY (owner_id, system_run_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_system_runs_owner_created
+    ON "{validated}".owner_ci_system_runs (owner_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_system_runs_owner_system
+    ON "{validated}".owner_ci_system_runs (owner_id, system_id, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_bootstrap_manifests (
     owner_id            TEXT         NOT NULL,
@@ -1399,6 +1421,42 @@ class OwnerCiStorage:
             "bundle": self._coerce_json_object(row["bundle_json"], "bundle_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _system_run_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        coaching_raw = self._coerce_json_value(row.get("coaching_json"), "coaching_json")
+        coaching = list(coaching_raw) if isinstance(coaching_raw, list) else []
+        return {
+            "owner_id": str(row["owner_id"]),
+            "system_run_id": str(row["system_run_id"]),
+            "system_id": str(row["system_id"]),
+            "mode_id": str(row["mode_id"]),
+            "status": str(row["status"]),
+            "candidate_set": self._coerce_json_object(
+                row.get("candidate_set_json"),
+                "candidate_set_json",
+            ),
+            "plan": self._coerce_json_object(row.get("plan_json"), "plan_json"),
+            "readiness": self._coerce_json_object(
+                row.get("readiness_json"),
+                "readiness_json",
+            ),
+            "coaching": [dict(item) for item in coaching if isinstance(item, dict)],
+            "execution": self._coerce_json_object(
+                row.get("execution_json"),
+                "execution_json",
+            ),
+            "usage_summary": self._coerce_json_object(
+                row.get("usage_summary_json"),
+                "usage_summary_json",
+            ),
+            "report": self._coerce_json_object(row.get("report_json"), "report_json"),
+            "error": self._coerce_json_object(row.get("error_json"), "error_json"),
+            "metadata": self._coerce_json_object(row.get("metadata_json"), "metadata_json"),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+            "started_at": row["started_at"].isoformat() if row.get("started_at") else None,
+            "completed_at": row["completed_at"].isoformat() if row.get("completed_at") else None,
         }
 
     def _agent_principal_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -3344,6 +3402,342 @@ class OwnerCiStorage:
     ) -> list[dict[str, Any]]:
         report = await self.get_run_report(owner_id, run_id, node_id=node_id)
         return list(report.get("evidence") or []) if report is not None else []
+
+    async def create_system_run(
+        self,
+        owner_id: str,
+        *,
+        candidate_set: dict[str, Any],
+        plan: dict[str, Any],
+        readiness: dict[str, Any],
+        coaching: list[dict[str, Any]],
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_system_runs'
+        system_run_id = uuid4().hex
+        created_at = datetime.now(UTC)
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                    INSERT INTO {table} (
+                        owner_id,
+                        system_run_id,
+                        system_id,
+                        mode_id,
+                        status,
+                        candidate_set_json,
+                        plan_json,
+                        readiness_json,
+                        coaching_json,
+                        metadata_json,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, 'planned', $5::jsonb, $6::jsonb, $7::jsonb,
+                        $8::jsonb, $9::jsonb, $10, $10
+                    )
+                    RETURNING *
+                """,
+                owner_id,
+                system_run_id,
+                str(candidate_set.get("system_id") or "cgs-zetherion"),
+                str(candidate_set.get("mode_id") or "combined_system"),
+                json.dumps(candidate_set),
+                json.dumps(plan),
+                json.dumps(readiness),
+                json.dumps(list(coaching or [])),
+                json.dumps(dict(metadata or {})),
+                created_at,
+            )
+        if row is None:
+            raise RuntimeError("Create system run returned no row")
+        return self._system_run_from_row(dict(row))
+
+    async def list_system_runs(
+        self,
+        owner_id: str,
+        *,
+        system_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_system_runs'
+        params: list[Any] = [owner_id]
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+        """
+        if system_id:
+            params.append(system_id)
+            query += f" AND system_id = ${len(params)}"
+        params.append(max(1, limit))
+        query += f" ORDER BY created_at DESC LIMIT ${len(params)}"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._system_run_from_row(dict(row)) for row in rows]
+
+    async def get_system_run(
+        self,
+        owner_id: str,
+        system_run_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_system_runs'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                    SELECT *
+                      FROM {table}
+                     WHERE owner_id = $1
+                       AND system_run_id = $2
+                     LIMIT 1
+                """,
+                owner_id,
+                system_run_id,
+            )
+        return self._system_run_from_row(dict(row)) if row is not None else None
+
+    async def update_system_run(
+        self,
+        owner_id: str,
+        system_run_id: str,
+        *,
+        status: str | None = None,
+        execution: dict[str, Any] | None = None,
+        report: dict[str, Any] | None = None,
+        usage_summary: dict[str, Any] | None = None,
+        readiness: dict[str, Any] | None = None,
+        coaching: list[dict[str, Any]] | None = None,
+        metadata_patch: dict[str, Any] | None = None,
+        error: dict[str, Any] | None = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_system_runs'
+        async with self._pool.acquire() as conn:
+            current = await conn.fetchrow(
+                f"""
+                    SELECT *
+                      FROM {table}
+                     WHERE owner_id = $1
+                       AND system_run_id = $2
+                     LIMIT 1
+                """,
+                owner_id,
+                system_run_id,
+            )
+            if current is None:
+                return None
+            current_row = dict(current)
+            merged_metadata = _merge_json_dict(
+                self._coerce_json_object(current_row.get("metadata_json"), "metadata_json"),
+                dict(metadata_patch or {}),
+            )
+            row = await conn.fetchrow(
+                f"""
+                    UPDATE {table}
+                       SET status = $3,
+                           execution_json = $4::jsonb,
+                           report_json = $5::jsonb,
+                           usage_summary_json = $6::jsonb,
+                           readiness_json = $7::jsonb,
+                           coaching_json = $8::jsonb,
+                           metadata_json = $9::jsonb,
+                           error_json = $10::jsonb,
+                           started_at = COALESCE($11, started_at),
+                           completed_at = COALESCE($12, completed_at),
+                           updated_at = now()
+                     WHERE owner_id = $1
+                       AND system_run_id = $2
+                 RETURNING *
+                """,
+                owner_id,
+                system_run_id,
+                str(status or current_row.get("status") or "planned"),
+                json.dumps(
+                    execution
+                    if execution is not None
+                    else self._coerce_json_object(
+                        current_row.get("execution_json"),
+                        "execution_json",
+                    )
+                ),
+                json.dumps(
+                    report
+                    if report is not None
+                    else self._coerce_json_object(current_row.get("report_json"), "report_json")
+                ),
+                json.dumps(
+                    usage_summary
+                    if usage_summary is not None
+                    else self._coerce_json_object(
+                        current_row.get("usage_summary_json"),
+                        "usage_summary_json",
+                    )
+                ),
+                json.dumps(
+                    readiness
+                    if readiness is not None
+                    else self._coerce_json_object(
+                        current_row.get("readiness_json"),
+                        "readiness_json",
+                    )
+                ),
+                json.dumps(
+                    coaching
+                    if coaching is not None
+                    else list(
+                        self._coerce_json_value(current_row.get("coaching_json"), "coaching_json")
+                        or []
+                    )
+                ),
+                json.dumps(merged_metadata),
+                json.dumps(
+                    error
+                    if error is not None
+                    else self._coerce_json_object(current_row.get("error_json"), "error_json")
+                ),
+                started_at,
+                completed_at,
+            )
+        return self._system_run_from_row(dict(row)) if row is not None else None
+
+    async def refresh_system_run_report(
+        self,
+        owner_id: str,
+        system_run_id: str,
+    ) -> dict[str, Any] | None:
+        from zetherion_ai.owner_ci.system_validation import (
+            build_system_run_report,
+            build_system_run_usage_summary,
+        )
+
+        current = await self.get_system_run(owner_id, system_run_id)
+        if current is None:
+            return None
+        usage_summary = build_system_run_usage_summary(
+            system_run_id=system_run_id,
+            system_id=str(current.get("system_id") or "cgs-zetherion"),
+            mode_id=str(current.get("mode_id") or "combined_system"),
+            candidate_set=dict(current.get("candidate_set") or {}),
+            execution=dict(current.get("execution") or {}),
+        )
+        updated = {
+            **current,
+            "usage_summary": usage_summary,
+        }
+        report = build_system_run_report(updated)
+        await self.update_system_run(
+            owner_id,
+            system_run_id,
+            usage_summary=usage_summary,
+            report=report,
+        )
+        return report
+
+    async def get_system_run_report(
+        self,
+        owner_id: str,
+        system_run_id: str,
+        *,
+        node_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        system_run = await self.get_system_run(owner_id, system_run_id)
+        if system_run is None:
+            return None
+        report = dict(system_run.get("report") or {})
+        if not report:
+            report = await self.refresh_system_run_report(owner_id, system_run_id) or {}
+        if not report:
+            return None
+        if node_id:
+            return _filter_run_report_for_node(report, node_id=str(node_id or "").strip())
+        return report
+
+    async def get_system_run_graph(
+        self,
+        owner_id: str,
+        system_run_id: str,
+    ) -> dict[str, Any] | None:
+        report = await self.get_system_run_report(owner_id, system_run_id)
+        return dict(report.get("run_graph") or {}) if report is not None else None
+
+    async def get_system_run_correlation_context(
+        self,
+        owner_id: str,
+        system_run_id: str,
+    ) -> dict[str, Any] | None:
+        report = await self.get_system_run_report(owner_id, system_run_id)
+        return dict(report.get("correlation_context") or {}) if report is not None else None
+
+    async def get_system_run_diagnostics(
+        self,
+        owner_id: str,
+        system_run_id: str,
+        *,
+        node_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        report = await self.get_system_run_report(owner_id, system_run_id, node_id=node_id)
+        if report is None:
+            return None
+        return {
+            "diagnostic_summary": dict(report.get("diagnostic_summary") or {}),
+            "diagnostic_findings": list(report.get("diagnostic_findings") or []),
+            "diagnostic_artifacts": list(report.get("diagnostic_artifacts") or []),
+            "coverage_summary": dict(report.get("coverage_summary") or {}),
+            "coverage_gaps": dict(report.get("coverage_gaps") or {}),
+            "correlated_incidents": list(report.get("correlated_incidents") or []),
+        }
+
+    async def get_system_run_artifacts(
+        self,
+        owner_id: str,
+        system_run_id: str,
+        *,
+        node_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        report = await self.get_system_run_report(owner_id, system_run_id, node_id=node_id)
+        return list(report.get("artifacts") or []) if report is not None else []
+
+    async def get_system_run_evidence(
+        self,
+        owner_id: str,
+        system_run_id: str,
+        *,
+        node_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        report = await self.get_system_run_report(owner_id, system_run_id, node_id=node_id)
+        return list(report.get("evidence") or []) if report is not None else []
+
+    async def get_system_run_coaching(
+        self,
+        owner_id: str,
+        system_run_id: str,
+    ) -> list[dict[str, Any]]:
+        system_run = await self.get_system_run(owner_id, system_run_id)
+        return list(system_run.get("coaching") or []) if system_run is not None else []
+
+    async def get_system_run_readiness(
+        self,
+        owner_id: str,
+        system_run_id: str,
+    ) -> dict[str, Any] | None:
+        system_run = await self.get_system_run(owner_id, system_run_id)
+        return dict(system_run.get("readiness") or {}) if system_run is not None else None
+
+    async def get_system_run_usage(
+        self,
+        owner_id: str,
+        system_run_id: str,
+    ) -> dict[str, Any] | None:
+        system_run = await self.get_system_run(owner_id, system_run_id)
+        if system_run is None:
+            return None
+        usage = dict(system_run.get("usage_summary") or {})
+        if usage:
+            return usage
+        await self.refresh_system_run_report(owner_id, system_run_id)
+        refreshed = await self.get_system_run(owner_id, system_run_id)
+        return dict((refreshed or {}).get("usage_summary") or {}) or None
 
     async def get_local_repo_readiness(
         self,

@@ -512,4 +512,4 @@ class TaskCalendarRouter:
 
     def _stable_local_id(self, a: str, b: str) -> str:
         raw = f"{a}|{b}".encode()
-        return hashlib.sha1(raw, usedforsecurity=False).hexdigest()
+        return hashlib.sha256(raw).hexdigest()

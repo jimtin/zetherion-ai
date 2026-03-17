@@ -28,6 +28,9 @@ from uuid import uuid4
 
 import httpx
 from aiohttp import web
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from zetherion_ai.admin.tenant_admin_manager import (
     AdminActorContext,
@@ -63,6 +66,38 @@ log = get_logger("zetherion_ai.skills.server")
 
 OAuthCallbackHandler = Callable[[web.Request], Awaitable[dict[str, Any]]]
 OAuthAuthorizeHandler = Callable[[web.Request], Awaitable[dict[str, Any]]]
+_ENCRYPTED_UPDATER_SECRET_FORMAT = "zetherion_updater_secret_v1"
+_UPDATER_SECRET_PBKDF2_ITERATIONS = 600_000
+_UPDATER_SECRET_KEY_SIZE = 32
+_UPDATER_SECRET_NONCE_SIZE = 12
+
+
+def _derive_updater_secret_key(*, passphrase: str, salt: bytes) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=_UPDATER_SECRET_KEY_SIZE,
+        salt=salt,
+        iterations=_UPDATER_SECRET_PBKDF2_ITERATIONS,
+    )
+    return kdf.derive(passphrase.encode("utf-8"))
+
+
+def _decode_encrypted_updater_secret(payload: dict[str, Any], *, passphrase: str) -> str:
+    salt_encoded = payload.get("salt")
+    ciphertext_encoded = payload.get("ciphertext")
+    if not isinstance(salt_encoded, str) or not isinstance(ciphertext_encoded, str):
+        raise ValueError("Encrypted updater secret payload is incomplete.")
+
+    salt = base64.b64decode(salt_encoded.encode("ascii"))
+    combined = base64.b64decode(ciphertext_encoded.encode("ascii"))
+    nonce = combined[:_UPDATER_SECRET_NONCE_SIZE]
+    ciphertext = combined[_UPDATER_SECRET_NONCE_SIZE:]
+    plaintext = AESGCM(_derive_updater_secret_key(passphrase=passphrase, salt=salt)).decrypt(
+        nonce,
+        ciphertext,
+        None,
+    )
+    return plaintext.decode("utf-8")
 
 
 def _serialise_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -153,9 +188,30 @@ def _resolve_updater_secret() -> str:
     if not path.exists():
         return ""
     try:
-        return path.read_text(encoding="utf-8").strip()
+        raw = path.read_text(encoding="utf-8").strip()
     except Exception:
         log.warning("updater_secret_file_read_failed", path=secret_path)
+        return ""
+
+    if not raw:
+        return ""
+
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return raw
+
+    if not isinstance(payload, dict) or payload.get("format") != _ENCRYPTED_UPDATER_SECRET_FORMAT:
+        return raw
+
+    passphrase = os.environ.get("ENCRYPTION_PASSPHRASE", "").strip()
+    if not passphrase:
+        log.warning("updater_secret_passphrase_missing", path=secret_path)
+        return ""
+    try:
+        return _decode_encrypted_updater_secret(payload, passphrase=passphrase)
+    except Exception:
+        log.warning("updater_secret_decrypt_failed", path=secret_path)
         return ""
 
 

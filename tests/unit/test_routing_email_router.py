@@ -144,6 +144,20 @@ def _email() -> NormalizedEmail:
     )
 
 
+def test_email_local_id_uses_stable_sha256_digest() -> None:
+    router = EmailRouter(
+        storage=_StorageStub(),
+        providers=_ProvidersStub(),
+        security=MagicMock(),
+        task_calendar_router=_TaskCalendarStub(),
+        inference=MagicMock(),
+    )
+
+    digest = router._email_local_id(_email())  # noqa: SLF001
+
+    assert len(digest) == 64
+
+
 @pytest.mark.asyncio
 async def test_blocked_email_is_terminal_and_not_routed() -> None:
     storage = _StorageStub()

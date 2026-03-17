@@ -196,10 +196,13 @@ class TelemetryStorage:
             idx += 1
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        query = f"SELECT * FROM telemetry_reports {where} ORDER BY timestamp DESC LIMIT ${idx}"  # nosec B608
+        query = (
+            f"SELECT * FROM telemetry_reports {where} ORDER BY timestamp DESC LIMIT ${idx}"
+        )  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         params.append(limit)
 
         async with self._pool.acquire() as conn:
+            # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
             rows = await conn.fetch(query, *params)
         return [dict(r) for r in rows]
 

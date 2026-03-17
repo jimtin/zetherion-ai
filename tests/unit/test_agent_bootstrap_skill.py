@@ -91,6 +91,20 @@ def _storage() -> MagicMock:
     storage.get_run_events = AsyncMock(return_value=[])
     storage.get_run_log_chunks = AsyncMock(return_value=[])
     storage.get_run_debug_bundle = AsyncMock(return_value=None)
+    storage.create_system_run = AsyncMock()
+    storage.list_system_runs = AsyncMock(return_value=[])
+    storage.get_system_run = AsyncMock(return_value=None)
+    storage.update_system_run = AsyncMock()
+    storage.refresh_system_run_report = AsyncMock(return_value=None)
+    storage.get_system_run_report = AsyncMock(return_value=None)
+    storage.get_system_run_graph = AsyncMock(return_value=None)
+    storage.get_system_run_correlation_context = AsyncMock(return_value=None)
+    storage.get_system_run_diagnostics = AsyncMock(return_value=None)
+    storage.get_system_run_artifacts = AsyncMock(return_value=[])
+    storage.get_system_run_evidence = AsyncMock(return_value=[])
+    storage.get_system_run_coaching = AsyncMock(return_value=[])
+    storage.get_system_run_readiness = AsyncMock(return_value=None)
+    storage.get_system_run_usage = AsyncMock(return_value=None)
     return storage
 
 
@@ -1005,3 +1019,587 @@ async def test_system_coaching_blocks_when_candidate_set_is_incomplete() -> None
     assert response.data["coaching"][0]["findings"][0]["rule_code"] == (
         "missing_system_repo_candidates"
     )
+
+
+@pytest.mark.asyncio
+async def test_system_run_handlers_create_execute_and_retrieve_reports() -> None:
+    storage = _storage()
+    storage.create_system_run.return_value = {
+        "system_run_id": "system-run-1",
+        "system_id": "cgs-zetherion",
+        "status": "planned",
+        "candidate_set": {
+            "repos": [
+                {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+            ]
+        },
+        "plan": {"shards": []},
+        "readiness": {"blocking": False},
+        "coaching": [],
+        "metadata": {},
+    }
+    storage.get_system_run.side_effect = [
+        {
+            "system_run_id": "system-run-1",
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "status": "planned",
+            "candidate_set": {
+                "system_id": "cgs-zetherion",
+                "mode_id": "combined_system",
+                "repos": [
+                    {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                    {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+                ],
+            },
+            "plan": {"shards": []},
+            "readiness": {
+                "system_id": "cgs-zetherion",
+                "mode_id": "combined_system",
+                "blocking": False,
+                "status": "ready",
+                "summary": "Ready",
+                "blocking_shards": [],
+                "missing_repo_ids": [],
+                "recommended_next_steps": [],
+                "metadata": {},
+            },
+            "coaching": [],
+            "execution": {},
+            "metadata": {},
+        },
+        {
+            "system_run_id": "system-run-1",
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "status": "planned",
+            "candidate_set": {
+                "system_id": "cgs-zetherion",
+                "mode_id": "combined_system",
+                "repos": [
+                    {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                    {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+                ],
+            },
+            "plan": {"shards": []},
+            "readiness": {
+                "system_id": "cgs-zetherion",
+                "mode_id": "combined_system",
+                "blocking": False,
+                "status": "ready",
+                "summary": "Ready",
+                "blocking_shards": [],
+                "missing_repo_ids": [],
+                "recommended_next_steps": [],
+                "metadata": {},
+            },
+            "coaching": [],
+            "execution": {},
+            "metadata": {},
+        },
+        {
+            "system_run_id": "system-run-1",
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "status": "succeeded",
+            "candidate_set": {"repos": []},
+            "plan": {"shards": []},
+            "readiness": {"blocking": False},
+            "coaching": [],
+            "execution": {"all_passed": True, "batches": [], "shards": []},
+            "metadata": {},
+        },
+    ]
+    storage.update_system_run.return_value = {
+        "system_run_id": "system-run-1",
+        "status": "succeeded",
+    }
+    storage.refresh_system_run_report.return_value = {
+        "system_run_id": "system-run-1",
+        "run_graph": {"nodes": []},
+    }
+    storage.get_system_run_report.return_value = {
+        "system_run_id": "system-run-1",
+        "run_graph": {"nodes": [{"node_id": "system-run:system-run-1"}]},
+    }
+    storage.get_system_run_usage.return_value = {"billable_minutes": 0.0}
+
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    create_response = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_create",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-agent-1",
+                "repos": [
+                    {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                    {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+                ],
+            },
+        )
+    )
+    execute_response = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_execute",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "system_run_id": "system-run-1",
+            },
+        )
+    )
+    report_response = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_report_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "system_run_id": "system-run-1",
+            },
+        )
+    )
+    usage_response = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_usage_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "system_run_id": "system-run-1",
+            },
+        )
+    )
+
+    assert create_response.success is True
+    assert create_response.data["system_run"]["system_run_id"] == "system-run-1"
+    assert execute_response.success is True
+    assert execute_response.data["system_run"]["status"] == "succeeded"
+    assert report_response.success is True
+    assert report_response.data["report"]["system_run_id"] == "system-run-1"
+    assert usage_response.success is True
+    assert usage_response.data["usage_summary"]["billable_minutes"] == 0.0
+
+
+def test_system_run_request_helpers_cover_candidate_shapes_and_errors() -> None:
+    skill = AgentBootstrapSkill(storage=_storage())
+
+    candidate_set = skill._system_candidate_set_from_request(  # noqa: SLF001
+        SkillRequest(
+            intent="agent_system_run_create",
+            user_id="owner-1",
+            context={
+                "candidate_set": {
+                    "system_id": "cgs-zetherion",
+                    "mode_id": "combined_system",
+                    "repos": [{"repo_id": "zetherion-ai", "git_ref": "HEAD"}],
+                }
+            },
+        )
+    )
+    indexed = skill._system_candidate_set_from_request(  # noqa: SLF001
+        SkillRequest(
+            intent="agent_system_run_create",
+            user_id="owner-1",
+            context={
+                "repo_1_git_ref": "feature/z",
+                "repo_2_commit_sha": "abc123",
+            },
+        )
+    )
+
+    assert candidate_set["repos"][0]["repo_id"] == "zetherion-ai"
+    assert indexed["repos"][0]["git_ref"] == "feature/z"
+    assert indexed["repos"][1]["commit_sha"] == "abc123"
+    assert skill._system_repo_root_for("zetherion-ai").exists()  # noqa: SLF001
+    assert skill._system_command_parts(["bash", "-lc", "echo ok"]) == [  # noqa: SLF001
+        "bash",
+        "-lc",
+        "echo ok",
+    ]
+    assert skill._system_command_parts("echo ok") == ["bash", "-lc", "echo ok"]  # noqa: SLF001
+
+    with pytest.raises(ValueError, match="Unsupported system validation repo_id"):
+        skill._system_repo_root_for("unknown-repo")  # noqa: SLF001
+    with pytest.raises(ValueError, match="missing a command"):
+        skill._system_command_parts([])  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_system_run_execution_helpers_cover_failures_and_blocked_states(tmp_path: Path) -> None:
+    storage = _storage()
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    async def _fake_run(command: list[str], *, cwd: Path, check: bool) -> dict[str, Any]:
+        if command[-1] == "exit 1":
+            return {"returncode": 1, "stdout": "", "stderr": "boom"}
+        return {"returncode": 0, "stdout": str(cwd), "stderr": ""}
+
+    skill._run_command = AsyncMock(side_effect=_fake_run)  # type: ignore[method-assign]
+
+    combined_shard = await skill._execute_system_run_shard(  # noqa: SLF001
+        {
+            "shard_id": "combined-contract",
+            "validation_mode": "combined_system",
+            "lane_family": "combined_system",
+            "metadata": {
+                "commands": [
+                    {
+                        "repo_id": "zetherion-ai",
+                        "cwd": ".",
+                        "command": ["bash", "-lc", "echo ok"],
+                    },
+                    {
+                        "repo_id": "catalyst-group-solutions",
+                        "cwd": ".",
+                        "command": ["bash", "-lc", "exit 1"],
+                    },
+                ]
+            },
+        }
+    )
+    repo_shard = await skill._execute_system_run_shard(  # noqa: SLF001
+        {
+            "shard_id": "repo-unit",
+            "lane_id": "repo-unit",
+            "lane_label": "Repo unit",
+            "validation_mode": "zetherion_alone",
+            "lane_family": "unit",
+            "repo_ids": ["zetherion-ai"],
+            "metadata": {"command": ["bash", "-lc", "echo ok"]},
+        }
+    )
+
+    assert combined_shard["status"] == "failed"
+    assert len(combined_shard["steps"]) == 2
+    assert repo_shard["status"] == "passed"
+
+    with pytest.raises(ValueError, match="has no commands"):
+        await skill._execute_system_run_shard(  # noqa: SLF001
+            {
+                "shard_id": "combined-empty",
+                "validation_mode": "combined_system",
+                "metadata": {"commands": []},
+            }
+        )
+    with pytest.raises(ValueError, match="missing repo_id"):
+        await skill._execute_system_run_shard(  # noqa: SLF001
+            {
+                "shard_id": "combined-missing-repo",
+                "validation_mode": "combined_system",
+                "metadata": {"commands": [{"command": ["bash", "-lc", "echo ok"]}]},
+            }
+        )
+    with pytest.raises(ValueError, match="missing repo_id"):
+        await skill._execute_system_run_shard(  # noqa: SLF001
+            {
+                "shard_id": "repo-missing",
+                "validation_mode": "zetherion_alone",
+                "metadata": {"command": ["bash", "-lc", "echo ok"]},
+            }
+        )
+
+    storage.get_system_run.side_effect = [
+        {
+            "system_run_id": "system-run-blocked",
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "status": "planned",
+            "candidate_set": {"repos": []},
+            "plan": {"shards": []},
+            "readiness": {"blocking": True, "summary": "Blocked"},
+            "coaching": [],
+            "execution": {},
+            "metadata": {},
+        },
+    ]
+    storage.update_system_run.return_value = {
+        "system_run_id": "system-run-blocked",
+        "status": "blocked",
+    }
+    storage.refresh_system_run_report.return_value = {"system_run_id": "system-run-blocked"}
+
+    missing_response = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_execute",
+            user_id="owner-1",
+            context={"owner_id": "owner-1"},
+        )
+    )
+    blocked_response = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_execute",
+            user_id="owner-1",
+            context={"owner_id": "owner-1", "system_run_id": "system-run-blocked"},
+        )
+    )
+
+    assert missing_response.success is False
+    assert "system_run_id is required" in (missing_response.error or "")
+    assert blocked_response.success is True
+    assert blocked_response.data["system_run"]["status"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_app_coaching_and_rollout_helpers_cover_degraded_and_recorded_only_paths() -> None:
+    storage = _storage()
+    storage.list_external_service_connectors.return_value = [
+        {
+            "connector_id": "github-main",
+            "service_kind": "github",
+            "has_secret": True,
+            "health_status": "healthy",
+            "active": True,
+        }
+    ]
+    storage.list_agent_gap_events.return_value = [
+        {
+            "gap_id": "gap-degraded-1",
+            "blocker": False,
+            "summary": "Connector notes are incomplete",
+        }
+    ]
+    storage.list_agent_coaching_feedback = AsyncMock(
+        return_value=[
+        {
+            "feedback_id": "feedback-1",
+            "scope": "app",
+            "summary": "Existing app coaching",
+            "blocking": False,
+        }
+        ]
+    )
+    skill = AgentBootstrapSkill(storage=storage)
+
+    app_profile = {
+        "app_id": "app-1",
+        "profile": {
+            "repo_ids": ["repo-a"],
+            "service_connector_map": {
+                "github": {
+                    "connector_id": "github-main",
+                    "read_access": ["repo:read"],
+                    "write_access": ["repo:write"],
+                }
+            },
+            "ai_runtime_policy": {
+                "allowed_providers": ["groq"],
+                "allowed_models": ["gpt-oss-120b"],
+            },
+            "ai_agent_profiles": [{"agent_profile_id": "planner"}],
+        },
+    }
+
+    readiness = await skill._build_rollout_readiness(  # noqa: SLF001
+        owner_id="owner-1",
+        principal_id="principal-1",
+        app_profile=app_profile,
+        limit=5,
+    )
+    coaching = await skill._build_app_coaching(  # noqa: SLF001
+        owner_id="owner-1",
+        principal_id="principal-1",
+        app_profile=app_profile,
+        limit=5,
+    )
+
+    assert readiness["status"] == "degraded"
+    assert readiness["blocker_count"] == 0
+    assert readiness["degraded_count"] == 1
+    assert coaching == [
+        {
+            "feedback_id": "feedback-1",
+            "scope": "app",
+            "summary": "Existing app coaching",
+            "blocking": False,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_system_run_handlers_require_system_run_id_for_retrieval_intents() -> None:
+    skill = AgentBootstrapSkill(storage=_storage())
+
+    intents = [
+        "agent_system_run_get",
+        "agent_system_run_execute",
+        "agent_system_run_report_get",
+        "agent_system_run_graph_get",
+        "agent_system_run_correlation_context_get",
+        "agent_system_run_diagnostics_get",
+        "agent_system_run_artifacts_get",
+        "agent_system_run_evidence_get",
+        "agent_system_run_coaching_get",
+        "agent_system_run_readiness_get",
+        "agent_system_run_usage_get",
+    ]
+
+    for intent in intents:
+        response = await skill.handle(
+            SkillRequest(
+                intent=intent,
+                user_id="owner-1",
+                context={"owner_id": "owner-1"},
+            )
+        )
+        assert response.success is False
+        assert response.error == "system_run_id is required"
+
+
+@pytest.mark.asyncio
+async def test_system_run_handlers_cover_listing_not_found_and_skipped_batches() -> None:
+    storage = _storage()
+    storage.list_system_runs.return_value = [{"system_run_id": "system-run-1"}]
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    listed = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_list",
+            user_id="owner-1",
+            context={"owner_id": "owner-1"},
+        )
+    )
+    assert listed.success is True
+    storage.list_system_runs.assert_awaited_with(
+        "owner-1",
+        system_id=None,
+        limit=25,
+    )
+
+    storage.get_system_run.side_effect = [None, None]
+    missing_get = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_get",
+            user_id="owner-1",
+            context={"owner_id": "owner-1", "system_run_id": "missing-run"},
+        )
+    )
+    missing_execute = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_execute",
+            user_id="owner-1",
+            context={"owner_id": "owner-1", "system_run_id": "missing-run"},
+        )
+    )
+
+    assert missing_get.success is False
+    assert "not found" in str(missing_get.error)
+    assert missing_execute.success is False
+    assert "not found" in str(missing_execute.error)
+
+    async def _fake_run(command: list[str], *, cwd: Path, check: bool) -> dict[str, Any]:
+        if command[-1] == "exit 1":
+            return {"returncode": 1, "stdout": "", "stderr": "boom"}
+        return {"returncode": 0, "stdout": str(cwd), "stderr": ""}
+
+    skill._run_command = AsyncMock(side_effect=_fake_run)  # type: ignore[method-assign]
+    storage.get_system_run.side_effect = [
+        {
+            "system_run_id": "system-run-2",
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "status": "planned",
+            "candidate_set": {
+                "repos": [
+                    {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                    {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+                ]
+            },
+            "plan": {
+                "shards": [
+                    {
+                        "shard_id": "combined-a",
+                        "lane_family": "combined_system",
+                        "validation_mode": "combined_system",
+                        "blocking": True,
+                        "depends_on": [],
+                        "repo_ids": ["zetherion-ai"],
+                        "metadata": {
+                            "commands": [
+                                {
+                                    "repo_id": "zetherion-ai",
+                                    "cwd": ".",
+                                    "command": ["bash", "-lc", "exit 1"],
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "shard_id": "combined-b",
+                        "lane_family": "combined_system",
+                        "validation_mode": "combined_system",
+                        "blocking": True,
+                        "depends_on": ["combined-a"],
+                        "repo_ids": ["catalyst-group-solutions"],
+                        "required_paths": ["combined_contract"],
+                        "expected_artifacts": ["stdout"],
+                        "metadata": {
+                            "commands": [
+                                {
+                                    "repo_id": "catalyst-group-solutions",
+                                    "cwd": ".",
+                                    "command": ["bash", "-lc", "echo ok"],
+                                }
+                            ]
+                        },
+                    },
+                ]
+            },
+            "readiness": {"blocking": False},
+            "coaching": [],
+            "execution": {},
+            "metadata": {},
+        }
+    ]
+    storage.update_system_run.return_value = {
+        "system_run_id": "system-run-2",
+        "status": "failed",
+    }
+    storage.refresh_system_run_report.return_value = {"system_run_id": "system-run-2"}
+
+    executed = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_execute",
+            user_id="owner-1",
+            context={"owner_id": "owner-1", "system_run_id": "system-run-2"},
+        )
+    )
+
+    assert executed.success is True
+    assert executed.data["system_run"]["status"] == "failed"
+    assert executed.data["report"]["system_run_id"] == "system-run-2"
+    execution_update = storage.update_system_run.await_args_list[-1].kwargs["execution"]
+    assert execution_update["batches"][0]["status"] == "failed"
+    assert execution_update["batches"][1]["status"] == "skipped"
+    assert execution_update["batches"][1]["shards"][0]["skip_reason"] == "previous batch failed"
+
+
+def test_extract_operation_refs_from_event_covers_stripe_payloads() -> None:
+    skill = AgentBootstrapSkill(storage=_storage())
+
+    refs = skill._extract_operation_refs_from_event(  # noqa: SLF001
+        "stripe",
+        {
+            "id": "evt_123",
+            "type": "customer.subscription.updated",
+            "data": {
+                "object": {
+                    "customer": "cus_123",
+                    "subscription": "sub_123",
+                }
+            },
+        },
+    )
+
+    assert refs == {
+        "stripe_event_id": "evt_123",
+        "customer_id": "cus_123",
+        "subscription_id": "sub_123",
+    }

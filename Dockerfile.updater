@@ -27,6 +27,7 @@ COPY updater_sidecar/ /app/updater_sidecar/
 # hadolint ignore=DL3013
 RUN pip3 install --no-cache-dir --break-system-packages \
     aiohttp \
+    cryptography \
     httpx
 
 # Health check via curl to the sidecar's own /health endpoint

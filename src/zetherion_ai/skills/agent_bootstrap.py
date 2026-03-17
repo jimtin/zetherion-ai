@@ -38,6 +38,7 @@ from zetherion_ai.owner_ci.system_validation import (
     build_system_rollout_readiness,
     build_system_run_plan,
     build_validation_matrix,
+    resolve_system_run_batches,
 )
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
 from zetherion_ai.skills.ci_controller import CiControllerSkill
@@ -827,7 +828,20 @@ class AgentBootstrapSkill(Skill):
                 "agent_app_integration_gaps_get",
                 "agent_app_rollout_readiness_get",
                 "agent_system_validation_matrix_get",
+                "agent_system_run_create",
+                "agent_system_run_list",
+                "agent_system_run_get",
+                "agent_system_run_execute",
                 "agent_system_run_plan_get",
+                "agent_system_run_report_get",
+                "agent_system_run_graph_get",
+                "agent_system_run_correlation_context_get",
+                "agent_system_run_diagnostics_get",
+                "agent_system_run_artifacts_get",
+                "agent_system_run_evidence_get",
+                "agent_system_run_coaching_get",
+                "agent_system_run_readiness_get",
+                "agent_system_run_usage_get",
                 "agent_system_coaching_get",
                 "agent_system_rollout_readiness_get",
                 "agent_app_services_list",
@@ -907,7 +921,22 @@ class AgentBootstrapSkill(Skill):
             "agent_app_integration_gaps_get": self._handle_app_integration_gaps_get,
             "agent_app_rollout_readiness_get": self._handle_app_rollout_readiness_get,
             "agent_system_validation_matrix_get": self._handle_system_validation_matrix_get,
+            "agent_system_run_create": self._handle_system_run_create,
+            "agent_system_run_list": self._handle_system_run_list,
+            "agent_system_run_get": self._handle_system_run_get,
+            "agent_system_run_execute": self._handle_system_run_execute,
             "agent_system_run_plan_get": self._handle_system_run_plan_get,
+            "agent_system_run_report_get": self._handle_system_run_report_get,
+            "agent_system_run_graph_get": self._handle_system_run_graph_get,
+            "agent_system_run_correlation_context_get": (
+                self._handle_system_run_correlation_context_get
+            ),
+            "agent_system_run_diagnostics_get": self._handle_system_run_diagnostics_get,
+            "agent_system_run_artifacts_get": self._handle_system_run_artifacts_get,
+            "agent_system_run_evidence_get": self._handle_system_run_evidence_get,
+            "agent_system_run_coaching_get": self._handle_system_run_coaching_get,
+            "agent_system_run_readiness_get": self._handle_system_run_readiness_get,
+            "agent_system_run_usage_get": self._handle_system_run_usage_get,
             "agent_system_coaching_get": self._handle_system_coaching_get,
             "agent_system_rollout_readiness_get": self._handle_system_rollout_readiness_get,
             "agent_app_services_list": self._handle_app_services_list,
@@ -1945,6 +1974,320 @@ class AgentBootstrapSkill(Skill):
             data={"validation_matrix": matrix},
         )
 
+    def _system_repo_root_for(self, repo_id: str) -> Path:
+        if repo_id == "zetherion-ai":
+            return _REPO_ROOT
+        if repo_id == "catalyst-group-solutions":
+            return _CGS_REPO_ROOT
+        raise ValueError(f"Unsupported system validation repo_id `{repo_id}`")
+
+    def _system_command_parts(self, raw_command: Any) -> list[str]:
+        if isinstance(raw_command, list):
+            parts = [str(part).strip() for part in raw_command if str(part).strip()]
+            if parts:
+                return parts
+        command_text = str(raw_command or "").strip()
+        if not command_text:
+            raise ValueError("System validation shard is missing a command")
+        return ["bash", "-lc", command_text]
+
+    async def _execute_system_run_step(
+        self,
+        *,
+        repo_id: str,
+        step_id: str,
+        label: str,
+        cwd: Path,
+        command: list[str],
+    ) -> dict[str, Any]:
+        started_at = datetime.now(UTC).isoformat()
+        result = await self._run_command(command, cwd=cwd, check=False)
+        completed_at = datetime.now(UTC).isoformat()
+        return {
+            "step_id": step_id,
+            "label": label,
+            "repo_id": repo_id,
+            "cwd": str(cwd),
+            "command": command,
+            "status": "passed" if int(result.get("returncode") or 0) == 0 else "failed",
+            "return_code": int(result.get("returncode") or 0),
+            "stdout": str(result.get("stdout") or "")[:4000],
+            "stderr": str(result.get("stderr") or "")[:4000],
+            "started_at": started_at,
+            "completed_at": completed_at,
+        }
+
+    async def _execute_system_run_shard(self, shard: dict[str, Any]) -> dict[str, Any]:
+        started_at = datetime.now(UTC).isoformat()
+        metadata = dict(shard.get("metadata") or {})
+        step_results: list[dict[str, Any]] = []
+        shard_id = str(shard.get("shard_id") or "").strip()
+        validation_mode = str(shard.get("validation_mode") or "combined_system").strip()
+        status = "passed"
+
+        if validation_mode == "combined_system":
+            commands = [
+                dict(entry)
+                for entry in list(metadata.get("commands") or [])
+                if isinstance(entry, dict)
+            ]
+            if not commands:
+                raise ValueError(f"Combined-system shard `{shard_id}` has no commands")
+            for index, raw_step in enumerate(commands, start=1):
+                repo_id = str(raw_step.get("repo_id") or "").strip()
+                if not repo_id:
+                    raise ValueError(
+                        f"Combined-system shard `{shard_id}` is missing repo_id for step {index}"
+                    )
+                repo_root = self._system_repo_root_for(repo_id)
+                cwd_hint = str(raw_step.get("cwd") or "").strip()
+                cwd = (repo_root / cwd_hint).resolve() if cwd_hint else repo_root.resolve()
+                command = self._system_command_parts(raw_step.get("command"))
+                step_result = await self._execute_system_run_step(
+                    repo_id=repo_id,
+                    step_id=f"{repo_id}-step-{index}",
+                    label=f"{repo_id} step {index}",
+                    cwd=cwd,
+                    command=command,
+                )
+                step_results.append(step_result)
+                if step_result["status"] != "passed":
+                    status = "failed"
+                    break
+        else:
+            candidate_repo = dict(metadata.get("candidate_repo_ref") or {})
+            repo_id = str(
+                candidate_repo.get("repo_id")
+                or (shard.get("repo_ids") or [None])[0]
+                or ""
+            ).strip()
+            if not repo_id:
+                raise ValueError(f"Repo-local shard `{shard_id}` is missing repo_id")
+            repo_root = self._system_repo_root_for(repo_id)
+            command = self._system_command_parts(metadata.get("command"))
+            step_result = await self._execute_system_run_step(
+                repo_id=repo_id,
+                step_id=f"{repo_id}-{str(shard.get('lane_id') or shard_id).strip() or shard_id}",
+                label=str(shard.get("lane_label") or shard.get("purpose") or shard_id).strip()
+                or shard_id,
+                cwd=repo_root.resolve(),
+                command=command,
+            )
+            step_results.append(step_result)
+            if step_result["status"] != "passed":
+                status = "failed"
+
+        return {
+            "shard_id": shard_id,
+            "lane_id": str(shard.get("lane_id") or "").strip() or None,
+            "lane_label": str(shard.get("lane_label") or "").strip() or None,
+            "lane_family": str(shard.get("lane_family") or "combined_system"),
+            "validation_mode": validation_mode,
+            "purpose": str(shard.get("purpose") or "").strip(),
+            "blocking": bool(shard.get("blocking", True)),
+            "repo_ids": list(shard.get("repo_ids") or []),
+            "depends_on": list(shard.get("depends_on") or []),
+            "expected_artifacts": list(shard.get("expected_artifacts") or []),
+            "required_paths": list(shard.get("required_paths") or []),
+            "status": status,
+            "started_at": started_at,
+            "completed_at": datetime.now(UTC).isoformat(),
+            "steps": step_results,
+        }
+
+    async def _handle_system_run_create(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        candidate_set = self._system_candidate_set_from_request(request)
+        plan = build_system_run_plan(candidate_set=candidate_set)
+        readiness = build_system_rollout_readiness(candidate_set=candidate_set)
+        coaching = build_system_coaching(
+            candidate_set=candidate_set,
+            principal_id=principal_id,
+        )
+        system_run = await self._storage.create_system_run(
+            owner_id,
+            candidate_set=candidate_set,
+            plan=plan,
+            readiness=readiness,
+            coaching=coaching,
+            metadata={
+                "principal_id": principal_id,
+                "created_from": "agent_bootstrap",
+            },
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Created system run `{system_run['system_run_id']}`.",
+            data={"system_run": system_run},
+        )
+
+    async def _handle_system_run_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_runs = await self._storage.list_system_runs(
+            owner_id,
+            system_id=str(request.context.get("system_id") or "").strip() or None,
+            limit=_normalize_limit(request.context.get("limit"), default=25, maximum=100),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(system_runs)} system runs.",
+            data={"system_runs": system_runs},
+        )
+
+    async def _handle_system_run_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        system_run = await self._storage.get_system_run(owner_id, system_run_id)
+        if system_run is None:
+            return SkillResponse.error_response(
+                request.id,
+                f"System run `{system_run_id}` not found",
+            )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded system run `{system_run_id}`.",
+            data={"system_run": system_run},
+        )
+
+    async def _handle_system_run_execute(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        system_run = await self._storage.get_system_run(owner_id, system_run_id)
+        if system_run is None:
+            return SkillResponse.error_response(
+                request.id,
+                f"System run `{system_run_id}` not found",
+            )
+        readiness = dict(system_run.get("readiness") or {})
+        if bool(readiness.get("blocking")):
+            updated = await self._storage.update_system_run(
+                owner_id,
+                system_run_id,
+                status="blocked",
+                error={
+                    "code": "system_run_readiness_blocked",
+                    "message": str(readiness.get("summary") or "System run is blocked"),
+                },
+                started_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
+            )
+            await self._storage.refresh_system_run_report(owner_id, system_run_id)
+            return SkillResponse(
+                request_id=request.id,
+                message=f"System run `{system_run_id}` is blocked.",
+                data={
+                    "system_run": updated,
+                    "readiness": readiness,
+                },
+            )
+
+        plan = dict(system_run.get("plan") or {})
+        raw_shards = [
+            dict(shard)
+            for shard in list(plan.get("shards") or [])
+            if isinstance(shard, dict)
+        ]
+        batches = resolve_system_run_batches(raw_shards)
+        await self._storage.update_system_run(
+            owner_id,
+            system_run_id,
+            status="running",
+            started_at=datetime.now(UTC),
+        )
+        execution_summary: dict[str, Any] = {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "all_passed": True,
+            "batches": [],
+            "shards": [],
+        }
+        failed = False
+        for batch_index, batch in enumerate(batches):
+            batch_ids = [str(shard.get("shard_id") or "").strip() for shard in batch]
+            batch_result: dict[str, Any] = {
+                "batch_index": batch_index,
+                "shard_ids": batch_ids,
+                "status": "passed",
+                "shards": [],
+            }
+            if failed:
+                skipped = [
+                    {
+                        "shard_id": str(shard.get("shard_id") or "").strip(),
+                        "lane_id": str(shard.get("lane_id") or "").strip() or None,
+                        "lane_label": str(shard.get("lane_label") or "").strip() or None,
+                        "lane_family": str(shard.get("lane_family") or "combined_system"),
+                        "validation_mode": str(
+                            shard.get("validation_mode") or "combined_system"
+                        ),
+                        "purpose": str(shard.get("purpose") or "").strip(),
+                        "blocking": bool(shard.get("blocking", True)),
+                        "repo_ids": list(shard.get("repo_ids") or []),
+                        "depends_on": list(shard.get("depends_on") or []),
+                        "expected_artifacts": list(shard.get("expected_artifacts") or []),
+                        "required_paths": list(shard.get("required_paths") or []),
+                        "status": "skipped",
+                        "skip_reason": "previous batch failed",
+                        "steps": [],
+                    }
+                    for shard in batch
+                ]
+                batch_result["status"] = "skipped"
+                batch_result["shards"] = skipped
+                execution_summary["batches"].append(batch_result)
+                execution_summary["shards"].extend(skipped)
+                execution_summary["all_passed"] = False
+                continue
+
+            results = await asyncio.gather(
+                *(self._execute_system_run_shard(shard) for shard in batch)
+            )
+            batch_result["shards"] = results
+            if any(result["status"] != "passed" for result in results):
+                batch_result["status"] = "failed"
+                execution_summary["all_passed"] = False
+                failed = True
+            execution_summary["batches"].append(batch_result)
+            execution_summary["shards"].extend(results)
+
+        status = "succeeded" if execution_summary["all_passed"] else "failed"
+        updated = await self._storage.update_system_run(
+            owner_id,
+            system_run_id,
+            status=status,
+            execution=execution_summary,
+            completed_at=datetime.now(UTC),
+        )
+        report = await self._storage.refresh_system_run_report(owner_id, system_run_id)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Executed system run `{system_run_id}` with status `{status}`.",
+            data={
+                "system_run": updated,
+                "report": report,
+            },
+        )
+
     async def _handle_system_run_plan_get(
         self,
         request: SkillRequest,
@@ -1957,6 +2300,169 @@ class AgentBootstrapSkill(Skill):
             request_id=request.id,
             message="Loaded system run plan.",
             data={"system_run_plan": plan},
+        )
+
+    async def _handle_system_run_report_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        report = await self._storage.get_system_run_report(
+            owner_id,
+            system_run_id,
+            node_id=str(request.context.get("node_id") or "").strip() or None,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded system run report for `{system_run_id}`.",
+            data={"report": report},
+        )
+
+    async def _handle_system_run_graph_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        run_graph = await self._storage.get_system_run_graph(owner_id, system_run_id)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded system run graph for `{system_run_id}`.",
+            data={"run_graph": run_graph},
+        )
+
+    async def _handle_system_run_correlation_context_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        correlation_context = await self._storage.get_system_run_correlation_context(
+            owner_id,
+            system_run_id,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded system run correlation context for `{system_run_id}`.",
+            data={"correlation_context": correlation_context},
+        )
+
+    async def _handle_system_run_diagnostics_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        diagnostics = await self._storage.get_system_run_diagnostics(
+            owner_id,
+            system_run_id,
+            node_id=str(request.context.get("node_id") or "").strip() or None,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded system diagnostics for `{system_run_id}`.",
+            data={"diagnostics": diagnostics},
+        )
+
+    async def _handle_system_run_artifacts_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        artifacts = await self._storage.get_system_run_artifacts(
+            owner_id,
+            system_run_id,
+            node_id=str(request.context.get("node_id") or "").strip() or None,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(artifacts)} system run artifacts.",
+            data={"artifacts": artifacts},
+        )
+
+    async def _handle_system_run_evidence_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        evidence = await self._storage.get_system_run_evidence(
+            owner_id,
+            system_run_id,
+            node_id=str(request.context.get("node_id") or "").strip() or None,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(evidence)} system run evidence references.",
+            data={"evidence": evidence},
+        )
+
+    async def _handle_system_run_coaching_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        coaching = await self._storage.get_system_run_coaching(owner_id, system_run_id)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(coaching)} coaching item(s) for `{system_run_id}`.",
+            data={"coaching": coaching},
+        )
+
+    async def _handle_system_run_readiness_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        readiness = await self._storage.get_system_run_readiness(owner_id, system_run_id)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded system run readiness for `{system_run_id}`.",
+            data={"readiness": readiness},
+        )
+
+    async def _handle_system_run_usage_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        system_run_id = str(request.context.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "system_run_id is required")
+        usage_summary = await self._storage.get_system_run_usage(owner_id, system_run_id)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded system run usage for `{system_run_id}`.",
+            data={"usage_summary": usage_summary},
         )
 
     async def _handle_system_coaching_get(

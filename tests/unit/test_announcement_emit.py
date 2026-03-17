@@ -235,7 +235,10 @@ def test_failed_emit_is_queued_non_blocking(announcement_module, monkeypatch, ca
     assert payload["status"] == "queued_non_blocking"
     queued_path = Path(payload["queued_path"])
     assert queued_path.exists()
-    queued_payload = json.loads(queued_path.read_text(encoding="utf-8"))
+    queued_text = queued_path.read_text(encoding="utf-8")
+    assert "http_503:unavailable" not in queued_text
+    assert "abc1234" not in queued_text
+    queued_payload = announcement_module._decode_outbox_payload(queued_text)
     assert queued_payload["last_error"] == "http_503:unavailable"
 
 
@@ -309,6 +312,64 @@ def test_flush_outbox_replays_queued_events(announcement_module, monkeypatch, ca
     assert second_payload["flushed"] == 1
     assert second_payload["pending"] == 0
     assert list(outbox_dir.glob("*.json")) == []
+
+
+def test_flush_outbox_supports_legacy_plaintext_entries(
+    announcement_module, monkeypatch, capsys, tmp_path
+):
+    monkeypatch.setattr(
+        announcement_module,
+        "_load_promotions_secrets",
+        lambda _path: (
+            {
+                "ANNOUNCEMENT_API_SECRET": "api-secret",
+                "ANNOUNCEMENT_EMIT_ENABLED": "true",
+                "ANNOUNCEMENT_TARGET_USER_ID": "505",
+            },
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        announcement_module,
+        "_attempt_emit",
+        lambda **kwargs: (True, "accepted"),
+    )
+
+    outbox_dir = tmp_path / "outbox"
+    outbox_dir.mkdir(parents=True, exist_ok=True)
+    (outbox_dir / "legacy.json").write_text(
+        json.dumps(
+            {
+                "request_payload": {"target_user_id": 505, "body": "legacy"},
+                "api_url": "http://127.0.0.1:8080/announcements/events",
+                "idempotency_key": "legacy-key",
+                "event": "deploy",
+                "sha": "abc1234",
+                "status": "failure",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    code, payload = _run_main(
+        announcement_module,
+        monkeypatch,
+        capsys,
+        [
+            "--flush-outbox",
+            "--secrets-path",
+            str(tmp_path / "unused.bin"),
+            "--state-path",
+            str(tmp_path / "state.json"),
+            "--outbox-dir",
+            str(outbox_dir),
+        ],
+    )
+
+    assert code == 0
+    assert payload["status"] == "flush_completed"
+    assert payload["flushed"] == 1
+    assert payload["pending"] == 0
 
 
 def test_discord_canary_failure_maps_to_health_category(

@@ -57,6 +57,26 @@ SESSION_TOKEN_PREFIX = "zt_sess_"  # nosec B105
 _DEFAULT_EXPIRY_SECONDS = 86400  # 24 hours
 
 
+def _reject_unsupported_crit_header(token: str) -> None:
+    if token.count(".") != 2:
+        return
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.InvalidTokenError as exc:
+        if "Unsupported critical extension" in str(exc):
+            raise jwt.InvalidTokenError("Unsupported JWT critical header extension") from exc
+        raise
+    crit = header.get("crit")
+    if not crit:
+        return
+    crit_items = crit if isinstance(crit, list) else [crit]
+    normalized = [str(item).strip() for item in crit_items if str(item).strip()]
+    if normalized:
+        raise jwt.InvalidTokenError(
+            "Unsupported JWT critical header extension(s): " + ", ".join(normalized)
+        )
+
+
 def create_session_token(
     tenant_id: str,
     session_id: str,
@@ -104,5 +124,6 @@ def validate_session_token(token: str, secret: str) -> dict[str, Any]:
     """
     if token.startswith(SESSION_TOKEN_PREFIX):
         token = token[len(SESSION_TOKEN_PREFIX) :]
+    _reject_unsupported_crit_header(token)
     result: dict[str, Any] = jwt.decode(token, secret, algorithms=["HS256"])
     return result

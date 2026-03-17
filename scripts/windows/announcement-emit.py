@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import ctypes
 import ctypes.wintypes
 import datetime as dt
@@ -15,12 +16,21 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
 DEFAULT_STATE_PATH = Path(r"C:\ZetherionAI\data\announcements\notifications-state.json")
 DEFAULT_SECRETS_PATH = Path(r"C:\ZetherionAI\data\secrets\promotions.bin")
 DEFAULT_OUTBOX_DIR = Path(r"C:\ZetherionAI\data\announcements\outbox")
 DEFAULT_API_URL = "http://127.0.0.1:8080/announcements/events"
 
 SUCCESSFUL_RECEIPT_STATUSES = {"accepted", "deduped", "scheduled", "deferred"}
+_OUTBOX_FORMAT = "zetherion_announcement_outbox_v1"
+_OUTBOX_PBKDF2_ITERATIONS = 600_000
+_OUTBOX_SALT_SIZE = 32
+_OUTBOX_NONCE_SIZE = 12
+_OUTBOX_KEY_SIZE = 32
 
 
 def _now_iso() -> str:
@@ -61,6 +71,37 @@ class _DataBlob(ctypes.Structure):
     ]
 
 
+def _dpapi_protect(plain: bytes) -> bytes:
+    if os.name != "nt":
+        raise RuntimeError("DPAPI encode is only available on Windows.")
+
+    crypt32 = ctypes.windll.crypt32
+    kernel32 = ctypes.windll.kernel32
+    in_buffer = ctypes.create_string_buffer(plain, len(plain))
+    in_blob = _DataBlob(
+        cbData=len(plain),
+        pbData=ctypes.cast(in_buffer, ctypes.POINTER(ctypes.c_byte)),
+    )
+    out_blob = _DataBlob()
+
+    ok = crypt32.CryptProtectData(
+        ctypes.byref(in_blob),
+        None,
+        None,
+        None,
+        None,
+        0,
+        ctypes.byref(out_blob),
+    )
+    if not ok:
+        raise OSError(ctypes.get_last_error(), "CryptProtectData failed")
+
+    try:
+        return ctypes.string_at(out_blob.pbData, out_blob.cbData)
+    finally:
+        kernel32.LocalFree(out_blob.pbData)
+
+
 def _dpapi_unprotect(cipher: bytes) -> bytes:
     if os.name != "nt":
         raise RuntimeError("DPAPI decode is only available on Windows.")
@@ -90,6 +131,87 @@ def _dpapi_unprotect(cipher: bytes) -> bytes:
         return ctypes.string_at(out_blob.pbData, out_blob.cbData)
     finally:
         kernel32.LocalFree(out_blob.pbData)
+
+
+def _derive_outbox_key(*, passphrase: str, salt: bytes) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=_OUTBOX_KEY_SIZE,
+        salt=salt,
+        iterations=_OUTBOX_PBKDF2_ITERATIONS,
+    )
+    return kdf.derive(passphrase.encode("utf-8"))
+
+
+def _encode_outbox_payload(payload: dict[str, Any]) -> str:
+    plain = json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+    if os.name == "nt":
+        envelope: dict[str, Any] = {
+            "format": _OUTBOX_FORMAT,
+            "encryption": "dpapi",
+            "ciphertext": base64.b64encode(_dpapi_protect(plain)).decode("ascii"),
+        }
+    else:
+        passphrase = os.environ.get("ENCRYPTION_PASSPHRASE", "").strip()
+        if not passphrase:
+            raise RuntimeError(
+                "ENCRYPTION_PASSPHRASE is required to encrypt announcement outbox entries."
+            )
+        salt = os.urandom(_OUTBOX_SALT_SIZE)
+        nonce = os.urandom(_OUTBOX_NONCE_SIZE)
+        ciphertext = AESGCM(_derive_outbox_key(passphrase=passphrase, salt=salt)).encrypt(
+            nonce,
+            plain,
+            None,
+        )
+        envelope = {
+            "format": _OUTBOX_FORMAT,
+            "encryption": "aesgcm",
+            "iterations": _OUTBOX_PBKDF2_ITERATIONS,
+            "salt": base64.b64encode(salt).decode("ascii"),
+            "ciphertext": base64.b64encode(nonce + ciphertext).decode("ascii"),
+        }
+    return json.dumps(envelope, indent=2, ensure_ascii=True) + "\n"
+
+
+def _decode_outbox_payload(text: str) -> dict[str, Any]:
+    payload = json.loads(text)
+    if not isinstance(payload, dict):
+        raise ValueError("Outbox payload must decode to an object.")
+    if payload.get("format") != _OUTBOX_FORMAT:
+        return payload
+
+    encryption = str(payload.get("encryption", "")).strip().lower()
+    ciphertext_encoded = payload.get("ciphertext")
+    if not isinstance(ciphertext_encoded, str):
+        raise ValueError("Encrypted outbox payload is missing ciphertext.")
+    cipher = base64.b64decode(ciphertext_encoded.encode("ascii"))
+    if encryption == "dpapi":
+        plain = _dpapi_unprotect(cipher)
+    elif encryption == "aesgcm":
+        passphrase = os.environ.get("ENCRYPTION_PASSPHRASE", "").strip()
+        if not passphrase:
+            raise RuntimeError(
+                "ENCRYPTION_PASSPHRASE is required to read encrypted announcement outbox entries."
+            )
+        salt_encoded = payload.get("salt")
+        if not isinstance(salt_encoded, str):
+            raise ValueError("Encrypted outbox payload is missing salt.")
+        salt = base64.b64decode(salt_encoded.encode("ascii"))
+        nonce = cipher[:_OUTBOX_NONCE_SIZE]
+        ciphertext = cipher[_OUTBOX_NONCE_SIZE:]
+        plain = AESGCM(_derive_outbox_key(passphrase=passphrase, salt=salt)).decrypt(
+            nonce,
+            ciphertext,
+            None,
+        )
+    else:
+        raise ValueError(f"Unsupported outbox encryption mode: {encryption or 'missing'}")
+
+    decoded = json.loads(plain.decode("utf-8"))
+    if not isinstance(decoded, dict):
+        raise ValueError("Decrypted outbox payload must decode to an object.")
+    return decoded
 
 
 def _load_promotions_secrets(path: Path) -> tuple[dict[str, Any], str | None]:
@@ -298,10 +420,7 @@ def _queue_outbox_event(
     while candidate.exists():
         candidate = outbox_dir / f"{base_name}-{suffix}.json"
         suffix += 1
-    candidate.write_text(
-        json.dumps(queue_payload, indent=2, ensure_ascii=True) + "\n",
-        encoding="utf-8",
-    )
+    candidate.write_text(_encode_outbox_payload(queue_payload), encoding="utf-8")
     return candidate
 
 
@@ -367,8 +486,8 @@ def _flush_outbox(
     pending = 0
     for path in sorted(outbox_dir.glob("*.json")):
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            payload = _decode_outbox_payload(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError, RuntimeError):
             # Invalid queue entries are dropped to avoid infinite replay loops.
             path.unlink(missing_ok=True)
             continue

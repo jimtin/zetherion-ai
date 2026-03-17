@@ -15,6 +15,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
+from updater_sidecar.auth import get_or_create_secret
 from zetherion_ai.admin.tenant_admin_manager import AdminActorContext
 from zetherion_ai.announcements.policy import AnnouncementPolicyDecision
 from zetherion_ai.announcements.storage import (
@@ -5495,6 +5496,21 @@ class TestServerHelperFunctions:
             clear=False,
         ):
             assert _resolve_updater_secret() == "file-secret"
+
+    def test_resolve_updater_secret_reads_encrypted_file(self, tmp_path):
+        """Encrypted shared secret files should be readable by the skills service."""
+        secret_path = tmp_path / ".updater-secret"
+        with patch.dict(
+            os.environ,
+            {
+                "UPDATER_SECRET": "",
+                "UPDATER_SECRET_PATH": str(secret_path),
+                "ENCRYPTION_PASSPHRASE": "test-encryption-passphrase-32",
+            },
+            clear=False,
+        ):
+            secret = get_or_create_secret(str(secret_path))
+            assert _resolve_updater_secret() == secret
 
     def test_resolve_updater_secret_missing_file_returns_empty(self, tmp_path):
         """Missing fallback secret file should return an empty secret."""

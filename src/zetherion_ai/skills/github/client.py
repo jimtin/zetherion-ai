@@ -524,6 +524,42 @@ class GitHubClient:
             return data
         raise GitHubAPIError("Unexpected response format")
 
+    async def list_dependabot_alerts(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        state: str = "open",
+        per_page: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List Dependabot alerts for a repository."""
+        data = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/dependabot/alerts",
+            params={"state": state, "per_page": per_page},
+        )
+        if isinstance(data, list):
+            return [dict(row) for row in data if isinstance(row, dict)]
+        return []
+
+    async def list_code_scanning_alerts(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        state: str = "open",
+        per_page: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List code scanning alerts for a repository."""
+        data = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/code-scanning/alerts",
+            params={"state": state, "per_page": per_page},
+        )
+        if isinstance(data, list):
+            return [dict(row) for row in data if isinstance(row, dict)]
+        return []
+
     async def update_branch_protection(
         self,
         owner: str,

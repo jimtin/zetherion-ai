@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from updater_sidecar.auth import get_or_create_secret, validate_secret
 
 # ---------------------------------------------------------------------------
@@ -12,7 +16,8 @@ from updater_sidecar.auth import get_or_create_secret, validate_secret
 class TestGetOrCreateSecret:
     """Tests for get_or_create_secret()."""
 
-    def test_creates_secret_when_file_missing(self, tmp_path) -> None:
+    def test_creates_secret_when_file_missing(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
         secret_file = tmp_path / "subdir" / ".updater-secret"
         secret = get_or_create_secret(str(secret_file))
 
@@ -22,16 +27,22 @@ class TestGetOrCreateSecret:
 
         # File should now exist
         assert secret_file.exists()
-        assert secret_file.read_text() == secret
+        stored = json.loads(secret_file.read_text())
+        assert stored["format"] == "zetherion_updater_secret_v1"
+        assert stored["ciphertext"] != secret
 
-    def test_reads_existing_secret(self, tmp_path) -> None:
+    def test_reads_existing_secret(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
         secret_file = tmp_path / ".updater-secret"
         secret_file.write_text("my-existing-secret-token")
 
         secret = get_or_create_secret(str(secret_file))
         assert secret == "my-existing-secret-token"
+        stored = json.loads(secret_file.read_text())
+        assert stored["format"] == "zetherion_updater_secret_v1"
 
-    def test_generates_new_if_file_empty(self, tmp_path) -> None:
+    def test_generates_new_if_file_empty(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
         secret_file = tmp_path / ".updater-secret"
         secret_file.write_text("")
 
@@ -39,10 +50,11 @@ class TestGetOrCreateSecret:
 
         # Should generate a new secret (not empty)
         assert len(secret) > 0
-        # File should be overwritten with the new secret
-        assert secret_file.read_text() == secret
+        stored = json.loads(secret_file.read_text())
+        assert stored["format"] == "zetherion_updater_secret_v1"
 
-    def test_generates_new_if_file_whitespace_only(self, tmp_path) -> None:
+    def test_generates_new_if_file_whitespace_only(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
         secret_file = tmp_path / ".updater-secret"
         secret_file.write_text("   \n  \t  ")
 
@@ -51,21 +63,24 @@ class TestGetOrCreateSecret:
         # Whitespace-only file should be treated as empty
         assert len(secret) > 0
 
-    def test_creates_parent_directories(self, tmp_path) -> None:
+    def test_creates_parent_directories(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
         secret_file = tmp_path / "a" / "b" / "c" / ".updater-secret"
         secret = get_or_create_secret(str(secret_file))
 
         assert secret_file.exists()
         assert len(secret) > 0
 
-    def test_strips_whitespace_from_existing(self, tmp_path) -> None:
+    def test_strips_whitespace_from_existing(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
         secret_file = tmp_path / ".updater-secret"
         secret_file.write_text("  my-secret-with-spaces  \n")
 
         secret = get_or_create_secret(str(secret_file))
         assert secret == "my-secret-with-spaces"
 
-    def test_idempotent_on_existing_secret(self, tmp_path) -> None:
+    def test_idempotent_on_existing_secret(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
         secret_file = tmp_path / ".updater-secret"
         secret_file.write_text("stable-secret")
 
@@ -73,7 +88,8 @@ class TestGetOrCreateSecret:
         s2 = get_or_create_secret(str(secret_file))
         assert s1 == s2 == "stable-secret"
 
-    def test_generated_secret_is_url_safe(self, tmp_path) -> None:
+    def test_generated_secret_is_url_safe(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
         secret_file = tmp_path / ".updater-secret"
         secret = get_or_create_secret(str(secret_file))
 
@@ -81,6 +97,23 @@ class TestGetOrCreateSecret:
         import re
 
         assert re.fullmatch(r"[A-Za-z0-9_-]+", secret)
+
+    def test_reads_existing_encrypted_secret(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
+        secret_file = tmp_path / ".updater-secret"
+        first = get_or_create_secret(str(secret_file))
+
+        second = get_or_create_secret(str(secret_file))
+        assert second == first
+
+    def test_encrypted_secret_requires_passphrase(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-32")
+        secret_file = tmp_path / ".updater-secret"
+        get_or_create_secret(str(secret_file))
+
+        monkeypatch.delenv("ENCRYPTION_PASSPHRASE")
+        with pytest.raises(RuntimeError, match="ENCRYPTION_PASSPHRASE"):
+            get_or_create_secret(str(secret_file))
 
 
 # ---------------------------------------------------------------------------

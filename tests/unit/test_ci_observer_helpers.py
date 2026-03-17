@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -268,3 +269,92 @@ async def test_ci_observer_handle_validates_required_ids_and_unknown_intent() ->
     assert "run_id is required" in str(missing_coaching.error)
     assert unknown.success is False
     assert "Unknown CI observer intent" in str(unknown.error)
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_readiness_reports_github_security_as_unavailable_without_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage()
+    storage.get_reporting_readiness.return_value = {
+        "workspace_readiness": {"merge_ready": True, "deploy_ready": True},
+        "repo_readiness": [{"repo_id": "zetherion-ai"}],
+    }
+    storage.list_repo_profiles.return_value = [
+        {"repo_id": "zetherion-ai", "github_repo": "jimtin/zetherion-ai"}
+    ]
+    skill = CiObserverSkill(storage=storage)
+
+    from zetherion_ai.skills import ci_observer
+
+    monkeypatch.setattr(
+        ci_observer,
+        "get_settings",
+        lambda: SimpleNamespace(github_token=None),
+    )
+    response = await skill.handle(SkillRequest(intent="ci_reporting_readiness", user_id="owner-1"))
+
+    assert response.success is True
+    github_security = response.data["readiness"]["github_security"]
+    assert github_security["status"] == "unavailable"
+    assert github_security["reason"] == "github_token_missing"
+    assert (
+        response.data["readiness"]["repo_readiness"][0]["github_security"] is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_readiness_includes_github_security_alert_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage()
+    storage.get_reporting_readiness.return_value = {
+        "workspace_readiness": {"merge_ready": True, "deploy_ready": True},
+        "repo_readiness": [{"repo_id": "zetherion-ai"}],
+    }
+    storage.list_repo_profiles.return_value = [
+        {"repo_id": "zetherion-ai", "github_repo": "jimtin/zetherion-ai"}
+    ]
+    skill = CiObserverSkill(storage=storage)
+
+    class _FakeSecret:
+        def get_secret_value(self) -> str:
+            return "ghp_test_token"
+
+    class _FakeGitHubClient:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        async def list_dependabot_alerts(self, owner: str, repo: str) -> list[dict[str, object]]:
+            assert (owner, repo) == ("jimtin", "zetherion-ai")
+            return [
+                {"security_vulnerability": {"severity": "high", "package": {"ecosystem": "pip"}}}
+            ]
+
+        async def list_code_scanning_alerts(
+            self, owner: str, repo: str
+        ) -> list[dict[str, object]]:
+            assert (owner, repo) == ("jimtin", "zetherion-ai")
+            return [{"rule": {"security_severity_level": "medium"}, "tool": {"name": "CodeQL"}}]
+
+        async def close(self) -> None:
+            return None
+
+    from zetherion_ai.skills import ci_observer
+
+    monkeypatch.setattr(
+        ci_observer,
+        "get_settings",
+        lambda: SimpleNamespace(github_token=_FakeSecret()),
+    )
+    monkeypatch.setattr(ci_observer, "GitHubClient", _FakeGitHubClient)
+    response = await skill.handle(SkillRequest(intent="ci_reporting_readiness", user_id="owner-1"))
+
+    assert response.success is True
+    github_security = response.data["readiness"]["github_security"]
+    assert github_security["status"] == "blocked"
+    assert github_security["totals"]["critical_or_high"] == 1
+    repo_summary = response.data["readiness"]["repo_readiness"][0]["github_security"]
+    assert repo_summary["dependabot"]["open_count"] == 1
+    assert repo_summary["code_scanning"]["open_count"] == 1
+    assert repo_summary["status"] == "blocked"

@@ -464,6 +464,48 @@ class SystemReadinessReceipt(BaseModel):
     checked_at: str | None = None
 
 
+class SystemRunUsageSummary(BaseModel):
+    """Billable and operational usage summary for one system validation run."""
+
+    system_run_id: str
+    system_id: str
+    mode_id: str = "combined_system"
+    repo_ids: list[str] = Field(default_factory=list)
+    shard_count: int = 0
+    passed_shard_count: int = 0
+    failed_shard_count: int = 0
+    skipped_shard_count: int = 0
+    step_count: int = 0
+    total_runtime_seconds: float = 0.0
+    total_step_seconds: float = 0.0
+    billable_minutes: float = 0.0
+    artifact_count: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    generated_at: str | None = None
+
+
+class SystemRun(BaseModel):
+    """Durable executed multi-repo system validation record."""
+
+    system_run_id: str
+    system_id: str
+    mode_id: str = "combined_system"
+    status: str = "planned"
+    candidate_set: SystemCandidateSet
+    plan: SystemRunPlan
+    readiness: SystemReadinessReceipt
+    coaching: list[AgentCoachingFeedback] = Field(default_factory=list)
+    execution: dict[str, Any] = Field(default_factory=dict)
+    usage_summary: SystemRunUsageSummary | None = None
+    report: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] = Field(default_factory=dict)
+    created_at: str | None = None
+    updated_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+
+
 class LocalGatePlan(BaseModel):
     """Compiled shard plan for a repo-local gate."""
 

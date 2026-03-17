@@ -113,6 +113,18 @@ def _event(*, attendees: bool = False, priority: str = "medium") -> NormalizedEv
     )
 
 
+def test_stable_local_id_uses_sha256_digest() -> None:
+    router = TaskCalendarRouter(
+        storage=_StorageStub(),
+        providers=_registry(_CalendarAdapter(conflicts=[])),
+        security=_SecurityStub(),
+    )
+
+    digest = router._stable_local_id("alpha", "beta")  # noqa: SLF001
+
+    assert len(digest) == 64
+
+
 def _existing_conflict(*, overlap_minutes: int) -> list[ProviderEvent]:
     start = datetime(2026, 2, 14, 10, 0)
     end = start + timedelta(minutes=overlap_minutes)

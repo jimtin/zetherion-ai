@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 from zetherion_ai.owner_ci import (
     OwnerCiStorage,
@@ -14,6 +15,7 @@ from zetherion_ai.owner_ci import (
     SchedulerOverview,
 )
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
+from zetherion_ai.skills.github.client import GitHubAPIError, GitHubClient
 from zetherion_ai.skills.permissions import Permission, PermissionSet
 
 log = get_logger("zetherion_ai.skills.ci_observer")
@@ -36,6 +38,166 @@ def _normalize_owner_id(request: SkillRequest) -> str:
 
 def _repo_scope_id(owner_id: str, repo_id: str) -> str:
     return f"owner:{owner_id}:repo:{repo_id}"
+
+
+def _parse_github_repo(value: Any) -> tuple[str, str] | None:
+    candidate = str(value or "").strip()
+    if "/" not in candidate:
+        return None
+    owner, repo = candidate.split("/", 1)
+    owner = owner.strip()
+    repo = repo.strip()
+    if not owner or not repo:
+        return None
+    return owner, repo
+
+
+def _normalize_security_severity(value: Any) -> str:
+    candidate = str(value or "").strip().lower()
+    if candidate in {"critical", "high", "medium", "moderate", "low"}:
+        return "medium" if candidate == "moderate" else candidate
+    if candidate == "error":
+        return "high"
+    if candidate == "warning":
+        return "medium"
+    if candidate == "note":
+        return "low"
+    return "unknown"
+
+
+def _increment_severity_bucket(target: dict[str, int], severity: str) -> None:
+    if severity not in target:
+        target[severity] = 0
+    target[severity] += 1
+
+
+def _summarize_dependabot_alerts(alerts: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0}
+    ecosystems: dict[str, int] = {}
+    for alert in alerts:
+        vulnerability = dict(alert.get("security_vulnerability") or {})
+        severity = _normalize_security_severity(vulnerability.get("severity"))
+        _increment_severity_bucket(counts, severity)
+        package = dict(vulnerability.get("package") or {})
+        ecosystem = str(package.get("ecosystem") or "").strip().lower()
+        if ecosystem:
+            ecosystems[ecosystem] = ecosystems.get(ecosystem, 0) + 1
+    return {"open_count": len(alerts), "severity_counts": counts, "ecosystems": ecosystems}
+
+
+def _summarize_code_scanning_alerts(alerts: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0}
+    tools: dict[str, int] = {}
+    for alert in alerts:
+        rule = dict(alert.get("rule") or {})
+        severity = _normalize_security_severity(
+            rule.get("security_severity_level") or rule.get("severity")
+        )
+        _increment_severity_bucket(counts, severity)
+        tool_name = str(dict(alert.get("tool") or {}).get("name") or "").strip().lower()
+        if tool_name:
+            tools[tool_name] = tools.get(tool_name, 0) + 1
+    return {"open_count": len(alerts), "severity_counts": counts, "tools": tools}
+
+
+async def _build_github_security_summary(
+    repo_profiles: list[dict[str, Any]],
+) -> dict[str, Any]:
+    token_secret = getattr(get_settings(), "github_token", None)
+    token = token_secret.get_secret_value().strip() if token_secret is not None else ""
+    if not token:
+        return {
+            "status": "unavailable",
+            "available": False,
+            "blocking": False,
+            "reason": "github_token_missing",
+            "summary": (
+                "GitHub security alerts could not be checked because "
+                "GITHUB_TOKEN is missing."
+            ),
+            "totals": {
+                "open_dependabot": 0,
+                "open_code_scanning": 0,
+                "critical_or_high": 0,
+            },
+            "repos": [],
+        }
+
+    client = GitHubClient(token)
+    repo_summaries: list[dict[str, Any]] = []
+    totals = {"open_dependabot": 0, "open_code_scanning": 0, "critical_or_high": 0}
+    try:
+        for repo in repo_profiles:
+            repo_id = str(repo.get("repo_id") or "").strip()
+            github_repo = _parse_github_repo(repo.get("github_repo"))
+            if github_repo is None:
+                continue
+            owner, repo_name = github_repo
+            errors: list[str] = []
+            try:
+                dependabot_alerts = await client.list_dependabot_alerts(owner, repo_name)
+            except GitHubAPIError as exc:
+                dependabot_alerts = []
+                errors.append(f"dependabot:{exc.status_code or 'error'}")
+            try:
+                code_scanning_alerts = await client.list_code_scanning_alerts(owner, repo_name)
+            except GitHubAPIError as exc:
+                code_scanning_alerts = []
+                errors.append(f"code_scanning:{exc.status_code or 'error'}")
+
+            dependabot_summary = _summarize_dependabot_alerts(dependabot_alerts)
+            code_scanning_summary = _summarize_code_scanning_alerts(code_scanning_alerts)
+            critical_or_high = (
+                int(dependabot_summary["severity_counts"]["critical"])
+                + int(dependabot_summary["severity_counts"]["high"])
+                + int(code_scanning_summary["severity_counts"]["critical"])
+                + int(code_scanning_summary["severity_counts"]["high"])
+            )
+            totals["open_dependabot"] += int(dependabot_summary["open_count"])
+            totals["open_code_scanning"] += int(code_scanning_summary["open_count"])
+            totals["critical_or_high"] += critical_or_high
+            blocking = critical_or_high > 0
+            degraded = (
+                int(dependabot_summary["open_count"]) > 0
+                or int(code_scanning_summary["open_count"]) > 0
+                or bool(errors)
+            )
+            repo_summaries.append(
+                {
+                    "repo_id": repo_id,
+                    "github_repo": f"{owner}/{repo_name}",
+                    "status": "blocked" if blocking else ("degraded" if degraded else "healthy"),
+                    "blocking": blocking,
+                    "errors": errors,
+                    "dependabot": dependabot_summary,
+                    "code_scanning": code_scanning_summary,
+                }
+            )
+    finally:
+        await client.close()
+
+    status = "healthy"
+    if totals["critical_or_high"] > 0:
+        status = "blocked"
+    elif totals["open_dependabot"] > 0 or totals["open_code_scanning"] > 0:
+        status = "degraded"
+
+    return {
+        "status": status,
+        "available": True,
+        "blocking": status == "blocked",
+        "summary": (
+            "GitHub security alerts include blocking high-severity findings."
+            if status == "blocked"
+            else (
+                "GitHub security alerts require triage."
+                if status == "degraded"
+                else "GitHub security alerts are clear for the configured repos."
+            )
+        ),
+        "totals": totals,
+        "repos": repo_summaries,
+    }
 
 
 def _resource_reservation_for_shard(
@@ -695,6 +857,28 @@ class CiObserverSkill(Skill):
             )
         if intent == "ci_reporting_readiness":
             readiness = await self._storage.get_reporting_readiness(owner_id)
+            repo_profiles = await self._storage.list_repo_profiles(owner_id)
+            github_security = await _build_github_security_summary(
+                [dict(repo) for repo in repo_profiles if isinstance(repo, dict)]
+            )
+            readiness = dict(readiness or {})
+            readiness["github_security"] = github_security
+            repo_security_by_id = {
+                str(entry.get("repo_id") or "").strip(): entry
+                for entry in list(github_security.get("repos") or [])
+                if str(entry.get("repo_id") or "").strip()
+            }
+            repo_readiness = [
+                {
+                    **dict(entry),
+                    "github_security": repo_security_by_id.get(
+                        str(dict(entry).get("repo_id") or "").strip()
+                    ),
+                }
+                for entry in list(readiness.get("repo_readiness") or [])
+                if isinstance(entry, dict)
+            ]
+            readiness["repo_readiness"] = repo_readiness
             return SkillResponse(
                 request_id=request.id,
                 message="Loaded CI readiness summary.",

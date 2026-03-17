@@ -3553,3 +3553,113 @@ async def test_store_run_coaching_feedback_covers_early_returns_and_recording_pa
     assert kwargs["session_id"] == "sess-1"
     assert kwargs["app_id"] == "app-1"
     assert kwargs["required_capability"] == "gitleaks"
+
+
+@pytest.mark.asyncio
+async def test_system_run_crud_and_report_helpers_round_trip() -> None:
+    row = {
+        "owner_id": "owner-1",
+        "system_run_id": "system-run-1",
+        "system_id": "cgs-zetherion",
+        "mode_id": "combined_system",
+        "status": "planned",
+        "candidate_set_json": {
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "repos": [
+                {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+            ],
+        },
+        "plan_json": {
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "candidate_set": {
+                "system_id": "cgs-zetherion",
+                "mode_id": "combined_system",
+                "repos": [
+                    {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                    {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+                ],
+            },
+            "profiles": [],
+            "shards": [],
+            "blocking_categories": [],
+            "summary": "Compiled 0 shard(s).",
+            "metadata": {},
+        },
+        "readiness_json": {
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "status": "ready",
+            "blocking": False,
+            "summary": "Ready",
+            "blocker_count": 0,
+            "blocking_shards": [],
+            "missing_repo_ids": [],
+            "recommended_next_steps": [],
+            "metadata": {},
+        },
+        "coaching_json": [],
+        "execution_json": {"all_passed": True, "batches": [], "shards": []},
+        "usage_summary_json": {"billable_minutes": 0.0},
+        "report_json": {
+            "run_graph": {
+                "nodes": [{"node_id": "system-run:system-run-1"}],
+                "artifacts": [],
+                "diagnostics": [],
+                "evidence_references": [],
+            },
+            "diagnostic_findings": [],
+            "artifacts": [],
+            "evidence": [],
+        },
+        "error_json": {},
+        "metadata_json": {"principal_id": "codex-1"},
+        "created_at": _dt(),
+        "updated_at": _dt(),
+        "started_at": _dt(),
+        "completed_at": _dt(),
+    }
+    updated_row = {**row, "status": "succeeded", "usage_summary_json": {"billable_minutes": 1.5}}
+    conn = _FakeConn(
+        fetchrow_results=[row, row, row, updated_row],
+        fetch_results=[[row]],
+    )
+    storage = _storage(conn)
+
+    created = await storage.create_system_run(
+        "owner-1",
+        candidate_set=row["candidate_set_json"],
+        plan=row["plan_json"],
+        readiness=row["readiness_json"],
+        coaching=[],
+        metadata={"principal_id": "codex-1"},
+    )
+    listed = await storage.list_system_runs("owner-1")
+    fetched = await storage.get_system_run("owner-1", "system-run-1")
+    updated = await storage.update_system_run(
+        "owner-1",
+        "system-run-1",
+        status="succeeded",
+        usage_summary={"billable_minutes": 1.5},
+    )
+    storage.get_system_run = AsyncMock(
+        return_value={
+            **updated,
+            "report": row["report_json"],
+            "usage_summary": {"billable_minutes": 1.5},
+        }
+    )  # type: ignore[method-assign]
+
+    report = await storage.get_system_run_report("owner-1", "system-run-1")
+    usage = await storage.get_system_run_usage("owner-1", "system-run-1")
+
+    assert created["system_run_id"] == "system-run-1"
+    assert listed[0]["system_id"] == "cgs-zetherion"
+    assert fetched is not None
+    assert updated is not None
+    assert updated["status"] == "succeeded"
+    assert report is not None
+    assert report["run_graph"]["nodes"][0]["node_id"] == "system-run:system-run-1"
+    assert usage == {"billable_minutes": 1.5}

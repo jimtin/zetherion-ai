@@ -12,6 +12,9 @@ from zetherion_ai.owner_ci.system_validation import (
     build_system_coaching,
     build_system_rollout_readiness,
     build_system_run_plan,
+    build_system_run_report,
+    build_system_run_usage_summary,
+    resolve_system_run_batches,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -417,3 +420,412 @@ def test_system_coaching_blocks_when_repo_candidates_are_missing(tmp_path: Path)
     assert coaching[0]["blocking"] is True
     assert coaching[0]["findings"][0]["rule_code"] == "missing_system_repo_candidates"
     assert "candidate refs" in coaching[0]["recommendations"][0]["agents_md_update"]
+
+
+def test_system_run_report_and_usage_summarize_executed_system_validation() -> None:
+    candidate_set = {
+        "system_id": "cgs-zetherion",
+        "mode_id": "combined_system",
+        "repos": [
+            {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+            {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+        ],
+    }
+    plan = build_system_run_plan(candidate_set=candidate_set)
+    execution = {
+        "all_passed": False,
+        "batches": [
+            {
+                "batch_index": 0,
+                "status": "failed",
+                "shard_ids": ["combined-contract"],
+                "shards": [
+                    {
+                        "shard_id": "combined-contract",
+                        "lane_id": "combined-contract",
+                        "lane_label": "Combined contract",
+                        "lane_family": "combined_system",
+                        "validation_mode": "combined_system",
+                        "purpose": "Validate contract flow.",
+                        "blocking": True,
+                        "repo_ids": [
+                            "zetherion-ai",
+                            "catalyst-group-solutions",
+                        ],
+                        "depends_on": [],
+                        "expected_artifacts": ["stdout", "stderr"],
+                        "required_paths": ["combined_contract"],
+                        "status": "failed",
+                        "started_at": "2026-03-17T10:00:00Z",
+                        "completed_at": "2026-03-17T10:02:00Z",
+                        "steps": [
+                            {
+                                "step_id": "zetherion-step-1",
+                                "label": "zetherion",
+                                "repo_id": "zetherion-ai",
+                                "cwd": "/tmp/zetherion-ai",
+                                "command": ["bash", "-lc", "echo zetherion"],
+                                "status": "passed",
+                                "return_code": 0,
+                                "started_at": "2026-03-17T10:00:00Z",
+                                "completed_at": "2026-03-17T10:01:00Z",
+                            },
+                            {
+                                "step_id": "cgs-step-2",
+                                "label": "cgs",
+                                "repo_id": "catalyst-group-solutions",
+                                "cwd": "/tmp/catalyst-group-solutions",
+                                "command": ["bash", "-lc", "exit 1"],
+                                "status": "failed",
+                                "return_code": 1,
+                                "started_at": "2026-03-17T10:01:00Z",
+                                "completed_at": "2026-03-17T10:02:00Z",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    execution["shards"] = execution["batches"][0]["shards"]
+
+    usage = build_system_run_usage_summary(
+        system_run_id="system-run-1",
+        system_id="cgs-zetherion",
+        mode_id="combined_system",
+        candidate_set=candidate_set,
+        execution=execution,
+    )
+    assert usage["failed_shard_count"] == 1
+    assert usage["step_count"] == 2
+    assert usage["billable_minutes"] == 2.0
+
+    usage_summary = build_system_run_usage_summary(
+        system_run_id="system-run-extra",
+        system_id="cgs-zetherion",
+        mode_id="combined_system",
+        candidate_set={
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "repos": [
+                {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+            ],
+        },
+        execution={
+            "all_passed": False,
+            "batches": [],
+            "shards": [
+                {
+                    "shard_id": "ad-hoc",
+                    "expected_artifacts": ["stdout"],
+                    "status": "failed",
+                    "started_at": "2026-03-17T10:00:00Z",
+                    "completed_at": "2026-03-17T10:01:00Z",
+                    "steps": [
+                        {
+                            "step_id": "step-1",
+                            "status": "failed",
+                            "started_at": "2026-03-17T10:00:00Z",
+                            "completed_at": "2026-03-17T10:01:00Z",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    report = build_system_run_report(
+        {
+            "system_run_id": "system-run-1",
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "status": "failed",
+            "candidate_set": candidate_set,
+            "plan": plan,
+            "readiness": {
+                "system_id": "cgs-zetherion",
+                "mode_id": "combined_system",
+                "status": "ready",
+                "blocking": False,
+                "summary": "Ready to execute.",
+                "blocker_count": 0,
+                "blocking_shards": ["combined-contract"],
+                "missing_repo_ids": [],
+                "recommended_next_steps": [],
+                "metadata": {},
+                "checked_at": "2026-03-17T09:59:00Z",
+            },
+            "coaching": [
+                {
+                    "feedback_id": "system-coach-1",
+                    "scope": "system_run",
+                    "summary": "Run the blocking combined-system shards.",
+                    "blocking": False,
+                    "findings": [],
+                    "recommendations": [],
+                    "rule_violations": [],
+                    "evidence_references": [],
+                    "metadata": {},
+                }
+            ],
+            "execution": execution,
+            "usage_summary": usage,
+            "metadata": {"environment": "local"},
+            "error": {},
+            "created_at": "2026-03-17T09:58:00Z",
+            "updated_at": "2026-03-17T10:02:00Z",
+            "started_at": "2026-03-17T10:00:00Z",
+            "completed_at": "2026-03-17T10:02:00Z",
+        }
+    )
+
+    assert resolve_system_run_batches(plan["shards"])
+    assert report["usage_summary"]["billable_minutes"] == 2.0
+    assert report["run_graph"]["nodes"][0]["node_id"] == "system-run:system-run-1"
+    assert report["diagnostic_summary"]["blocking"] is True
+    assert report["diagnostic_findings"][0]["code"] == "system_shard_failed"
+    assert report["artifacts"][0]["kind"] == "expected_artifact"
+
+
+def test_system_coaching_blocks_when_validation_profiles_are_unavailable(tmp_path: Path) -> None:
+    missing_cgs_manifest = tmp_path / "missing-cgs.json"
+    missing_combined_manifest = tmp_path / "missing-combined.json"
+
+    coaching = build_system_coaching(
+        candidate_set={
+            "system_id": "cgs-zetherion",
+            "repos": [
+                {"repo_id": "zetherion-ai", "git_ref": "feature/z"},
+                {"repo_id": "catalyst-group-solutions", "git_ref": "feature/cgs"},
+            ],
+        },
+        principal_id="codex-agent-1",
+        cgs_manifest_path=missing_cgs_manifest,
+        combined_manifest_path=missing_combined_manifest,
+    )
+
+    assert coaching[0]["blocking"] is True
+    assert coaching[0]["findings"][0]["rule_code"] == "missing_system_validation_profile"
+
+
+def test_system_run_helpers_cover_cycles_list_candidates_and_unplanned_shards(
+    tmp_path: Path,
+) -> None:
+    cgs_manifest_path = tmp_path / "cgs-shard-manifest.json"
+    cgs_manifest_path.write_text(
+        json.dumps(
+            {
+                "repo_id": "catalyst-group-solutions",
+                "validation_mode": "cgs_alone",
+                "resource_limits": {"cpu": 4},
+                "shards": [
+                    {
+                        "lane_id": "c-unit",
+                        "label": "CGS unit",
+                        "lane_family": "unit",
+                        "validation_mode": "cgs_alone",
+                        "shard_purpose": "Run CGS unit tests",
+                        "resource_class": "cpu",
+                        "release_blocking": True,
+                        "expected_artifacts": ["coverage-summary.json"],
+                        "command": "yarn test:ci",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    combined_manifest_path = tmp_path / "system-validation.json"
+    combined_manifest_path.write_text(
+        json.dumps(
+            {
+                "repo_ids": ["zetherion-ai", "catalyst-group-solutions"],
+                "shards": [
+                    {
+                        "shard_id": "combined-a",
+                        "lane_family": "combined_system",
+                        "purpose": "Validate A",
+                        "blocking": True,
+                        "depends_on": ["combined-b"],
+                        "commands": [
+                            {
+                                "repo_id": "zetherion-ai",
+                                "cwd": ".",
+                                "command": ["bash", "-lc", "echo a"],
+                            }
+                        ],
+                    },
+                    {
+                        "shard_id": "combined-b",
+                        "lane_family": "combined_system",
+                        "purpose": "Validate B",
+                        "blocking": True,
+                        "depends_on": ["combined-a"],
+                        "commands": [
+                            {
+                                "repo_id": "catalyst-group-solutions",
+                                "cwd": ".",
+                                "command": ["bash", "-lc", "echo b"],
+                            }
+                        ],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        resolve_system_run_batches(
+            [
+                {"shard_id": "a", "depends_on": ["b"]},
+                {"shard_id": "b", "depends_on": ["a"]},
+            ]
+        )
+    except ValueError as exc:
+        assert "dependency cycles" in str(exc)
+    else:
+        raise AssertionError("Expected dependency cycle detection")
+
+    plan = build_system_run_plan(
+        candidate_set=[
+            {"repo_id": "zetherion-ai", "git_ref": "feature/z"},
+            {"repo_id": "catalyst-group-solutions", "git_ref": "feature/cgs"},
+            {"repo_id": "ignored-repo", "git_ref": "feature/ignored"},
+        ],
+        cgs_manifest_path=cgs_manifest_path,
+        combined_manifest_path=combined_manifest_path,
+    )
+    assert {profile["mode_id"] for profile in plan["profiles"]} == {
+        "zetherion_alone",
+        "cgs_alone",
+        "combined_system",
+    }
+
+    usage_summary = build_system_run_usage_summary(
+        system_run_id="system-run-extra",
+        system_id="cgs-zetherion",
+        mode_id="combined_system",
+        candidate_set={
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "repos": [
+                {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+            ],
+        },
+        execution={
+            "all_passed": False,
+            "batches": [],
+            "shards": [
+                {
+                    "shard_id": "ad-hoc",
+                    "expected_artifacts": ["stdout"],
+                    "status": "failed",
+                    "started_at": "2026-03-17T10:00:00Z",
+                    "completed_at": "2026-03-17T10:01:00Z",
+                    "steps": [
+                        {
+                            "step_id": "step-1",
+                            "status": "failed",
+                            "started_at": "2026-03-17T10:00:00Z",
+                            "completed_at": "2026-03-17T10:01:00Z",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    report = build_system_run_report(
+        {
+            "system_run_id": "system-run-extra",
+            "system_id": "cgs-zetherion",
+            "mode_id": "combined_system",
+            "status": "blocked",
+            "candidate_set": {
+                "system_id": "cgs-zetherion",
+                "mode_id": "combined_system",
+                "repos": [
+                    {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                    {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+                ],
+            },
+            "plan": {
+                "system_id": "cgs-zetherion",
+                "mode_id": "combined_system",
+                "candidate_set": {
+                    "repos": [
+                        {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
+                        {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
+                    ]
+                },
+                "profiles": [],
+                "shards": [],
+                "blocking_categories": ["combined_system"],
+                "summary": "Plan",
+                "metadata": {},
+            },
+            "readiness": {
+                "system_id": "cgs-zetherion",
+                "mode_id": "combined_system",
+                "status": "blocked",
+                "blocking": True,
+                "summary": "Missing system manifests.",
+                "blocker_count": 1,
+                "blocking_shards": [],
+                "missing_repo_ids": [],
+                "recommended_next_steps": [],
+                "metadata": {},
+                "checked_at": "2026-03-17T10:00:00Z",
+            },
+            "coaching": [],
+            "execution": {
+                "all_passed": False,
+                "batches": [],
+                "shards": [
+                    {
+                        "shard_id": "ad-hoc",
+                        "lane_family": "combined_system",
+                        "validation_mode": "combined_system",
+                        "purpose": "Ad hoc failure",
+                        "blocking": True,
+                        "repo_ids": ["zetherion-ai"],
+                        "depends_on": [],
+                        "required_paths": ["combined_contract"],
+                        "expected_artifacts": ["stdout"],
+                        "status": "failed",
+                        "started_at": "2026-03-17T10:00:00Z",
+                        "completed_at": "2026-03-17T10:01:00Z",
+                        "steps": [
+                            {
+                                "step_id": "step-1",
+                                "label": "Run",
+                                "repo_id": "zetherion-ai",
+                                "cwd": "/tmp/zetherion-ai",
+                                "command": "echo bad",
+                                "status": "failed",
+                                "return_code": 1,
+                                "started_at": "2026-03-17T10:00:00Z",
+                                "completed_at": "2026-03-17T10:01:00Z",
+                            },
+                            "ignore-me",
+                        ],
+                    }
+                ],
+            },
+            "usage_summary": usage_summary,
+            "metadata": {},
+            "error": {"code": "blocked"},
+            "created_at": "2026-03-17T09:58:00Z",
+            "updated_at": "2026-03-17T10:01:00Z",
+            "started_at": "2026-03-17T10:00:00Z",
+            "completed_at": "2026-03-17T10:01:00Z",
+        }
+    )
+
+    codes = {finding["code"] for finding in report["diagnostic_findings"]}
+    assert "system_shard_failed" in codes
+    assert "system_run_readiness_blocked" in codes
+    assert any(node["node_id"] == "system-shard:system-run-extra:ad-hoc" for node in report["run_graph"]["nodes"])

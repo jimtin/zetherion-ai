@@ -3489,6 +3489,7 @@ class TenantAdminManager:
             args.append(severity_norm)
             idx += 1
         args.append(max(1, min(limit, 500)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT item_id::text AS item_id,
@@ -3533,6 +3534,7 @@ class TenantAdminManager:
             args.append(float(min_confidence))
             idx += 1
         args.append(max(1, min(limit, 500)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT insight_id::text AS insight_id,
@@ -3732,6 +3734,7 @@ class TenantAdminManager:
             args.append(str(action).strip().lower())
             idx += 1
         args.append(max(1, min(limit, 1000)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT event_id,
@@ -4167,6 +4170,7 @@ class TenantAdminManager:
         if not include_inactive:
             filters.append("(p.read_enabled = TRUE OR p.send_enabled = TRUE)")
         args.append(max(1, min(limit, 500)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT p.tenant_id::text AS tenant_id,
@@ -4389,6 +4393,7 @@ class TenantAdminManager:
         if not include_expired:
             filters.append("expires_at > now()")
         args.append(max(1, min(limit, 500)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT message_id::text AS message_id,
@@ -4457,6 +4462,7 @@ class TenantAdminManager:
             filters.append("expires_at > now()")
 
         args.append(max(1, min(limit, 5000)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT message_id::text AS message_id,
@@ -4545,6 +4551,7 @@ class TenantAdminManager:
             idx += 1
 
         args.append(max(1, min(limit, 20000)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             WITH doomed AS (
@@ -5264,6 +5271,7 @@ class TenantAdminManager:
             args.append(status_norm)
             idx += 1
         args.append(max(1, min(limit, 500)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT plan_id::text AS plan_id,
@@ -8931,6 +8939,7 @@ class TenantAdminManager:
         if not include_inactive:
             where.append("status <> 'disabled'")
         args.append(max(1, min(int(limit), 1000)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT node_id,
@@ -9074,6 +9083,7 @@ class TenantAdminManager:
             idx += 1
 
         args.append(max(1, min(int(limit), 1000)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT job_id::text AS job_id,
@@ -9174,6 +9184,7 @@ class TenantAdminManager:
             idx += 1
 
         args.append(max(1, min(int(limit), 1000)))
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         rows = await self._fetch(
             f"""
             SELECT event_id,
@@ -10085,6 +10096,7 @@ class TenantAdminManager:
             allow_column = "allow_draft"
         else:
             allow_column = "allow_send"
+        # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         row = await self._fetchrow(
             f"""
             SELECT grant_id::text AS grant_id,

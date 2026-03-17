@@ -21,6 +21,26 @@ JWT_BYPASS_PATHS = frozenset(
 RequestHandler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 
+def _reject_unsupported_crit_header(token: str) -> None:
+    if token.count(".") != 2:
+        return
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.InvalidTokenError as exc:
+        if "Unsupported critical extension" in str(exc):
+            raise jwt.InvalidTokenError("Unsupported JWT critical header extension") from exc
+        raise
+    crit = header.get("crit")
+    if not crit:
+        return
+    crit_items = crit if isinstance(crit, list) else [crit]
+    normalized = [str(item).strip() for item in crit_items if str(item).strip()]
+    if normalized:
+        raise jwt.InvalidTokenError(
+            "Unsupported JWT critical header extension(s): " + ", ".join(normalized)
+        )
+
+
 class JWTVerifier:
     """Validates CGS JWTs against a JWKS endpoint."""
 
@@ -40,6 +60,7 @@ class JWTVerifier:
     def verify(self, token: str) -> AuthPrincipal:
         """Verify JWT signature/claims and return normalized principal."""
         try:
+            _reject_unsupported_crit_header(token)
             signing_key = self._jwks_client.get_signing_key_from_jwt(token)
             options = {
                 "verify_signature": True,
