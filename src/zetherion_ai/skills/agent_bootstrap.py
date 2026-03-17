@@ -33,6 +33,12 @@ from zetherion_ai.owner_ci.models import (
     RolloutReadinessCoaching,
     ServiceAdoptionCoaching,
 )
+from zetherion_ai.owner_ci.system_validation import (
+    build_system_coaching,
+    build_system_rollout_readiness,
+    build_system_run_plan,
+    build_validation_matrix,
+)
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
 from zetherion_ai.skills.ci_controller import CiControllerSkill
 from zetherion_ai.skills.clerk.client import ClerkMetadataClient, ClerkMetadataError
@@ -820,6 +826,10 @@ class AgentBootstrapSkill(Skill):
                 "agent_app_coaching_get",
                 "agent_app_integration_gaps_get",
                 "agent_app_rollout_readiness_get",
+                "agent_system_validation_matrix_get",
+                "agent_system_run_plan_get",
+                "agent_system_coaching_get",
+                "agent_system_rollout_readiness_get",
                 "agent_app_services_list",
                 "agent_service_read",
                 "agent_service_request_submit",
@@ -896,6 +906,10 @@ class AgentBootstrapSkill(Skill):
             "agent_app_coaching_get": self._handle_app_coaching_get,
             "agent_app_integration_gaps_get": self._handle_app_integration_gaps_get,
             "agent_app_rollout_readiness_get": self._handle_app_rollout_readiness_get,
+            "agent_system_validation_matrix_get": self._handle_system_validation_matrix_get,
+            "agent_system_run_plan_get": self._handle_system_run_plan_get,
+            "agent_system_coaching_get": self._handle_system_coaching_get,
+            "agent_system_rollout_readiness_get": self._handle_system_rollout_readiness_get,
             "agent_app_services_list": self._handle_app_services_list,
             "agent_service_read": self._handle_service_read,
             "agent_service_request_submit": self._handle_service_request_submit,
@@ -1871,6 +1885,109 @@ class AgentBootstrapSkill(Skill):
         return SkillResponse(
             request_id=request.id,
             message=f"Loaded rollout readiness for `{app_id}`.",
+            data={"rollout_readiness": readiness},
+        )
+
+    def _system_candidate_set_from_request(
+        self,
+        request: SkillRequest,
+    ) -> dict[str, Any]:
+        raw_candidate_set = request.context.get("candidate_set")
+        if isinstance(raw_candidate_set, dict):
+            return dict(raw_candidate_set)
+
+        raw_repos = request.context.get("repos")
+        repos: list[dict[str, Any]] = []
+        if isinstance(raw_repos, list):
+            for entry in raw_repos:
+                if isinstance(entry, dict):
+                    repos.append(dict(entry))
+
+        if not repos:
+            for index, repo_id in enumerate(
+                ["zetherion-ai", "catalyst-group-solutions"],
+                start=1,
+            ):
+                git_ref = str(request.context.get(f"{repo_id}_git_ref") or "").strip()
+                commit_sha = str(request.context.get(f"{repo_id}_commit_sha") or "").strip()
+                if not git_ref and not commit_sha:
+                    git_ref = str(request.context.get(f"repo_{index}_git_ref") or "").strip()
+                    commit_sha = str(
+                        request.context.get(f"repo_{index}_commit_sha") or ""
+                    ).strip()
+                if git_ref or commit_sha:
+                    repos.append(
+                        {
+                            "repo_id": repo_id,
+                            "git_ref": git_ref or "HEAD",
+                            **({"commit_sha": commit_sha} if commit_sha else {}),
+                        }
+                    )
+
+        raw_metadata = request.context.get("metadata")
+        return {
+            "system_id": str(request.context.get("system_id") or "cgs-zetherion"),
+            "mode_id": str(request.context.get("mode_id") or "combined_system"),
+            "repos": repos,
+            "metadata": dict(raw_metadata) if isinstance(raw_metadata, dict) else {},
+        }
+
+    async def _handle_system_validation_matrix_get(
+        self,
+        request: SkillRequest,
+        _owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        matrix = build_validation_matrix()
+        return SkillResponse(
+            request_id=request.id,
+            message="Loaded system validation matrix.",
+            data={"validation_matrix": matrix},
+        )
+
+    async def _handle_system_run_plan_get(
+        self,
+        request: SkillRequest,
+        _owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        candidate_set = self._system_candidate_set_from_request(request)
+        plan = build_system_run_plan(candidate_set=candidate_set)
+        return SkillResponse(
+            request_id=request.id,
+            message="Loaded system run plan.",
+            data={"system_run_plan": plan},
+        )
+
+    async def _handle_system_coaching_get(
+        self,
+        request: SkillRequest,
+        _owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        candidate_set = self._system_candidate_set_from_request(request)
+        coaching = build_system_coaching(
+            candidate_set=candidate_set,
+            principal_id=principal_id,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(coaching)} system coaching items.",
+            data={"coaching": coaching},
+        )
+
+    async def _handle_system_rollout_readiness_get(
+        self,
+        request: SkillRequest,
+        _owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        candidate_set = self._system_candidate_set_from_request(request)
+        readiness = build_system_rollout_readiness(candidate_set=candidate_set)
+        return SkillResponse(
+            request_id=request.id,
+            message="Loaded system rollout readiness.",
             data={"rollout_readiness": readiness},
         )
 

@@ -382,6 +382,88 @@ class ServiceAdoptionCoaching(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SystemCandidateRepoRef(BaseModel):
+    """One repo candidate included in a multi-repo system run."""
+
+    repo_id: str
+    git_ref: str = "HEAD"
+    commit_sha: str | None = None
+    validation_mode: str | None = None
+    role: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SystemCandidateSet(BaseModel):
+    """Exact repo refs under evaluation for a system-level validation run."""
+
+    system_id: str = "cgs-zetherion"
+    mode_id: str = "combined_system"
+    repos: list[SystemCandidateRepoRef] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SystemShard(BaseModel):
+    """One shard in a compiled multi-repo system validation plan."""
+
+    shard_id: str
+    lane_id: str | None = None
+    lane_label: str | None = None
+    lane_family: str = "combined_system"
+    validation_mode: str = "combined_system"
+    purpose: str = ""
+    blocking: bool = True
+    repo_ids: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
+    expected_artifacts: list[str] = Field(default_factory=list)
+    required_paths: list[str] = Field(default_factory=list)
+    resource_class: str = "cpu"
+    scenario_family: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SystemValidationProfile(BaseModel):
+    """One machine-readable validation profile for repo or system mode."""
+
+    mode_id: str
+    mode_label: str
+    description: str = ""
+    available: bool = True
+    repo_ids: list[str] = Field(default_factory=list)
+    lane_families: list[str] = Field(default_factory=list)
+    blocking_categories: list[str] = Field(default_factory=list)
+    shards: list[SystemShard] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SystemRunPlan(BaseModel):
+    """Compiled plan spanning repo-local and combined-system validation."""
+
+    system_id: str
+    mode_id: str = "combined_system"
+    candidate_set: SystemCandidateSet
+    profiles: list[SystemValidationProfile] = Field(default_factory=list)
+    shards: list[SystemShard] = Field(default_factory=list)
+    blocking_categories: list[str] = Field(default_factory=list)
+    summary: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SystemReadinessReceipt(BaseModel):
+    """Readiness summary for a candidate multi-repo system validation run."""
+
+    system_id: str
+    mode_id: str = "combined_system"
+    status: str = "pending"
+    blocking: bool = False
+    summary: str = ""
+    blocker_count: int = 0
+    blocking_shards: list[str] = Field(default_factory=list)
+    missing_repo_ids: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[RecommendedNextStep] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    checked_at: str | None = None
+
+
 class LocalGatePlan(BaseModel):
     """Compiled shard plan for a repo-local gate."""
 

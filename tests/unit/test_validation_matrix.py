@@ -8,6 +8,12 @@ import sys
 from pathlib import Path
 from subprocess import CompletedProcess
 
+from zetherion_ai.owner_ci.system_validation import (
+    build_system_coaching,
+    build_system_rollout_readiness,
+    build_system_run_plan,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -274,3 +280,140 @@ def test_combined_system_runner_executes_batches_and_writes_summary(
     assert [shard["shard_id"] for shard in summary["shards"]] == ["combined-a", "combined-b"]
     assert all(shard["status"] == "passed" for shard in summary["shards"])
     assert len(calls) == 2
+
+
+def test_system_run_plan_and_readiness_include_repo_and_combined_profiles(
+    tmp_path: Path,
+) -> None:
+    cgs_manifest_path = tmp_path / "cgs-shard-manifest.json"
+    cgs_manifest_path.write_text(
+        json.dumps(
+            {
+                "repo_id": "catalyst-group-solutions",
+                "validation_mode": "cgs_alone",
+                "resource_limits": {"cpu": 4},
+                "shards": [
+                    {
+                        "lane_id": "c-unit-coverage",
+                        "label": "CGS unit coverage",
+                        "lane_family": "unit",
+                        "validation_mode": "cgs_alone",
+                        "shard_purpose": "Cover CGS unit surface.",
+                        "resource_class": "cpu",
+                        "release_blocking": True,
+                        "expected_artifacts": ["coverage-summary.json"],
+                        "required_paths": ["cgs_release_verification"],
+                        "command": "yarn test:ci",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    combined_manifest_path = tmp_path / "system-validation.json"
+    combined_manifest_path.write_text(
+        json.dumps(
+            {
+                "mode_id": "combined_system",
+                "mode_label": "CGS + Zetherion together",
+                "description": "Combined contract checks.",
+                "repo_ids": ["zetherion-ai", "catalyst-group-solutions"],
+                "shards": [
+                    {
+                        "shard_id": "combined-contract",
+                        "lane_family": "combined_system",
+                        "purpose": "Validate contract flow.",
+                        "blocking": True,
+                        "resource_class": "cpu",
+                        "depends_on": ["c-unit-coverage"],
+                        "expected_artifacts": ["stdout", "stderr"],
+                        "commands": [
+                            {
+                                "repo_id": "zetherion-ai",
+                                "cwd": ".",
+                                "command": ["bash", "-lc", "echo zetherion"],
+                            },
+                            {
+                                "repo_id": "catalyst-group-solutions",
+                                "cwd": "../catalyst-group-solutions",
+                                "command": ["bash", "-lc", "echo cgs"],
+                            },
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    candidate_set = {
+        "system_id": "cgs-zetherion",
+        "repos": [
+            {"repo_id": "zetherion-ai", "git_ref": "feature/z"},
+            {"repo_id": "catalyst-group-solutions", "git_ref": "feature/cgs"},
+        ],
+    }
+
+    plan = build_system_run_plan(
+        candidate_set=candidate_set,
+        cgs_manifest_path=cgs_manifest_path,
+        combined_manifest_path=combined_manifest_path,
+    )
+    readiness = build_system_rollout_readiness(
+        candidate_set=candidate_set,
+        cgs_manifest_path=cgs_manifest_path,
+        combined_manifest_path=combined_manifest_path,
+    )
+
+    assert {profile["mode_id"] for profile in plan["profiles"]} == {
+        "zetherion_alone",
+        "cgs_alone",
+        "combined_system",
+    }
+    assert any(
+        shard["validation_mode"] == "combined_system" for shard in plan["shards"]
+    )
+    assert readiness["status"] == "ready"
+    assert "Combined-system validation is ready" in readiness["summary"]
+
+
+def test_system_coaching_blocks_when_repo_candidates_are_missing(tmp_path: Path) -> None:
+    cgs_manifest_path = tmp_path / "cgs-shard-manifest.json"
+    cgs_manifest_path.write_text(
+        json.dumps(
+            {
+                "repo_id": "catalyst-group-solutions",
+                "validation_mode": "cgs_alone",
+                "resource_limits": {"cpu": 4},
+                "shards": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    combined_manifest_path = tmp_path / "system-validation.json"
+    combined_manifest_path.write_text(
+        json.dumps(
+            {
+                "mode_id": "combined_system",
+                "mode_label": "CGS + Zetherion together",
+                "repo_ids": ["zetherion-ai", "catalyst-group-solutions"],
+                "shards": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    coaching = build_system_coaching(
+        candidate_set={
+            "system_id": "cgs-zetherion",
+            "repos": [{"repo_id": "zetherion-ai", "git_ref": "feature/z"}],
+        },
+        principal_id="codex-agent-1",
+        cgs_manifest_path=cgs_manifest_path,
+        combined_manifest_path=combined_manifest_path,
+    )
+
+    assert coaching[0]["scope"] == "system_run"
+    assert coaching[0]["blocking"] is True
+    assert coaching[0]["findings"][0]["rule_code"] == "missing_system_repo_candidates"
+    assert "candidate refs" in coaching[0]["recommendations"][0]["agents_md_update"]

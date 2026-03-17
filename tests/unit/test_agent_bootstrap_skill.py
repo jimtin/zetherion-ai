@@ -307,6 +307,228 @@ async def test_agent_app_adoption_handlers_return_gaps_readiness_and_coaching() 
     assert readiness.data["rollout_readiness"]["metadata"]["open_recorded_gap_total"] == 1
 
 
+def test_app_profile_helpers_normalize_repo_policy_and_agent_profiles() -> None:
+    skill = AgentBootstrapSkill(storage=_storage())
+
+    profile_with_repo = {
+        "app_id": "sample-app",
+        "profile": {
+            "repo_ids": ["sample-repo", "fallback-repo"],
+            "ai_runtime_policy": {
+                "allowed_providers": ["Groq", "", "groq", "openai"],
+                "allowed_models": ["gpt-oss-120b", "", "gpt-oss-120b"],
+            },
+            "ai_agent_profiles": [
+                {"agent_profile_id": "planner"},
+                "ignore-me",
+            ],
+        },
+    }
+
+    assert skill._app_repo_id(profile_with_repo) == "sample-repo"  # noqa: SLF001
+    assert skill._app_repo_id({"app_id": "sample-app", "profile": {}}) == "sample-app"  # noqa: SLF001
+    assert skill._app_runtime_policy({"app_id": "sample-app", "profile": {}}) == {}  # noqa: SLF001
+    assert skill._app_runtime_policy(profile_with_repo) == {  # noqa: SLF001
+        "allowed_providers": ["groq", "openai"],
+        "allowed_models": ["gpt-oss-120b"],
+    }
+    assert skill._app_agent_profiles(profile_with_repo) == [  # noqa: SLF001
+        {"agent_profile_id": "planner"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_app_integration_gaps_covers_connector_health_variants() -> None:
+    storage = _storage()
+    storage.list_external_service_connectors.return_value = [
+        {
+            "connector_id": "stripe-primary",
+            "service_kind": "stripe",
+            "auth_kind": "token",
+            "has_secret": False,
+            "active": False,
+            "metadata": {},
+        },
+        {
+            "connector_id": "vercel-primary",
+            "service_kind": "vercel",
+            "auth_kind": "token",
+            "has_secret": True,
+            "active": True,
+            "metadata": {},
+        },
+    ]
+    skill = AgentBootstrapSkill(storage=storage)
+
+    gaps = await skill._build_app_integration_gaps(  # noqa: SLF001
+        owner_id="owner-1",
+        app_profile={
+            "app_id": "sample-app",
+            "profile": {
+                "repo_ids": ["sample-app"],
+                "capability_registry": {
+                    "required_connectors": ["github", "clerk", "stripe", "vercel"]
+                },
+                "service_connector_map": {
+                    "github": {},
+                    "clerk": {"read_access": ["instance_metadata"]},
+                    "stripe": {"connector_id": "stripe-primary"},
+                    "vercel": {"connector_id": "vercel-primary"},
+                },
+                "ai_runtime_policy": {
+                    "allowed_providers": [],
+                    "allowed_models": [],
+                },
+                "ai_agent_profiles": [],
+            },
+        },
+    )
+
+    gap_types = {gap["gap_type"] for gap in gaps}
+    assert "missing_connector_binding" in gap_types
+    assert "missing_connector_id" in gap_types
+    assert "connector_blocked" in gap_types
+    assert "connector_degraded" in gap_types
+    assert "missing_allowed_providers" in gap_types
+    assert "missing_allowed_models" in gap_types
+    assert "missing_agent_profiles" in gap_types
+
+
+@pytest.mark.asyncio
+async def test_build_app_integration_gaps_uses_default_repo_connectors() -> None:
+    storage = _storage()
+    storage.list_external_service_connectors.return_value = []
+    skill = AgentBootstrapSkill(storage=storage)
+
+    gaps = await skill._build_app_integration_gaps(  # noqa: SLF001
+        owner_id="owner-1",
+        app_profile={
+            "app_id": "catalyst-group-solutions",
+            "profile": {
+                "repo_ids": ["catalyst-group-solutions"],
+                "service_connector_map": {
+                    "github": {"connector_id": "github-primary"},
+                },
+                "ai_runtime_policy": {
+                    "allowed_providers": ["groq"],
+                    "allowed_models": ["gpt-oss-120b"],
+                },
+                "ai_agent_profiles": [{"agent_profile_id": "planner"}],
+            },
+        },
+    )
+
+    gap_types = {gap["gap_type"] for gap in gaps}
+    assert "missing_connector_record" in gap_types
+    assert "missing_connector_binding" in gap_types
+
+
+def test_build_rollout_steps_returns_ready_step_when_no_gaps() -> None:
+    skill = AgentBootstrapSkill(storage=_storage())
+
+    steps = skill._build_rollout_steps(app_id="sample-app", gaps=[])  # noqa: SLF001
+
+    assert steps == [
+        {
+            "step_id": "sample-app:ready",
+            "title": "Ready for the next rollout checkpoint",
+            "instructions": [
+                "Use the current runtime policy and connector set to onboard "
+                "the next agent or integration client."
+            ],
+            "blocking": False,
+            "metadata": {},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_app_handlers_require_app_id() -> None:
+    skill = AgentBootstrapSkill(storage=_storage())
+
+    coaching = await skill.handle(
+        SkillRequest(
+            intent="agent_app_coaching_get",
+            user_id="owner-1",
+            context={"owner_id": "owner-1"},
+        )
+    )
+    gaps = await skill.handle(
+        SkillRequest(
+            intent="agent_app_integration_gaps_get",
+            user_id="owner-1",
+            context={"owner_id": "owner-1"},
+        )
+    )
+    readiness = await skill.handle(
+        SkillRequest(
+            intent="agent_app_rollout_readiness_get",
+            user_id="owner-1",
+            context={"owner_id": "owner-1"},
+        )
+    )
+
+    assert coaching.success is False
+    assert coaching.error == "app_id is required"
+    assert gaps.success is False
+    assert gaps.error == "app_id is required"
+    assert readiness.success is False
+    assert readiness.error == "app_id is required"
+
+
+def test_system_candidate_set_from_request_supports_candidate_set_and_fallbacks() -> None:
+    skill = AgentBootstrapSkill(storage=_storage())
+
+    explicit = skill._system_candidate_set_from_request(  # noqa: SLF001
+        SkillRequest(
+            intent="agent_system_run_plan_get",
+            user_id="owner-1",
+            context={
+                "candidate_set": {
+                    "system_id": "custom-system",
+                    "mode_id": "combined_system",
+                    "repos": [{"repo_id": "zetherion-ai", "git_ref": "feature/z"}],
+                }
+            },
+        )
+    )
+    listed = skill._system_candidate_set_from_request(  # noqa: SLF001
+        SkillRequest(
+            intent="agent_system_run_plan_get",
+            user_id="owner-1",
+            context={
+                "repos": [
+                    "ignore-me",
+                    {"repo_id": "zetherion-ai", "git_ref": "feature/z"},
+                ]
+            },
+        )
+    )
+    indexed = skill._system_candidate_set_from_request(  # noqa: SLF001
+        SkillRequest(
+            intent="agent_system_run_plan_get",
+            user_id="owner-1",
+            context={
+                "repo_1_git_ref": "feature/z",
+                "repo_2_commit_sha": "abc1234",
+                "metadata": "not-a-dict",
+            },
+        )
+    )
+
+    assert explicit["system_id"] == "custom-system"
+    assert listed["repos"] == [{"repo_id": "zetherion-ai", "git_ref": "feature/z"}]
+    assert indexed["repos"] == [
+        {"repo_id": "zetherion-ai", "git_ref": "feature/z"},
+        {
+            "repo_id": "catalyst-group-solutions",
+            "git_ref": "HEAD",
+            "commit_sha": "abc1234",
+        },
+    ]
+    assert indexed["metadata"] == {}
+
+
 def test_build_workspace_bundle_embeds_inline_archive(tmp_path: Path) -> None:
     repo_root = tmp_path / "sample-repo"
     repo_root.mkdir()
@@ -687,3 +909,99 @@ async def test_publish_candidate_apply_delegates_to_controlled_apply_flow() -> N
 
     assert response.success is True
     assert response.data["candidate"]["status"] == "github_pr_open"
+
+
+@pytest.mark.asyncio
+async def test_system_validation_handlers_return_matrix_plan_readiness_and_coaching() -> None:
+    storage = _storage()
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    candidate_repos = [
+        {"repo_id": "zetherion-ai", "git_ref": "codex/owner-ci-platform-hardening"},
+        {
+            "repo_id": "catalyst-group-solutions",
+            "git_ref": "codex/cgs-refinements-platform",
+        },
+    ]
+
+    matrix = await skill.handle(
+        SkillRequest(
+            intent="agent_system_validation_matrix_get",
+            user_id="owner-1",
+            context={"owner_id": "owner-1"},
+        )
+    )
+    plan = await skill.handle(
+        SkillRequest(
+            intent="agent_system_run_plan_get",
+            user_id="owner-1",
+            context={"owner_id": "owner-1", "repos": candidate_repos},
+        )
+    )
+    readiness = await skill.handle(
+        SkillRequest(
+            intent="agent_system_rollout_readiness_get",
+            user_id="owner-1",
+            context={"owner_id": "owner-1", "repos": candidate_repos},
+        )
+    )
+    coaching = await skill.handle(
+        SkillRequest(
+            intent="agent_system_coaching_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-agent-1",
+                "repos": candidate_repos,
+            },
+        )
+    )
+
+    assert matrix.success is True
+    assert {
+        mode["mode_id"] for mode in matrix.data["validation_matrix"]["modes"]
+    } >= {"zetherion_alone", "cgs_alone", "combined_system"}
+    assert plan.success is True
+    assert {
+        profile["mode_id"] for profile in plan.data["system_run_plan"]["profiles"]
+    } >= {"zetherion_alone", "cgs_alone", "combined_system"}
+    assert readiness.success is True
+    assert readiness.data["rollout_readiness"]["status"] == "ready"
+    assert coaching.success is True
+    assert coaching.data["coaching"][0]["scope"] == "system_run"
+    assert (
+        "Combined-system validation" in coaching.data["coaching"][0]["summary"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_system_coaching_blocks_when_candidate_set_is_incomplete() -> None:
+    storage = _storage()
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="agent_system_coaching_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-agent-1",
+                "repos": [
+                    {
+                        "repo_id": "zetherion-ai",
+                        "git_ref": "codex/owner-ci-platform-hardening",
+                    }
+                ],
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["coaching"][0]["blocking"] is True
+    assert response.data["coaching"][0]["findings"][0]["rule_code"] == (
+        "missing_system_repo_candidates"
+    )
