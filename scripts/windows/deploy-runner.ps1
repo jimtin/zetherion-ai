@@ -353,20 +353,17 @@ function Ensure-RequiredRuntimeEnv {
 
     $cgsJwks = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("CGS_AUTH_JWKS_URL")
     if (-not $cgsJwks) {
-        Set-OrAddEnvLine -Lines $lines -Key "CGS_AUTH_JWKS_URL" -Value "https://example.com/.well-known/jwks.json"
-        $updatedKeys.Add("CGS_AUTH_JWKS_URL")
+        Write-Warning "CGS_AUTH_JWKS_URL is missing from $rootEnvPath. Sync the real value from the CGS/Vercel environment before CGS gateway validation."
     }
 
     $cgsIssuer = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("CGS_AUTH_ISSUER")
     if (-not $cgsIssuer) {
-        Set-OrAddEnvLine -Lines $lines -Key "CGS_AUTH_ISSUER" -Value "cgs-placeholder-issuer"
-        $updatedKeys.Add("CGS_AUTH_ISSUER")
+        Write-Warning "CGS_AUTH_ISSUER is missing from $rootEnvPath. Sync the real value from the CGS/Vercel environment when RS256 validation is required."
     }
 
     $cgsAudience = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("CGS_AUTH_AUDIENCE")
     if (-not $cgsAudience) {
-        Set-OrAddEnvLine -Lines $lines -Key "CGS_AUTH_AUDIENCE" -Value "cgs-placeholder-audience"
-        $updatedKeys.Add("CGS_AUTH_AUDIENCE")
+        Write-Warning "CGS_AUTH_AUDIENCE is missing from $rootEnvPath. This is optional unless the gateway enforces audience matching."
     }
 
     $ollamaEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ENABLE_OLLAMA_RUNTIME"))

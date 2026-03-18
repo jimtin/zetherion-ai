@@ -122,6 +122,14 @@ Preferred command from the CGS repo on the Mac cutover machine:
 bash scripts/cgs-ai/export-core-cutover-env-manifest.sh
 ```
 
+If the Windows `.env` still contains placeholder CGS auth metadata from older
+deploy/recovery scripts, sync the real values from CGS/Vercel before
+certification:
+
+```bash
+bash scripts/cgs-ai/sync-cgs-auth-env-to-windows.sh
+```
+
 Default output bundle:
 
 ```text
