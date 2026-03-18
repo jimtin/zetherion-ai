@@ -179,3 +179,90 @@ def test_powershell_wrapper_points_at_windows_output_bundle():
     assert 'Join-Path $DeployPath "data\\windows-live-env"' in script_text
     assert 'Join-Path $DeployPath ".env"' in script_text
     assert "export-live-env-manifest.py" in script_text
+
+
+def test_export_respects_core_fallbacks_and_optional_webhook_paths(tmp_path, capsys):
+    module = _load_module()
+    cgs_env = tmp_path / "cgs.env"
+    z_env = tmp_path / "zetherion.env"
+    out_dir = tmp_path / "out"
+
+    cgs_env.write_text(
+        "\n".join(
+            [
+                "DATABASE_URL=postgresql://db.internal/live",
+                "CGS_AI_TOKEN_SIGNING_SECRET=token-secret",
+                "ENCRYPTION_PASSPHRASE=enc-passphrase",
+                "CRON_SECRET=cron-secret",
+                "NEXT_PUBLIC_BASE_URL=https://catalystgroup.solutions",
+                "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk",
+                "CLERK_SECRET_KEY=sk_live_abc",
+                "VERCEL_API_TOKEN=vercel-token",
+                "STRIPE_SECRET_KEY=sk_live",
+                "STRIPE_WEBHOOK_SECRET=whsec_stripe",
+                "CGS_STRIPE_DEFAULT_PRICE_ID=price_live",
+                "ZETHERION_PUBLIC_API_BASE_URL=https://zetherion.internal",
+                "ZETHERION_SKILLS_API_BASE_URL=https://zetherion.internal/skills",
+                "ZETHERION_SKILLS_API_SECRET=skills-secret",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    z_env.write_text(
+        "\n".join(
+            [
+                "OPENAI_API_KEY=openai-live",
+                "GROQ_API_KEY=groq-live",
+                "API_JWT_SECRET=jwt-secret",
+                "CGS_AUTH_JWKS_URL=https://issuer.cgs.internal/.well-known/jwks.json",
+                "ZETHERION_SKILLS_API_SECRET=skills-secret",
+                "DISCORD_TOKEN=discord-live",
+                "ANNOUNCEMENT_API_SECRET=announce-secret",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    code = module.main(
+        [
+            "--cgs-env-file",
+            str(cgs_env),
+            "--zetherion-env-file",
+            str(z_env),
+            "--out-dir",
+            str(out_dir),
+            "--strict",
+        ]
+    )
+
+    assert code == 0
+    stdout = json.loads(capsys.readouterr().out.strip())
+    assert stdout["status"] == "ok"
+
+    cgs_manifest = json.loads((out_dir / "cgs-live-env-manifest.json").read_text(encoding="utf-8"))
+    auth_entries = {
+        entry["name"]: entry
+        for group in cgs_manifest["groups"]
+        for entry in group["entries"]
+        if group["group"] == "auth"
+    }
+    integration_entries = {
+        entry["name"]: entry
+        for group in cgs_manifest["groups"]
+        for entry in group["entries"]
+        if group["group"] == "vercel_integration"
+    }
+
+    assert auth_entries["CGS_AUTH_ISSUER"]["status"] == "present"
+    assert auth_entries["CGS_AUTH_ISSUER"]["matched_key"] == "derived:clerk_frontend_api"
+    assert auth_entries["CGS_AUTH_JWKS_URL"]["status"] == "present"
+    assert auth_entries["CGS_AUTH_JWKS_URL"]["matched_key"] == "derived:clerk_frontend_api"
+    assert integration_entries["ZETHERION_OWNER_CI_WORKER_BASE_URL"]["status"] == "present"
+    assert (
+        integration_entries["ZETHERION_OWNER_CI_WORKER_BASE_URL"]["matched_key"]
+        == "derived:ZETHERION_SKILLS_API_BASE_URL"
+    )
+    assert "CLERK_WEBHOOK_SIGNING_SECRET" not in cgs_manifest["summary"]["blocking_missing"]
+    assert "VERCEL_WEBHOOK_SECRET" not in cgs_manifest["summary"]["blocking_missing"]
+    assert "GITHUB_WEBHOOK_SECRET" not in cgs_manifest["summary"]["blocking_missing"]
+    assert "CGS_CI_RELAY_SECRET" not in cgs_manifest["summary"]["blocking_missing"]

@@ -135,6 +135,13 @@ Expected files:
 - `shared-cross-system-env-map.json`
 - `windows-live-env-summary.md`
 
+Standing rule for future cutovers:
+
+- Assume the existing live environment is sufficient unless a newly added
+  feature or a real runtime failure proves a new key is required.
+- Prefer implementing cross-repo defaults/contracts in code before declaring a
+  brand-new environment variable mandatory.
+
 ### Step 5: Build and Start Services
 ```bash
 $SSH "cd C:\ZetherionAI; docker compose up -d --build"

@@ -110,10 +110,11 @@ CGS_REQUIREMENTS: tuple[EnvRequirement, ...] = (
         "CLERK_WEBHOOK_SIGNING_SECRET",
         "cgs",
         "auth",
-        "blocking",
+        "warning",
         "optional",
         "cgs",
         aliases=("CLERK_WEBHOOK_SECRET",),
+        note="Only required for Clerk webhook signature verification.",
     ),
     EnvRequirement("CGS_AUTH_ISSUER", "shared", "auth", "blocking", "required", "either"),
     EnvRequirement("CGS_AUTH_JWKS_URL", "shared", "auth", "blocking", "required", "either"),
@@ -122,12 +123,24 @@ CGS_REQUIREMENTS: tuple[EnvRequirement, ...] = (
     EnvRequirement("STRIPE_WEBHOOK_SECRET", "cgs", "billing", "blocking", "optional", "cgs"),
     EnvRequirement("CGS_STRIPE_DEFAULT_PRICE_ID", "cgs", "billing", "blocking", "optional", "cgs"),
     EnvRequirement(
-        "VERCEL_WEBHOOK_SECRET", "cgs", "vercel_integration", "blocking", "optional", "cgs"
+        "VERCEL_WEBHOOK_SECRET",
+        "cgs",
+        "vercel_integration",
+        "warning",
+        "optional",
+        "cgs",
+        note="Only required for the Vercel webhook ingestion route.",
     ),
     EnvRequirement("VERCEL_API_TOKEN", "cgs", "vercel_integration", "blocking", "optional", "cgs"),
     EnvRequirement("EDGE_CONFIG_ID", "cgs", "vercel_integration", "warning", "optional", "cgs"),
     EnvRequirement(
-        "GITHUB_WEBHOOK_SECRET", "cgs", "vercel_integration", "blocking", "optional", "cgs"
+        "GITHUB_WEBHOOK_SECRET",
+        "cgs",
+        "vercel_integration",
+        "warning",
+        "optional",
+        "cgs",
+        note="Only required for the GitHub webhook ingestion route.",
     ),
     EnvRequirement(
         "ZETHERION_PUBLIC_API_BASE_URL",
@@ -158,12 +171,19 @@ CGS_REQUIREMENTS: tuple[EnvRequirement, ...] = (
         "ZETHERION_OWNER_CI_WORKER_BASE_URL",
         "shared",
         "vercel_integration",
-        "blocking",
-        "required",
+        "warning",
+        "optional",
         "cgs",
+        note="Defaults to {ZETHERION_SKILLS_API_BASE_URL}/owner/ci/worker/v1 when omitted.",
     ),
     EnvRequirement(
-        "CGS_CI_RELAY_SECRET", "shared", "vercel_integration", "blocking", "required", "cgs"
+        "CGS_CI_RELAY_SECRET",
+        "shared",
+        "vercel_integration",
+        "warning",
+        "optional",
+        "cgs",
+        note="Only required for the owner-CI relay verification path.",
     ),
     EnvRequirement("TRADEOXY_SYNC_BASE_URL", "cgs", "tradeoxy", "warning", "optional", "cgs"),
     EnvRequirement("TRADEOXY_SYNC_SECRET", "cgs", "tradeoxy", "warning", "optional", "cgs"),
@@ -338,7 +358,7 @@ SHARED_KEY_EXPECTATIONS: tuple[SharedKeyExpectation, ...] = (
     ),
     SharedKeyExpectation(
         "CGS_AUTH_JWKS_URL",
-        required_in=("cgs", "zetherion"),
+        required_in=("zetherion",),
         windows_requirement="blocking",
         local_debug="required",
     ),
@@ -443,20 +463,65 @@ def classify_env_value(value: str | None) -> EnvStatus:
     return "present"
 
 
-def _resolve_entry(requirement: EnvRequirement, env_map: dict[str, str]) -> ManifestEntry:
-    keys = (requirement.name, *requirement.aliases)
+def _has_cgs_auth_autoderive_input(env_map: dict[str, str]) -> bool:
+    return any(
+        classify_env_value(env_map.get(key)) == "present"
+        for key in (
+            "CLERK_FRONTEND_API_URL",
+            "NEXT_PUBLIC_CLERK_FRONTEND_API_URL",
+            "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+        )
+    )
+
+
+def _status_from_keys_with_fallbacks(
+    keys: Iterable[str],
+    env_map: dict[str, str],
+    *,
+    system: Literal["cgs", "zetherion"] | None = None,
+    logical_name: str | None = None,
+) -> tuple[EnvStatus, str | None]:
     matched_key: str | None = None
     status: EnvStatus = "missing"
 
     for key in keys:
         current_status = classify_env_value(env_map.get(key))
         if current_status == "present":
-            matched_key = key
-            status = current_status
-            break
+            return "present", key
         if current_status == "placeholder" and status == "missing":
             matched_key = key
-            status = current_status
+            status = "placeholder"
+
+    if (
+        system == "cgs"
+        and logical_name in {"CGS_AUTH_ISSUER", "CGS_AUTH_JWKS_URL"}
+        and _has_cgs_auth_autoderive_input(env_map)
+    ):
+        return "present", "derived:clerk_frontend_api"
+
+    if (
+        system == "cgs"
+        and logical_name == "ZETHERION_OWNER_CI_WORKER_BASE_URL"
+        and classify_env_value(env_map.get("ZETHERION_SKILLS_API_BASE_URL")) == "present"
+    ):
+        return "present", "derived:ZETHERION_SKILLS_API_BASE_URL"
+
+    return status, matched_key
+
+
+def _resolve_entry(
+    requirement: EnvRequirement,
+    env_map: dict[str, str],
+    *,
+    system: Literal["cgs", "zetherion"],
+) -> ManifestEntry:
+    keys = (requirement.name, *requirement.aliases)
+    status, matched_key = _status_from_keys_with_fallbacks(
+        keys,
+        env_map,
+        system=system,
+        logical_name=requirement.name,
+    )
 
     return ManifestEntry(
         name=requirement.name,
@@ -497,19 +562,6 @@ def _resolve_patterns(
     return discovered
 
 
-def _status_from_keys(keys: Iterable[str], env_map: dict[str, str]) -> tuple[EnvStatus, str | None]:
-    matched_key: str | None = None
-    status: EnvStatus = "missing"
-    for key in keys:
-        current_status = classify_env_value(env_map.get(key))
-        if current_status == "present":
-            return "present", key
-        if current_status == "placeholder" and status == "missing":
-            matched_key = key
-            status = "placeholder"
-    return status, matched_key
-
-
 def build_manifest(
     *,
     system: Literal["cgs", "zetherion"],
@@ -524,7 +576,7 @@ def build_manifest(
         requirements = ZETHERION_REQUIREMENTS
         pattern_requirements = ZETHERION_PATTERN_REQUIREMENTS
 
-    entries = [_resolve_entry(requirement, env_map) for requirement in requirements]
+    entries = [_resolve_entry(requirement, env_map, system=system) for requirement in requirements]
     grouped: dict[str, list[dict[str, object]]] = {}
     for entry in entries:
         grouped.setdefault(entry.group, []).append(asdict(entry))
@@ -572,8 +624,18 @@ def build_shared_cross_system_map(
     entries: list[dict[str, object]] = []
     for requirement in SHARED_KEY_EXPECTATIONS:
         keys = (requirement.name, *requirement.aliases)
-        cgs_status, cgs_matched_key = _status_from_keys(keys, cgs_env_map)
-        zetherion_status, zetherion_matched_key = _status_from_keys(keys, zetherion_env_map)
+        cgs_status, cgs_matched_key = _status_from_keys_with_fallbacks(
+            keys,
+            cgs_env_map,
+            system="cgs",
+            logical_name=requirement.name,
+        )
+        zetherion_status, zetherion_matched_key = _status_from_keys_with_fallbacks(
+            keys,
+            zetherion_env_map,
+            system="zetherion",
+            logical_name=requirement.name,
+        )
         missing_bindings: list[str] = []
         if "cgs" in requirement.required_in and cgs_status != "present":
             missing_bindings.append("cgs")
@@ -677,6 +739,11 @@ def render_summary_markdown(
             "## Notes",
             "",
             "- These manifests intentionally store names, presence state, and classification only.",
+            (
+                "- Assume the existing live environment is sufficient unless a newly added "
+                "feature or a real runtime failure proves a new key is required."
+            ),
+            "- Prefer code-level defaults and cross-repo contracts before inventing new env keys.",
             "- Placeholder values count as non-ready for blocking Windows certification.",
             "- TradeOxy keys remain warning-only until the deferred final release wave.",
         ]
@@ -729,10 +796,12 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
 
-    blocking_missing = (
-        cgs_manifest["summary"]["blocking_missing"]
-        + zetherion_manifest["summary"]["blocking_missing"]
-        + shared_map["summary"]["blocking_missing_bindings"]
+    blocking_missing = list(
+        dict.fromkeys(
+            cgs_manifest["summary"]["blocking_missing"]
+            + zetherion_manifest["summary"]["blocking_missing"]
+            + shared_map["summary"]["blocking_missing_bindings"]
+        )
     )
     print(
         json.dumps(
