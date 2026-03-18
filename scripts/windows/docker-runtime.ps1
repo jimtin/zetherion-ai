@@ -647,7 +647,13 @@ function Get-ZetherionDockerDesktopSettings {
         swap_mib = (Get-ZetherionObjectPropertyValue -Object $settings -Name "swapMiB")
         cpus = (Get-ZetherionObjectPropertyValue -Object $settings -Name "cpus")
         auto_pause_timed_activity_seconds = (Get-ZetherionObjectPropertyValue -Object $settings -Name "autoPauseTimedActivitySeconds")
-        resource_saver_enabled = (Get-ZetherionObjectPropertyValue -Object $settings -Name "enableResourceSaver")
+        resource_saver_enabled = if (
+            $null -ne (Get-ZetherionObjectPropertyValue -Object $settings -Name "enableResourceSaver")
+        ) {
+            (Get-ZetherionObjectPropertyValue -Object $settings -Name "enableResourceSaver")
+        } else {
+            (Get-ZetherionObjectPropertyValue -Object $settings -Name "UseResourceSaver")
+        }
     }
 }
 
@@ -703,7 +709,7 @@ function Set-ZetherionDockerDesktopDesiredConfiguration {
             $changedKeys.Add("autoPauseTimedActivitySeconds") | Out-Null
         }
 
-        foreach ($toggleName in @("enableResourceSaver", "resourceSaverEnabled", "autoPause", "autoPauseEnabled")) {
+        foreach ($toggleName in @("enableResourceSaver", "resourceSaverEnabled", "UseResourceSaver", "autoPause", "autoPauseEnabled")) {
             if ($settings.PSObject.Properties.Name -contains $toggleName) {
                 $currentToggle = [bool](Get-ZetherionObjectPropertyValue -Object $settings -Name $toggleName -Default $false)
                 if ($currentToggle) {
