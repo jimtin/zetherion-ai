@@ -20,6 +20,7 @@ $script:ZetherionRequiredDockerMemoryMiB = 98304
 $script:ZetherionRequiredDockerSwapMiB = 0
 $script:ZetherionDockerDesktopContextName = "desktop-linux"
 $script:ZetherionDockerDesktopServiceName = "com.docker.service"
+$script:ZetherionDockerDesktopStartupTaskName = "ZetherionDockerAutoStart"
 
 function Get-ZetherionWslDistribution {
     return $script:ZetherionWslDistribution
@@ -51,6 +52,10 @@ function Get-ZetherionDockerDesktopContextName {
 
 function Get-ZetherionDockerDesktopServiceName {
     return [string]$script:ZetherionDockerDesktopServiceName
+}
+
+function Get-ZetherionDockerDesktopStartupTaskName {
+    return [string]$script:ZetherionDockerDesktopStartupTaskName
 }
 
 function Get-ZetherionObjectPropertyValue {
@@ -96,6 +101,30 @@ function Set-ZetherionObjectPropertyValue {
 
 function Get-ZetherionIsoTimestampForPath {
     return (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+}
+
+function Test-ZetherionScheduledTaskActionContains {
+    param(
+        [AllowNull()]
+        [object]$Task,
+        [Parameter(Mandatory = $true)]
+        [string]$Needle
+    )
+
+    if ($null -eq $Task) {
+        return $false
+    }
+
+    foreach ($action in @($Task.Actions)) {
+        if (
+            ($action.Execute -and [string]$action.Execute -like "*$Needle*") -or
+            ($action.Arguments -and [string]$action.Arguments -like "*$Needle*")
+        ) {
+            return $true
+        }
+    }
+
+    return $false
 }
 
 function Set-ZetherionUtf8NoBomContent {
@@ -161,6 +190,30 @@ function Get-ZetherionDockerDesktopSettingsPath {
     }
 
     return "C:\Users\Default\AppData\Roaming\Docker\settings-store.json"
+}
+
+function Get-ZetherionDockerDesktopStartupTaskStatus {
+    $taskName = Get-ZetherionDockerDesktopStartupTaskName
+    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    if (-not $task) {
+        return [pscustomobject]@{
+            task_name = $taskName
+            exists = $false
+            enabled = $false
+            state = "missing"
+            principal_user = ""
+            action_matches = $false
+        }
+    }
+
+    return [pscustomobject]@{
+        task_name = $taskName
+        exists = $true
+        enabled = [bool]$task.Settings.Enabled
+        state = [string]$task.State.ToString()
+        principal_user = [string]$task.Principal.UserId
+        action_matches = [bool](Test-ZetherionScheduledTaskActionContains -Task $task -Needle "Docker Desktop.exe")
+    }
 }
 
 function Get-ZetherionDockerDesktopExecutablePath {
@@ -819,6 +872,7 @@ function Get-ZetherionDockerDesktopStatus {
     $desktopProcessList = @($desktopProcesses)
     $contextStatus = Get-ZetherionDockerDesktopContextStatus
     $wslRuntimeStatus = Get-ZetherionDockerRuntimeStatus -ExecutionBackend "wsl_docker" -DockerBackend "wsl_docker"
+    $startupTaskStatus = Get-ZetherionDockerDesktopStartupTaskStatus
 
     $resourceSaverEnabled = $false
     if ($null -ne $settings.resource_saver_enabled) {
@@ -849,6 +903,12 @@ function Get-ZetherionDockerDesktopStatus {
         service_exists = [bool]($null -ne $service)
         service_status = if ($service) { [string]$service.Status.ToString() } else { "missing" }
         service_start_type = if ($service) { [string]$service.StartType.ToString() } else { "missing" }
+        startup_task_name = [string]$startupTaskStatus.task_name
+        startup_task_exists = [bool]$startupTaskStatus.exists
+        startup_task_enabled = [bool]$startupTaskStatus.enabled
+        startup_task_state = [string]$startupTaskStatus.state
+        startup_task_principal_user = [string]$startupTaskStatus.principal_user
+        startup_task_action_matches = [bool]$startupTaskStatus.action_matches
         docker_cli_available = [bool]$contextStatus.cli_available
         current_context = [string]$contextStatus.current_context
         desktop_linux_context = [string]$contextStatus.context_name
@@ -860,16 +920,68 @@ function Get-ZetherionDockerDesktopStatus {
     }
 }
 
+function Start-ZetherionDockerDesktopViaScheduledTask {
+    $taskStatus = Get-ZetherionDockerDesktopStartupTaskStatus
+    if (-not $taskStatus.exists -or -not $taskStatus.action_matches) {
+        return [pscustomobject]@{
+            started = $false
+            method = "scheduled_task"
+            task_name = [string]$taskStatus.task_name
+            task_enabled = [bool]$taskStatus.enabled
+            task_enabled_changed = $false
+            reason = "task_missing_or_mismatched"
+        }
+    }
+
+    $taskEnabledChanged = $false
+    if (-not $taskStatus.enabled) {
+        Enable-ScheduledTask -TaskName $taskStatus.task_name -ErrorAction Stop | Out-Null
+        $taskEnabledChanged = $true
+        $taskStatus = Get-ZetherionDockerDesktopStartupTaskStatus
+    }
+
+    Start-ScheduledTask -TaskName $taskStatus.task_name -ErrorAction Stop
+    return [pscustomobject]@{
+        started = $true
+        method = "scheduled_task"
+        task_name = [string]$taskStatus.task_name
+        task_enabled = [bool]$taskStatus.enabled
+        task_enabled_changed = [bool]$taskEnabledChanged
+        reason = ""
+    }
+}
+
 function Start-ZetherionDockerDesktopProcess {
     $executablePath = Get-ZetherionDockerDesktopExecutablePath
     if (-not (Test-Path -LiteralPath $executablePath)) {
         throw "Docker Desktop executable not found at $executablePath"
     }
 
+    try {
+        $scheduledTaskResult = Start-ZetherionDockerDesktopViaScheduledTask
+        if ($scheduledTaskResult.started) {
+            return [pscustomobject]@{
+                started = $true
+                executable_path = $executablePath
+                method = [string]$scheduledTaskResult.method
+                task_name = [string]$scheduledTaskResult.task_name
+                task_enabled = [bool]$scheduledTaskResult.task_enabled
+                task_enabled_changed = [bool]$scheduledTaskResult.task_enabled_changed
+            }
+        }
+    }
+    catch {
+        # Fall back to direct process start when the scheduled-task path is unavailable.
+    }
+
     Start-Process -FilePath $executablePath -ErrorAction Stop | Out-Null
     return [pscustomobject]@{
         started = $true
         executable_path = $executablePath
+        method = "direct_process"
+        task_name = ""
+        task_enabled = $false
+        task_enabled_changed = $false
     }
 }
 
@@ -976,7 +1088,10 @@ function Repair-ZetherionDockerDesktopRuntime {
         try {
             $startResult = Start-ZetherionDockerDesktopProcess
             if ($startResult.started) {
-                $actions.Add("started_docker_desktop_process") | Out-Null
+                $actions.Add("started_docker_desktop_process:$($startResult.method)") | Out-Null
+                if ($startResult.task_enabled_changed) {
+                    $actions.Add("enabled_docker_desktop_startup_task:$($startResult.task_name)") | Out-Null
+                }
             }
         }
         catch {

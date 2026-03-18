@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$StartupTaskName = "ZetherionStartupRecover",
     [Parameter(Mandatory = $false)]
+    [string]$DockerDesktopTaskName = "ZetherionDockerAutoStart",
+    [Parameter(Mandatory = $false)]
     [string]$WatchdogTaskName = "ZetherionRuntimeWatchdog",
     [Parameter(Mandatory = $false)]
     [string]$PromotionsTaskName = "ZetherionPostDeployPromotions",
@@ -201,6 +203,7 @@ $taskUser = Resolve-TaskUser -RequestedUser $TaskUser
 
 $checks = [ordered]@{
     recovery_tasks_registered = $false
+    docker_desktop_launch_task_ready = $false
     promotions_task_registered = $false
     canary_task_registered = $false
     runner_service_persistent = $false
@@ -213,11 +216,13 @@ $details = [ordered]@{
     deploy_path = $DeployPath
     wsl_distribution = $WslDistribution
     startup_task_name = $StartupTaskName
+    docker_desktop_task_name = $DockerDesktopTaskName
     watchdog_task_name = $WatchdogTaskName
     promotions_task_name = $PromotionsTaskName
     canary_task_name = $CanaryTaskName
     task_user = $taskUser
     startup_task = $null
+    docker_desktop_launch_task = $null
     watchdog_task = $null
     promotions_task = $null
     canary_task = $null
@@ -229,6 +234,7 @@ $details = [ordered]@{
 
 try {
     $details.startup_task = Test-RecoveryTask -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1" -ExpectedPrincipalUser $taskUser
+    $details.docker_desktop_launch_task = Test-RecoveryTask -TaskName $DockerDesktopTaskName -ScriptNeedle "Docker Desktop.exe" -ExpectedPrincipalUser $taskUser
     $details.watchdog_task = Test-RecoveryTask -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1" -ExpectedPrincipalUser $taskUser
     $details.promotions_task = Test-RecoveryTask -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1" -ExpectedPrincipalUser $taskUser
     $details.canary_task = Test-RecoveryTask -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1" -ExpectedPrincipalUser $taskUser
@@ -236,6 +242,9 @@ try {
     $checks.recovery_tasks_registered = [bool](
         ($details.startup_task.passes -or $details.startup_task.degraded_pass) -and
         ($details.watchdog_task.passes -or $details.watchdog_task.degraded_pass)
+    )
+    $checks.docker_desktop_launch_task_ready = [bool](
+        ($details.docker_desktop_launch_task.passes -or $details.docker_desktop_launch_task.degraded_pass)
     )
     $checks.promotions_task_registered = [bool](
         ($details.promotions_task.passes -or $details.promotions_task.degraded_pass)
@@ -316,6 +325,7 @@ try {
     $checks.docker_desktop_recoverable = [bool](
         $dockerDesktop `
         -and [bool]$dockerDesktop.auto_start `
+        -and [bool]$checks.docker_desktop_launch_task_ready `
         -and [bool]$dockerDesktop.process_running `
         -and [bool]$dockerDesktop.desktop_linux_engine_available `
         -and [bool]$dockerDesktop.wsl_docker_active

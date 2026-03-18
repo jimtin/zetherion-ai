@@ -14,7 +14,7 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$CleanupTaskName = "ZetherionDiskCleanup",
     [Parameter(Mandatory = $false)]
-    [string]$LegacyTaskName = "ZetherionDockerAutoStart",
+    [string]$DockerDesktopTaskName = "ZetherionDockerAutoStart",
     [Parameter(Mandatory = $false)]
     [string]$TaskUser = "",
     [Parameter(Mandatory = $false)]
@@ -255,10 +255,24 @@ function Resolve-PowerShellExecutable {
     throw "Unable to locate pwsh.exe or powershell.exe for scheduled task registration."
 }
 
+function Resolve-DockerDesktopExecutable {
+    foreach ($candidate in @(
+        "C:\Program Files\Docker\Docker\Docker Desktop.exe",
+        "C:\Program Files (x86)\Docker\Docker\Docker Desktop.exe"
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return [string]$candidate
+        }
+    }
+
+    throw "Unable to locate Docker Desktop.exe for scheduled task registration."
+}
+
 $registrationActor = Get-RegistrationActor
 $isElevated = Test-IsElevated
 $taskUser = Resolve-TaskUser -RequestedUser $TaskUser
 $powerShellExecutable = Resolve-PowerShellExecutable
+$dockerDesktopExecutable = Resolve-DockerDesktopExecutable
 
 $result = [ordered]@{
     generated_at = [DateTime]::UtcNow.ToString("o")
@@ -268,7 +282,7 @@ $result = [ordered]@{
         promotions_task_registered = $false
         canary_task_registered = $false
         cleanup_task_registered = $false
-        legacy_task_disabled = $false
+        docker_desktop_task_registered = $false
         recovery_tasks_registered = $false
     }
     details = [ordered]@{
@@ -277,7 +291,7 @@ $result = [ordered]@{
         promotions_task = $PromotionsTaskName
         canary_task = $CanaryTaskName
         cleanup_task = $CleanupTaskName
-        legacy_task = $LegacyTaskName
+        docker_desktop_task = $DockerDesktopTaskName
         wsl_distribution = $WslDistribution
         task_user = $taskUser
         deploy_path = $DeployPath
@@ -290,11 +304,13 @@ $result = [ordered]@{
         promotions_task_probe = $null
         canary_task_probe = $null
         cleanup_task_probe = $null
+        docker_desktop_task_probe = $null
         bootstrap_required = $false
         failure_code = ""
         registration_actor = $registrationActor
         is_elevated = [bool]$isElevated
         powershell_executable = $powerShellExecutable
+        docker_desktop_executable = $dockerDesktopExecutable
         actions_taken = @()
         warnings = @()
     }
@@ -383,33 +399,23 @@ try {
         $result.details.actions_taken += "bootstrapped_recovery_script:disk-cleanup.ps1"
     }
 
-    $legacyTask = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue
-    if ($legacyTask) {
-        if ($legacyTask.State -ne "Disabled") {
-            Disable-ScheduledTask -TaskName $LegacyTaskName | Out-Null
-            $result.details.actions_taken += "disabled_legacy_task:$LegacyTaskName"
-        } else {
-            $result.details.actions_taken += "legacy_task_already_disabled:$LegacyTaskName"
-        }
-        $result.checks.legacy_task_disabled = $true
-    } else {
-        $result.details.actions_taken += "legacy_task_not_present:$LegacyTaskName"
-        $result.checks.legacy_task_disabled = $true
-    }
-
+    $dockerDesktopProbe = Get-RecoveryTaskRecord -TaskName $DockerDesktopTaskName -ScriptNeedle "Docker Desktop.exe"
     $startupProbe = Get-RecoveryTaskRecord -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
     $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
     $promotionsProbe = Get-RecoveryTaskRecord -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
     $canaryProbe = Get-RecoveryTaskRecord -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1"
     $cleanupProbe = Get-RecoveryTaskRecord -TaskName $CleanupTaskName -ScriptNeedle "disk-cleanup.ps1"
+    $result.details.docker_desktop_task_probe = $dockerDesktopProbe
     $result.details.startup_task_probe = $startupProbe
     $result.details.watchdog_task_probe = $watchdogProbe
     $result.details.promotions_task_probe = $promotionsProbe
     $result.details.canary_task_probe = $canaryProbe
     $result.details.cleanup_task_probe = $cleanupProbe
 
-    if ($startupProbe.passes -and $watchdogProbe.passes -and $promotionsProbe.passes -and $canaryProbe.passes -and $cleanupProbe.passes) {
+    if ($dockerDesktopProbe.passes -and $startupProbe.passes -and $watchdogProbe.passes -and $promotionsProbe.passes -and $canaryProbe.passes -and $cleanupProbe.passes) {
+        $result.details.actions_taken += "docker_desktop_task_already_registered:$DockerDesktopTaskName"
         $result.details.actions_taken += "resilience_tasks_already_registered"
+        $result.checks.docker_desktop_task_registered = $true
         $result.checks.startup_task_registered = $true
         $result.checks.watchdog_task_registered = $true
         $result.checks.promotions_task_registered = $true
@@ -419,12 +425,35 @@ try {
         $registrationAccessDenied = $false
         try {
             $principal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType S4U -RunLevel Highest
+            $interactivePrincipal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType InteractiveToken -RunLevel Highest
 
+            $dockerDesktopNeedsRegistration = -not ($dockerDesktopProbe.passes -or $dockerDesktopProbe.degraded_pass)
             $startupNeedsRegistration = -not ($startupProbe.passes -or $startupProbe.degraded_pass)
             $watchdogNeedsRegistration = -not ($watchdogProbe.passes -or $watchdogProbe.degraded_pass)
             $promotionsNeedsRegistration = -not ($promotionsProbe.passes -or $promotionsProbe.degraded_pass)
             $canaryNeedsRegistration = -not ($canaryProbe.passes -or $canaryProbe.degraded_pass)
             $cleanupNeedsRegistration = -not ($cleanupProbe.passes -or $cleanupProbe.degraded_pass)
+
+            if ($dockerDesktopNeedsRegistration) {
+                $dockerDesktopAction = New-ScheduledTaskAction -Execute $dockerDesktopExecutable
+                $dockerDesktopTrigger = New-ScheduledTaskTrigger -AtLogOn -User $taskUser
+                $dockerDesktopSettings = New-ScheduledTaskSettingsSet `
+                    -StartWhenAvailable `
+                    -AllowStartIfOnBatteries `
+                    -DontStopIfGoingOnBatteries `
+                    -ExecutionTimeLimit (New-TimeSpan -Hours 12)
+                $dockerDesktopTask = New-ScheduledTask `
+                    -Action $dockerDesktopAction `
+                    -Trigger $dockerDesktopTrigger `
+                    -Principal $interactivePrincipal `
+                    -Settings $dockerDesktopSettings `
+                    -Description "Start Docker Desktop in the interactive user session for Zetherion recovery."
+                Register-ScheduledTask -TaskName $DockerDesktopTaskName -InputObject $dockerDesktopTask -Force | Out-Null
+                Enable-ScheduledTask -TaskName $DockerDesktopTaskName | Out-Null
+                $result.details.actions_taken += "registered_docker_desktop_task:$DockerDesktopTaskName"
+            } else {
+                $result.details.actions_taken += "docker_desktop_task_already_registered:$DockerDesktopTaskName"
+            }
 
             if ($startupNeedsRegistration) {
                 $startupAction = New-ScheduledTaskAction `
@@ -566,17 +595,22 @@ try {
             }
         }
 
+        $dockerDesktopProbe = Get-RecoveryTaskRecord -TaskName $DockerDesktopTaskName -ScriptNeedle "Docker Desktop.exe"
         $startupProbe = Get-RecoveryTaskRecord -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
         $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
         $promotionsProbe = Get-RecoveryTaskRecord -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
         $canaryProbe = Get-RecoveryTaskRecord -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1"
         $cleanupProbe = Get-RecoveryTaskRecord -TaskName $CleanupTaskName -ScriptNeedle "disk-cleanup.ps1"
+        $result.details.docker_desktop_task_probe = $dockerDesktopProbe
         $result.details.startup_task_probe = $startupProbe
         $result.details.watchdog_task_probe = $watchdogProbe
         $result.details.promotions_task_probe = $promotionsProbe
         $result.details.canary_task_probe = $canaryProbe
         $result.details.cleanup_task_probe = $cleanupProbe
 
+        $result.checks.docker_desktop_task_registered = [bool](
+            $dockerDesktopProbe.passes -or $dockerDesktopProbe.degraded_pass
+        )
         $result.checks.startup_task_registered = [bool](
             $startupProbe.passes -or $startupProbe.degraded_pass
         )
@@ -595,6 +629,7 @@ try {
 
         if ($registrationAccessDenied) {
             $missingTasks = @()
+            if (-not $dockerDesktopProbe.exists) { $missingTasks += $DockerDesktopTaskName }
             if (-not $startupProbe.exists) { $missingTasks += $StartupTaskName }
             if (-not $watchdogProbe.exists) { $missingTasks += $WatchdogTaskName }
             if (-not $promotionsProbe.exists) { $missingTasks += $PromotionsTaskName }
@@ -619,11 +654,11 @@ try {
     )
 
     $result.status = if (
+        $result.checks.docker_desktop_task_registered -and
         $result.checks.recovery_tasks_registered -and
         $result.checks.promotions_task_registered -and
         $result.checks.canary_task_registered -and
-        $result.checks.cleanup_task_registered -and
-        $result.checks.legacy_task_disabled
+        $result.checks.cleanup_task_registered
     ) {
         "success"
     } else {
@@ -631,8 +666,8 @@ try {
     }
 
     if ($result.status -ne "success" -and -not $result.details.failure_code) {
-        if (-not $result.checks.legacy_task_disabled) {
-            $result.details.failure_code = "LEGACY_TASK_DISABLE_FAILED"
+        if (-not $result.checks.docker_desktop_task_registered) {
+            $result.details.failure_code = "DOCKER_DESKTOP_TASK_REGISTRATION_FAILED"
         } else {
             $result.details.failure_code = "TASK_REGISTRATION_INCOMPLETE"
         }

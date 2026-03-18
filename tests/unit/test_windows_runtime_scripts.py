@@ -91,11 +91,14 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert 'if ($child.Name -eq "home")' in docker_runtime
     assert 'if ($child.Name -eq "venv")' in docker_runtime
     assert "function Get-ZetherionDockerDesktopSettingsPath" in docker_runtime
+    assert "function Get-ZetherionDockerDesktopStartupTaskStatus" in docker_runtime
     assert "function Get-ZetherionDockerDesktopSettings" in docker_runtime
     assert "function Set-ZetherionDockerDesktopDesiredConfiguration" in docker_runtime
     assert "function Set-ZetherionUtf8NoBomContent" in docker_runtime
+    assert "function Test-ZetherionScheduledTaskActionContains" in docker_runtime
     assert "function Test-ZetherionUtf8Bom" in docker_runtime
     assert "function Get-ZetherionDockerDesktopStatus" in docker_runtime
+    assert "function Start-ZetherionDockerDesktopViaScheduledTask" in docker_runtime
     assert "function Wait-ZetherionDockerDesktopEngine" in docker_runtime
     assert "function Ensure-ZetherionWslDockerService" in docker_runtime
     assert "function Repair-ZetherionDockerDesktopRuntime" in docker_runtime
@@ -103,6 +106,7 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert '$script:ZetherionRequiredDockerSwapMiB = 0' in docker_runtime
     assert '$script:ZetherionDockerDesktopContextName = "desktop-linux"' in docker_runtime
     assert '$script:ZetherionDockerDesktopServiceName = "com.docker.service"' in docker_runtime
+    assert '$script:ZetherionDockerDesktopStartupTaskName = "ZetherionDockerAutoStart"' in docker_runtime
     assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "autoStart" -Value $true' in docker_runtime
     assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "memoryMiB" -Value $MemoryMiB' in docker_runtime
     assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "swapMiB" -Value $SwapMiB' in docker_runtime
@@ -111,6 +115,10 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "$requiresEncodingRewrite = Test-ZetherionUtf8Bom -Path $current.path" in docker_runtime
     assert "Set-ZetherionUtf8NoBomContent -Path $current.path -Content $settingsJson" in docker_runtime
     assert "encoding_rewritten = [bool]$requiresEncodingRewrite" in docker_runtime
+    assert 'action_matches = [bool](Test-ZetherionScheduledTaskActionContains -Task $task -Needle "Docker Desktop.exe")' in docker_runtime
+    assert 'Start-ScheduledTask -TaskName $taskStatus.task_name -ErrorAction Stop' in docker_runtime
+    assert 'method = "scheduled_task"' in docker_runtime
+    assert 'started_docker_desktop_process:$($startResult.method)' in docker_runtime
     assert '& $dockerCli.Source --context $contextName info *> $null' in docker_runtime
 
 
