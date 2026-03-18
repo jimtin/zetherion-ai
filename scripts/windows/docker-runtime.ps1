@@ -111,6 +111,24 @@ function Set-ZetherionUtf8NoBomContent {
     [System.IO.File]::WriteAllText($Path, $Content, $encoding)
 }
 
+function Test-ZetherionUtf8Bom {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -lt 3) {
+        return $false
+    }
+
+    return ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+}
+
 function Get-ZetherionDockerDesktopSettingsPath {
     $candidates = New-Object 'System.Collections.Generic.List[string]'
 
@@ -733,13 +751,16 @@ function Set-ZetherionDockerDesktopDesiredConfiguration {
         }
     }
 
-    if ($changedKeys.Count -eq 0) {
+    $requiresEncodingRewrite = Test-ZetherionUtf8Bom -Path $current.path
+
+    if ($changedKeys.Count -eq 0 -and -not $requiresEncodingRewrite) {
         return [pscustomobject]@{
             path = $current.path
             exists = $true
             changed = $false
             changed_keys = @()
             backup_path = ""
+            encoding_rewritten = $false
         }
     }
 
@@ -751,9 +772,10 @@ function Set-ZetherionDockerDesktopDesiredConfiguration {
     return [pscustomobject]@{
         path = $current.path
         exists = $true
-        changed = $true
+        changed = [bool]($changedKeys.Count -gt 0 -or $requiresEncodingRewrite)
         changed_keys = @($changedKeys.ToArray())
         backup_path = $backupPath
+        encoding_rewritten = [bool]$requiresEncodingRewrite
     }
 }
 
