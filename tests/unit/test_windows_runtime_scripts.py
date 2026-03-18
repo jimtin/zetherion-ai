@@ -93,6 +93,7 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "function Get-ZetherionDockerDesktopSettingsPath" in docker_runtime
     assert "function Get-ZetherionDockerDesktopSettings" in docker_runtime
     assert "function Set-ZetherionDockerDesktopDesiredConfiguration" in docker_runtime
+    assert "function Set-ZetherionUtf8NoBomContent" in docker_runtime
     assert "function Get-ZetherionDockerDesktopStatus" in docker_runtime
     assert "function Wait-ZetherionDockerDesktopEngine" in docker_runtime
     assert "function Ensure-ZetherionWslDockerService" in docker_runtime
@@ -104,6 +105,8 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "autoStart" -Value $true' in docker_runtime
     assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "memoryMiB" -Value $MemoryMiB' in docker_runtime
     assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "swapMiB" -Value $SwapMiB' in docker_runtime
+    assert "New-Object System.Text.UTF8Encoding($false)" in docker_runtime
+    assert "Set-ZetherionUtf8NoBomContent -Path $current.path -Content $settingsJson" in docker_runtime
     assert '& $dockerCli.Source --context $contextName info *> $null' in docker_runtime
 
 

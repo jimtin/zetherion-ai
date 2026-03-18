@@ -98,6 +98,19 @@ function Get-ZetherionIsoTimestampForPath {
     return (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
 }
 
+function Set-ZetherionUtf8NoBomContent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Content
+    )
+
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $encoding)
+}
+
 function Get-ZetherionDockerDesktopSettingsPath {
     $candidates = New-Object 'System.Collections.Generic.List[string]'
 
@@ -732,7 +745,8 @@ function Set-ZetherionDockerDesktopDesiredConfiguration {
 
     $backupPath = "$($current.path).backup.$(Get-ZetherionIsoTimestampForPath)"
     Copy-Item -LiteralPath $current.path -Destination $backupPath -Force
-    $settings | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $current.path -Encoding utf8
+    $settingsJson = $settings | ConvertTo-Json -Depth 20
+    Set-ZetherionUtf8NoBomContent -Path $current.path -Content $settingsJson
 
     return [pscustomobject]@{
         path = $current.path
