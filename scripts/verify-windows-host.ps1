@@ -16,10 +16,13 @@
 #>
 
 param(
-    [string]$DeploymentPath = "C:\ZetherionAI"
+    [string]$DeploymentPath = "C:\ZetherionAI",
+    [string]$WslDistribution = "Ubuntu"
 )
 
 $ErrorActionPreference = "Continue"
+$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution
+. (Join-Path $PSScriptRoot "windows\docker-runtime.ps1")
 
 $report = @{
     timestamp   = (Get-Date -Format "o")
@@ -104,30 +107,55 @@ catch {
 
 # 2. Docker Desktop
 try {
-    $dockerInfo = docker info 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0) {
-        Add-Check -Name "docker_running" -Status "pass" -Message "Docker Desktop is running"
+    $dockerDesktop = Get-ZetherionDockerDesktopStatus
+    if ($dockerDesktop.desktop_linux_engine_available) {
+        Add-Check -Name "docker_running" -Status "pass" -Message "Docker Desktop is running and serving the desktop-linux engine"
     }
     else {
-        Add-Check -Name "docker_running" -Status "fail" -Message "Docker not responding"
+        Add-Check -Name "docker_running" -Status "fail" -Message "Docker Desktop is not serving the desktop-linux engine"
     }
-}
-catch {
-    Add-Check -Name "docker_running" -Status "fail" -Message "Docker command not found"
-}
 
-# Check Docker auto-start
-try {
-    $dockerAutoStart = Get-ItemProperty "HKCU:\Software\Docker Inc.\Docker Desktop" -Name "LaunchOnLogin" -ErrorAction Stop
-    if ($dockerAutoStart.LaunchOnLogin -eq 1) {
+    if ($dockerDesktop.auto_start) {
         Add-Check -Name "docker_autostart" -Status "pass" -Message "Docker Desktop auto-start enabled"
     }
     else {
-        Add-Check -Name "docker_autostart" -Status "warn" -Message "Docker Desktop auto-start disabled"
+        Add-Check -Name "docker_autostart" -Status "fail" -Message "Docker Desktop auto-start disabled"
+    }
+
+    if ($dockerDesktop.memory_meets_floor -and $dockerDesktop.swap_matches_target) {
+        Add-Check -Name "docker_resources" -Status "pass" -Message "Docker Desktop memory and swap match the required host profile"
+    }
+    else {
+        Add-Check -Name "docker_resources" -Status "fail" -Message "Docker Desktop resources do not match the required profile"
+    }
+
+    if ($dockerDesktop.service_exists -and $dockerDesktop.service_status -eq "Running") {
+        Add-Check -Name "docker_service" -Status "pass" -Message "Docker Desktop service is running"
+    }
+    else {
+        Add-Check -Name "docker_service" -Status "fail" -Message "Docker Desktop service is not running"
+    }
+
+    if ($dockerDesktop.wsl_docker_active) {
+        Add-Check -Name "wsl_docker_service" -Status "pass" -Message "WSL docker.service is active"
+    }
+    else {
+        Add-Check -Name "wsl_docker_service" -Status "fail" -Message "WSL docker.service is not active"
+    }
+
+    if ($dockerDesktop.auto_pause_disabled -and -not $dockerDesktop.resource_saver_enabled) {
+        Add-Check -Name "docker_unattended_recovery" -Status "pass" -Message "Docker Desktop auto-pause/resource saver will not block unattended recovery"
+    }
+    else {
+        Add-Check -Name "docker_unattended_recovery" -Status "warn" -Message "Docker Desktop still has auto-pause or resource saver enabled"
     }
 }
 catch {
-    Add-Check -Name "docker_autostart" -Status "warn" -Message "Could not check Docker auto-start setting"
+    Add-Check -Name "docker_running" -Status "fail" -Message "Docker Desktop status check failed"
+    Add-Check -Name "docker_autostart" -Status "fail" -Message "Docker Desktop auto-start status check failed"
+    Add-Check -Name "docker_resources" -Status "fail" -Message "Docker Desktop resource configuration check failed"
+    Add-Check -Name "docker_service" -Status "fail" -Message "Docker Desktop service check failed"
+    Add-Check -Name "wsl_docker_service" -Status "fail" -Message "WSL docker.service check failed"
 }
 
 # 3. Network Profile

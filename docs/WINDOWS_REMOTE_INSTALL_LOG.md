@@ -9,6 +9,19 @@
 
 ---
 
+## Current Research Baseline
+
+For the current live host layout and safe cutover rules, use
+`docs/WINDOWS_HOST_RESEARCH.md` as the source of truth.
+
+That document captures the current two-zone host model:
+
+- `C:\ZetherionAI` for the live runtime deployment
+- `C:\ZetherionCI` for the CI / WSL / testing environment
+
+This installation log is still useful for remote setup history, but it should
+not be treated as the full operating model for the current host.
+
 ## Prerequisites
 
 ### On Windows (one-time setup, run as Administrator)
@@ -149,6 +162,17 @@ Standing rule for future cutovers:
   feature or a real runtime failure proves a new key is required.
 - Prefer implementing cross-repo defaults/contracts in code before declaring a
   brand-new environment variable mandatory.
+
+For the current Windows host cutover, do not reset the dirty live tree in
+place. Use the dedicated cutover helpers instead:
+
+```powershell
+.\scripts\windows\prepare-runtime-cutover.ps1 -TargetSha <candidate-sha>
+.\scripts\windows\promote-runtime-cutover.ps1
+```
+
+Those helpers preserve a rescue copy of the current runtime tree, stage a clean
+candidate checkout, and promote it only after live validation passes.
 
 ### Step 5: Build and Start Services
 ```bash

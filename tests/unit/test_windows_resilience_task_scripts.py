@@ -42,6 +42,11 @@ def test_resilience_ready_requires_matching_task_user() -> None:
     assert '[string]$WslDistribution = "Ubuntu"' in script
     assert "function Resolve-TaskUser" in script
     assert readiness_condition in script
+    assert "docker_desktop_recoverable = $false" in script
+    assert "docker_desktop_resources_configured = $false" in script
+    assert "Get-ZetherionDockerDesktopStatus" in script
+    assert '$checks.docker_desktop_recoverable = [bool](' in script
+    assert '$checks.docker_desktop_resources_configured = [bool](' in script
 
 
 def test_bootstrap_resilience_tasks_threads_task_user_through() -> None:

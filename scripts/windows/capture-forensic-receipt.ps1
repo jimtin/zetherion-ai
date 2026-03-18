@@ -151,6 +151,7 @@ function Get-DockerFacts {
     param([string]$RepositoryPath)
 
     $runtimeStatus = Get-ZetherionDockerRuntimeStatus -ExecutionBackend "wsl_docker" -DockerBackend "wsl_docker"
+    $desktopStatus = Get-ZetherionDockerDesktopStatus
     $contexts = Invoke-OptionalCommand -Default @() -Script {
         @(
             docker context ls --format "{{json .}}" 2>$null |
@@ -190,6 +191,7 @@ function Get-DockerFacts {
             active = [bool]$runtimeStatus.active
             available = [bool]$runtimeStatus.available
         }
+        desktop_status = $desktopStatus
         contexts = $contexts
         compose_ps = $composePs
         docker_ps = $dockerPs

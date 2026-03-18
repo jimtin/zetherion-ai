@@ -205,6 +205,8 @@ $checks = [ordered]@{
     canary_task_registered = $false
     runner_service_persistent = $false
     docker_service_persistent = $false
+    docker_desktop_recoverable = $false
+    docker_desktop_resources_configured = $false
 }
 
 $details = [ordered]@{
@@ -221,6 +223,7 @@ $details = [ordered]@{
     canary_task = $null
     runner_services = @()
     docker_service = $null
+    docker_desktop = $null
     network_service_in_docker_users = $false
 }
 
@@ -269,6 +272,7 @@ try {
     }
 
     $dockerRuntime = Get-ZetherionDockerRuntimeStatus
+    $dockerDesktop = Get-ZetherionDockerDesktopStatus
     if ($dockerRuntime) {
         $details.docker_service = [ordered]@{
             name = "wsl:docker.service"
@@ -286,6 +290,7 @@ try {
             start_type = "missing"
         }
     }
+    $details.docker_desktop = $dockerDesktop
 
     $dockerUsers = @()
     try {
@@ -298,7 +303,7 @@ try {
     }
 
     $details.network_service_in_docker_users = [bool]($dockerUsers -contains "NT AUTHORITY\NETWORK SERVICE")
-    if ($dockerRuntime.backend -eq "wsl") {
+    if ($dockerRuntime.backend -eq "wsl" -or $dockerRuntime.backend -eq "wsl_docker") {
         $details.network_service_in_docker_users = $true
     }
 
@@ -307,6 +312,20 @@ try {
         -and [bool]$dockerRuntime.enabled `
         -and [bool]$dockerRuntime.active `
         -and [bool]$dockerRuntime.available
+    )
+    $checks.docker_desktop_recoverable = [bool](
+        $dockerDesktop `
+        -and [bool]$dockerDesktop.auto_start `
+        -and [bool]$dockerDesktop.process_running `
+        -and [bool]$dockerDesktop.desktop_linux_engine_available `
+        -and [bool]$dockerDesktop.wsl_docker_active
+    )
+    $checks.docker_desktop_resources_configured = [bool](
+        $dockerDesktop `
+        -and [bool]$dockerDesktop.memory_meets_floor `
+        -and [bool]$dockerDesktop.swap_matches_target `
+        -and [bool]$dockerDesktop.auto_pause_disabled `
+        -and -not [bool]$dockerDesktop.resource_saver_enabled
     )
 
     $allowServiceFallback = $false
@@ -341,7 +360,13 @@ $payload = [ordered]@{
 Ensure-ParentDir -Path $OutputPath
 $payload | ConvertTo-Json -Depth 10 | Out-File $OutputPath -Encoding utf8
 
-if ($checks.recovery_tasks_registered -and $checks.runner_service_persistent -and $checks.docker_service_persistent) {
+if (
+    $checks.recovery_tasks_registered `
+    -and $checks.runner_service_persistent `
+    -and $checks.docker_service_persistent `
+    -and $checks.docker_desktop_recoverable `
+    -and $checks.docker_desktop_resources_configured
+) {
     exit 0
 }
 

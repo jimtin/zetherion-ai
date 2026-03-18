@@ -78,27 +78,18 @@ function Wait-ForNetwork {
 function Wait-ForDocker {
     param([int]$TimeoutSeconds, [ref]$ActionsTaken)
 
-    $dockerStatus = Get-ZetherionDockerRuntimeStatus
-    if (-not $dockerStatus.active) {
-        & wsl.exe -d (Get-ZetherionWslDistribution) -- bash -lc "systemctl start docker"
-        if ($LASTEXITCODE -eq 0) {
-            $ActionsTaken.Value += "started_wsl_docker_service"
-        }
+    $repair = Repair-ZetherionDockerDesktopRuntime -TimeoutSeconds $TimeoutSeconds -RepairSettings -DisableAutoPause
+    foreach ($action in @($repair.actions)) {
+        $ActionsTaken.Value += [string]$action
+    }
+    foreach ($warning in @($repair.warnings)) {
+        $ActionsTaken.Value += "docker_warning:$warning"
+    }
+    if ($repair.settings_repair -and $repair.settings_repair.changed) {
+        $ActionsTaken.Value += "docker_settings_repaired"
     }
 
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        try {
-            if (Test-ZetherionDockerAvailable) {
-                return $true
-            }
-        }
-        catch {
-            # Wait and retry.
-        }
-        Start-Sleep -Seconds 5
-    }
-    return $false
+    return [bool]$repair.success
 }
 
 function Get-EnvValueFromFile {

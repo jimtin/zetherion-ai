@@ -16,6 +16,10 @@ $script:ZetherionDockerBackend = if ($env:ZETHERION_DOCKER_BACKEND) {
     $script:ZetherionExecutionBackend
 }
 $script:ZetherionRecommendedWslVmIdleTimeoutMs = 604800000
+$script:ZetherionRequiredDockerMemoryMiB = 98304
+$script:ZetherionRequiredDockerSwapMiB = 0
+$script:ZetherionDockerDesktopContextName = "desktop-linux"
+$script:ZetherionDockerDesktopServiceName = "com.docker.service"
 
 function Get-ZetherionWslDistribution {
     return $script:ZetherionWslDistribution
@@ -31,6 +35,114 @@ function Get-ZetherionDockerBackend {
 
 function Get-ZetherionRecommendedWslVmIdleTimeoutMs {
     return [int64]$script:ZetherionRecommendedWslVmIdleTimeoutMs
+}
+
+function Get-ZetherionRequiredDockerMemoryMiB {
+    return [int]$script:ZetherionRequiredDockerMemoryMiB
+}
+
+function Get-ZetherionRequiredDockerSwapMiB {
+    return [int]$script:ZetherionRequiredDockerSwapMiB
+}
+
+function Get-ZetherionDockerDesktopContextName {
+    return [string]$script:ZetherionDockerDesktopContextName
+}
+
+function Get-ZetherionDockerDesktopServiceName {
+    return [string]$script:ZetherionDockerDesktopServiceName
+}
+
+function Get-ZetherionObjectPropertyValue {
+    param(
+        [AllowNull()]
+        [object]$Object,
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        $Default = $null
+    )
+
+    if ($null -eq $Object) {
+        return $Default
+    }
+
+    if ($Object.PSObject.Properties.Name -contains $Name) {
+        return $Object.$Name
+    }
+
+    return $Default
+}
+
+function Set-ZetherionObjectPropertyValue {
+    param(
+        [AllowNull()]
+        [object]$Object,
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        $Value
+    )
+
+    if ($null -eq $Object) {
+        return
+    }
+
+    if ($Object.PSObject.Properties.Name -contains $Name) {
+        $Object.$Name = $Value
+    }
+    else {
+        $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+    }
+}
+
+function Get-ZetherionIsoTimestampForPath {
+    return (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+}
+
+function Get-ZetherionDockerDesktopSettingsPath {
+    $candidates = New-Object 'System.Collections.Generic.List[string]'
+
+    foreach ($root in @($env:APPDATA, $env:LOCALAPPDATA, $env:USERPROFILE)) {
+        if (-not $root) {
+            continue
+        }
+
+        foreach ($relative in @(
+            "Docker\settings-store.json",
+            "Docker\settings.json",
+            "AppData\Roaming\Docker\settings-store.json",
+            "AppData\Roaming\Docker\settings.json"
+        )) {
+            $candidate = Join-Path $root $relative
+            if (-not ($candidates -contains $candidate)) {
+                $candidates.Add($candidate) | Out-Null
+            }
+        }
+    }
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+
+    if ($candidates.Count -gt 0) {
+        return [string]$candidates[0]
+    }
+
+    return "C:\Users\Default\AppData\Roaming\Docker\settings-store.json"
+}
+
+function Get-ZetherionDockerDesktopExecutablePath {
+    foreach ($candidate in @(
+        "C:\Program Files\Docker\Docker\Docker Desktop.exe",
+        "C:\Program Files (x86)\Docker\Docker\Docker Desktop.exe"
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+
+    return "C:\Program Files\Docker\Docker\Docker Desktop.exe"
 }
 
 function Get-ZetherionWslHostConfigPath {
@@ -482,6 +594,380 @@ function Get-ZetherionDockerRuntimeStatus {
 function Test-ZetherionDockerAvailable {
     $status = Get-ZetherionDockerRuntimeStatus
     return [bool]($status.enabled -and $status.active -and $status.available)
+}
+
+function Get-ZetherionDockerDesktopSettings {
+    $path = Get-ZetherionDockerDesktopSettingsPath
+    if (-not (Test-Path -LiteralPath $path)) {
+        return [pscustomobject]@{
+            path = $path
+            exists = $false
+            valid_json = $false
+            settings = $null
+            auto_start = $false
+            memory_mib = $null
+            swap_mib = $null
+            cpus = $null
+            auto_pause_timed_activity_seconds = $null
+            resource_saver_enabled = $null
+        }
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
+        $settings = if ($raw.Trim()) {
+            $raw | ConvertFrom-Json -ErrorAction Stop
+        } else {
+            [pscustomobject]@{}
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            path = $path
+            exists = $true
+            valid_json = $false
+            settings = $null
+            auto_start = $false
+            memory_mib = $null
+            swap_mib = $null
+            cpus = $null
+            auto_pause_timed_activity_seconds = $null
+            resource_saver_enabled = $null
+            error = $_.Exception.Message
+        }
+    }
+
+    return [pscustomobject]@{
+        path = $path
+        exists = $true
+        valid_json = $true
+        settings = $settings
+        auto_start = [bool](Get-ZetherionObjectPropertyValue -Object $settings -Name "autoStart" -Default $false)
+        memory_mib = (Get-ZetherionObjectPropertyValue -Object $settings -Name "memoryMiB")
+        swap_mib = (Get-ZetherionObjectPropertyValue -Object $settings -Name "swapMiB")
+        cpus = (Get-ZetherionObjectPropertyValue -Object $settings -Name "cpus")
+        auto_pause_timed_activity_seconds = (Get-ZetherionObjectPropertyValue -Object $settings -Name "autoPauseTimedActivitySeconds")
+        resource_saver_enabled = (Get-ZetherionObjectPropertyValue -Object $settings -Name "enableResourceSaver")
+    }
+}
+
+function Set-ZetherionDockerDesktopDesiredConfiguration {
+    param(
+        [int]$MemoryMiB = (Get-ZetherionRequiredDockerMemoryMiB),
+        [int]$SwapMiB = (Get-ZetherionRequiredDockerSwapMiB),
+        [switch]$DisableAutoPause
+    )
+
+    $current = Get-ZetherionDockerDesktopSettings
+    if (-not $current.exists) {
+        return [pscustomobject]@{
+            path = $current.path
+            exists = $false
+            changed = $false
+            changed_keys = @()
+            backup_path = ""
+        }
+    }
+    if (-not $current.valid_json) {
+        throw "Docker Desktop settings file is not valid JSON: $($current.path)"
+    }
+
+    $settings = $current.settings
+    if ($null -eq $settings) {
+        $settings = [pscustomobject]@{}
+    }
+
+    $changedKeys = New-Object 'System.Collections.Generic.List[string]'
+    $currentAutoStart = [bool](Get-ZetherionObjectPropertyValue -Object $settings -Name "autoStart" -Default $false)
+    if (-not $currentAutoStart) {
+        Set-ZetherionObjectPropertyValue -Object $settings -Name "autoStart" -Value $true
+        $changedKeys.Add("autoStart") | Out-Null
+    }
+
+    $currentMemoryMiB = Get-ZetherionObjectPropertyValue -Object $settings -Name "memoryMiB"
+    if ($currentMemoryMiB -ne $MemoryMiB) {
+        Set-ZetherionObjectPropertyValue -Object $settings -Name "memoryMiB" -Value $MemoryMiB
+        $changedKeys.Add("memoryMiB") | Out-Null
+    }
+
+    $currentSwapMiB = Get-ZetherionObjectPropertyValue -Object $settings -Name "swapMiB"
+    if ($currentSwapMiB -ne $SwapMiB) {
+        Set-ZetherionObjectPropertyValue -Object $settings -Name "swapMiB" -Value $SwapMiB
+        $changedKeys.Add("swapMiB") | Out-Null
+    }
+
+    if ($DisableAutoPause) {
+        $currentAutoPause = Get-ZetherionObjectPropertyValue -Object $settings -Name "autoPauseTimedActivitySeconds" -Default 0
+        if ($currentAutoPause -ne 0) {
+            Set-ZetherionObjectPropertyValue -Object $settings -Name "autoPauseTimedActivitySeconds" -Value 0
+            $changedKeys.Add("autoPauseTimedActivitySeconds") | Out-Null
+        }
+
+        foreach ($toggleName in @("enableResourceSaver", "resourceSaverEnabled", "autoPause", "autoPauseEnabled")) {
+            if ($settings.PSObject.Properties.Name -contains $toggleName) {
+                $currentToggle = [bool](Get-ZetherionObjectPropertyValue -Object $settings -Name $toggleName -Default $false)
+                if ($currentToggle) {
+                    Set-ZetherionObjectPropertyValue -Object $settings -Name $toggleName -Value $false
+                    $changedKeys.Add($toggleName) | Out-Null
+                }
+            }
+        }
+    }
+
+    if ($changedKeys.Count -eq 0) {
+        return [pscustomobject]@{
+            path = $current.path
+            exists = $true
+            changed = $false
+            changed_keys = @()
+            backup_path = ""
+        }
+    }
+
+    $backupPath = "$($current.path).backup.$(Get-ZetherionIsoTimestampForPath)"
+    Copy-Item -LiteralPath $current.path -Destination $backupPath -Force
+    $settings | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $current.path -Encoding utf8
+
+    return [pscustomobject]@{
+        path = $current.path
+        exists = $true
+        changed = $true
+        changed_keys = @($changedKeys.ToArray())
+        backup_path = $backupPath
+    }
+}
+
+function Get-ZetherionDockerDesktopContextStatus {
+    $dockerCli = Get-Command "docker.exe" -ErrorAction SilentlyContinue
+    $contextName = Get-ZetherionDockerDesktopContextName
+    if (-not $dockerCli) {
+        return [pscustomobject]@{
+            cli_available = $false
+            context_name = $contextName
+            current_context = ""
+            context_exists = $false
+            engine_available = $false
+        }
+    }
+
+    $currentContext = (& $dockerCli.Source context show 2>$null | Out-String).Trim()
+    & $dockerCli.Source context inspect $contextName *> $null
+    $contextExists = ($LASTEXITCODE -eq 0)
+
+    & $dockerCli.Source --context $contextName info *> $null
+    $engineAvailable = ($LASTEXITCODE -eq 0)
+
+    return [pscustomobject]@{
+        cli_available = $true
+        context_name = $contextName
+        current_context = $currentContext
+        context_exists = [bool]$contextExists
+        engine_available = [bool]$engineAvailable
+    }
+}
+
+function Get-ZetherionDockerDesktopStatus {
+    $settings = Get-ZetherionDockerDesktopSettings
+    $serviceName = Get-ZetherionDockerDesktopServiceName
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    $desktopProcess = @(
+        Get-Process -Name "Docker Desktop" -ErrorAction SilentlyContinue
+        Get-Process -Name "Docker" -ErrorAction SilentlyContinue
+    ) | Where-Object { $null -ne $_ } | Select-Object -Unique -Property Name, Id, Path
+    $contextStatus = Get-ZetherionDockerDesktopContextStatus
+    $wslRuntimeStatus = Get-ZetherionDockerRuntimeStatus -ExecutionBackend "wsl_docker" -DockerBackend "wsl_docker"
+
+    $resourceSaverEnabled = $false
+    if ($null -ne $settings.resource_saver_enabled) {
+        $resourceSaverEnabled = [bool]$settings.resource_saver_enabled
+    }
+
+    return [pscustomobject]@{
+        settings_path = [string]$settings.path
+        settings_exist = [bool]$settings.exists
+        settings_valid_json = [bool]$settings.valid_json
+        auto_start = [bool]$settings.auto_start
+        memory_mib = if ($null -ne $settings.memory_mib) { [int]$settings.memory_mib } else { $null }
+        swap_mib = if ($null -ne $settings.swap_mib) { [int]$settings.swap_mib } else { $null }
+        cpus = if ($null -ne $settings.cpus) { [int]$settings.cpus } else { $null }
+        auto_pause_timed_activity_seconds = if ($null -ne $settings.auto_pause_timed_activity_seconds) { [int]$settings.auto_pause_timed_activity_seconds } else { $null }
+        resource_saver_enabled = [bool]$resourceSaverEnabled
+        auto_pause_disabled = [bool](
+            ($null -eq $settings.auto_pause_timed_activity_seconds) -or
+            ([int]$settings.auto_pause_timed_activity_seconds -eq 0)
+        )
+        memory_meets_floor = [bool]($null -ne $settings.memory_mib -and [int]$settings.memory_mib -ge (Get-ZetherionRequiredDockerMemoryMiB))
+        swap_matches_target = [bool]($null -ne $settings.swap_mib -and [int]$settings.swap_mib -eq (Get-ZetherionRequiredDockerSwapMiB))
+        process_running = [bool]($desktopProcess.Count -gt 0)
+        process_names = @($desktopProcess | ForEach-Object { [string]$_.Name })
+        process_ids = @($desktopProcess | ForEach-Object { [int]$_.Id })
+        executable_path = [string](Get-ZetherionDockerDesktopExecutablePath)
+        service_name = $serviceName
+        service_exists = [bool]($null -ne $service)
+        service_status = if ($service) { [string]$service.Status.ToString() } else { "missing" }
+        service_start_type = if ($service) { [string]$service.StartType.ToString() } else { "missing" }
+        docker_cli_available = [bool]$contextStatus.cli_available
+        current_context = [string]$contextStatus.current_context
+        desktop_linux_context = [string]$contextStatus.context_name
+        desktop_linux_context_exists = [bool]$contextStatus.context_exists
+        desktop_linux_engine_available = [bool]$contextStatus.engine_available
+        wsl_docker_enabled = [bool]$wslRuntimeStatus.enabled
+        wsl_docker_active = [bool]$wslRuntimeStatus.active
+        wsl_docker_available = [bool]$wslRuntimeStatus.available
+    }
+}
+
+function Start-ZetherionDockerDesktopProcess {
+    $executablePath = Get-ZetherionDockerDesktopExecutablePath
+    if (-not (Test-Path -LiteralPath $executablePath)) {
+        throw "Docker Desktop executable not found at $executablePath"
+    }
+
+    Start-Process -FilePath $executablePath -ErrorAction Stop | Out-Null
+    return [pscustomobject]@{
+        started = $true
+        executable_path = $executablePath
+    }
+}
+
+function Wait-ZetherionDockerDesktopEngine {
+    param([int]$TimeoutSeconds = 300)
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastStatus = $null
+    while ((Get-Date) -lt $deadline) {
+        $lastStatus = Get-ZetherionDockerDesktopStatus
+        if ($lastStatus.desktop_linux_engine_available) {
+            return $lastStatus
+        }
+        Start-Sleep -Seconds 5
+    }
+
+    if ($null -ne $lastStatus) {
+        return $lastStatus
+    }
+
+    return Get-ZetherionDockerDesktopStatus
+}
+
+function Ensure-ZetherionWslDockerService {
+    $actions = New-Object 'System.Collections.Generic.List[string]'
+
+    $enableProbe = Invoke-ZetherionWslCommandResult -Command "systemctl is-enabled docker 2>/dev/null || true"
+    $enabled = ($enableProbe.Text -eq "enabled")
+    if (-not $enabled) {
+        $enableResult = Invoke-ZetherionWslCommandResult -Command "systemctl enable docker >/dev/null 2>&1 || true"
+        if ($enableResult.ExitCode -eq 0) {
+            $actions.Add("enabled_wsl_docker_service") | Out-Null
+        }
+        $enableProbe = Invoke-ZetherionWslCommandResult -Command "systemctl is-enabled docker 2>/dev/null || true"
+        $enabled = ($enableProbe.Text -eq "enabled")
+    }
+
+    $activeProbe = Invoke-ZetherionWslCommandResult -Command "systemctl is-active docker 2>/dev/null || true"
+    $active = ($activeProbe.Text -eq "active")
+    if (-not $active) {
+        $startResult = Invoke-ZetherionWslCommandResult -Command "systemctl start docker >/dev/null 2>&1 || true"
+        if ($startResult.ExitCode -eq 0) {
+            $actions.Add("started_wsl_docker_service") | Out-Null
+        }
+        $activeProbe = Invoke-ZetherionWslCommandResult -Command "systemctl is-active docker 2>/dev/null || true"
+        $active = ($activeProbe.Text -eq "active")
+    }
+
+    return [pscustomobject]@{
+        enabled = [bool]$enabled
+        active = [bool]$active
+        actions = @($actions.ToArray())
+    }
+}
+
+function Repair-ZetherionDockerDesktopRuntime {
+    param(
+        [int]$TimeoutSeconds = 300,
+        [switch]$RepairSettings,
+        [switch]$DisableAutoPause
+    )
+
+    $actions = New-Object 'System.Collections.Generic.List[string]'
+    $warnings = New-Object 'System.Collections.Generic.List[string]'
+    $settingsRepair = $null
+
+    if ($RepairSettings) {
+        $settingsRepair = Set-ZetherionDockerDesktopDesiredConfiguration `
+            -MemoryMiB (Get-ZetherionRequiredDockerMemoryMiB) `
+            -SwapMiB (Get-ZetherionRequiredDockerSwapMiB) `
+            -DisableAutoPause:$DisableAutoPause
+        if ($settingsRepair.changed) {
+            $actions.Add("updated_docker_desktop_settings:$($settingsRepair.changed_keys -join ',')") | Out-Null
+        }
+    }
+
+    $initialStatus = Get-ZetherionDockerDesktopStatus
+    if ($initialStatus.service_exists -and $initialStatus.service_status -ne "Running") {
+        try {
+            Start-Service -Name (Get-ZetherionDockerDesktopServiceName) -ErrorAction Stop
+            $actions.Add("started_docker_desktop_service") | Out-Null
+        }
+        catch {
+            $warnings.Add("docker_desktop_service_start_failed:$($_.Exception.Message)") | Out-Null
+        }
+    }
+
+    $needsProcessRestart = [bool]($settingsRepair -and $settingsRepair.changed -and $initialStatus.process_running)
+    if ($needsProcessRestart) {
+        foreach ($processId in @($initialStatus.process_ids)) {
+            try {
+                Stop-Process -Id $processId -Force -ErrorAction Stop
+                $actions.Add("stopped_docker_desktop_process:$processId") | Out-Null
+            }
+            catch {
+                $warnings.Add("docker_desktop_process_stop_failed:${processId}:$($_.Exception.Message)") | Out-Null
+            }
+        }
+        Start-Sleep -Seconds 2
+    }
+
+    $statusBeforeLaunch = Get-ZetherionDockerDesktopStatus
+    if (-not $statusBeforeLaunch.process_running) {
+        try {
+            $startResult = Start-ZetherionDockerDesktopProcess
+            if ($startResult.started) {
+                $actions.Add("started_docker_desktop_process") | Out-Null
+            }
+        }
+        catch {
+            $warnings.Add("docker_desktop_process_start_failed:$($_.Exception.Message)") | Out-Null
+        }
+    }
+
+    $engineStatus = Wait-ZetherionDockerDesktopEngine -TimeoutSeconds $TimeoutSeconds
+    if (-not $engineStatus.desktop_linux_engine_available) {
+        $warnings.Add("docker_desktop_linux_engine_unavailable") | Out-Null
+    }
+
+    $wslService = Ensure-ZetherionWslDockerService
+    foreach ($action in @($wslService.actions)) {
+        $actions.Add([string]$action) | Out-Null
+    }
+
+    $finalStatus = Get-ZetherionDockerDesktopStatus
+    $healthy = [bool](
+        $finalStatus.auto_start -and
+        $finalStatus.memory_meets_floor -and
+        $finalStatus.swap_matches_target -and
+        $finalStatus.process_running -and
+        $finalStatus.desktop_linux_engine_available -and
+        $finalStatus.wsl_docker_active
+    )
+
+    return [pscustomobject]@{
+        success = $healthy
+        status = $finalStatus
+        settings_repair = $settingsRepair
+        actions = @($actions.ToArray())
+        warnings = @($warnings.ToArray())
+    }
 }
 
 function Get-ZetherionDiskStatus {

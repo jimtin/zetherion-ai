@@ -17,6 +17,8 @@ def test_forensic_receipt_script_captures_expected_windows_state() -> None:
     assert "Get-ZetherionWslHostConfig" in script
     assert "Get-DockerFacts" in script
     assert "Get-ScheduledTaskFacts" in script
+    assert "Get-ZetherionDockerDesktopStatus" in script
+    assert "desktop_status = $desktopStatus" in script
     assert '"ZetherionWslKeepalive"' in script
     assert 'execution_backend = "wsl_docker"' in script
     assert 'docker_backend = "wsl_docker"' in script

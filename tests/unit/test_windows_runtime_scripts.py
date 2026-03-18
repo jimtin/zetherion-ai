@@ -42,6 +42,9 @@ def test_runtime_watchdog_skips_restarts_for_non_restartable_failures() -> None:
     runtime_watchdog = RUNTIME_WATCHDOG_PATH.read_text(encoding="utf-8")
 
     assert "function Test-RestartableRuntimeFailure" in runtime_watchdog
+    assert "Repair-ZetherionDockerDesktopRuntime -TimeoutSeconds 180 -RepairSettings -DisableAutoPause" in runtime_watchdog
+    assert 'throw "Docker Desktop recovery did not restore the desktop-linux engine."' in runtime_watchdog
+    assert "docker_recovery = $dockerRecovery" in runtime_watchdog
     assert "restart_skipped_nonrestartable_failure" in runtime_watchdog
     assert "$state.consecutive_failures = 0" in runtime_watchdog
     assert "Get-ZetherionDiskStatus" in runtime_watchdog
@@ -87,6 +90,21 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "foreach ($root in @($artifactsRoot, $logsRoot))" in docker_runtime
     assert 'if ($child.Name -eq "home")' in docker_runtime
     assert 'if ($child.Name -eq "venv")' in docker_runtime
+    assert "function Get-ZetherionDockerDesktopSettingsPath" in docker_runtime
+    assert "function Get-ZetherionDockerDesktopSettings" in docker_runtime
+    assert "function Set-ZetherionDockerDesktopDesiredConfiguration" in docker_runtime
+    assert "function Get-ZetherionDockerDesktopStatus" in docker_runtime
+    assert "function Wait-ZetherionDockerDesktopEngine" in docker_runtime
+    assert "function Ensure-ZetherionWslDockerService" in docker_runtime
+    assert "function Repair-ZetherionDockerDesktopRuntime" in docker_runtime
+    assert '$script:ZetherionRequiredDockerMemoryMiB = 98304' in docker_runtime
+    assert '$script:ZetherionRequiredDockerSwapMiB = 0' in docker_runtime
+    assert '$script:ZetherionDockerDesktopContextName = "desktop-linux"' in docker_runtime
+    assert '$script:ZetherionDockerDesktopServiceName = "com.docker.service"' in docker_runtime
+    assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "autoStart" -Value $true' in docker_runtime
+    assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "memoryMiB" -Value $MemoryMiB' in docker_runtime
+    assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "swapMiB" -Value $SwapMiB' in docker_runtime
+    assert '& $dockerCli.Source --context $contextName info *> $null' in docker_runtime
 
 
 def test_docker_runtime_supports_native_windows_backend() -> None:
@@ -252,6 +270,14 @@ def test_default_compose_marks_ollama_services_as_optional() -> None:
 def test_verify_windows_host_treats_ollama_as_optional_runtime() -> None:
     verify_windows_host = VERIFY_WINDOWS_HOST_PATH.read_text(encoding="utf-8")
 
+    assert '. (Join-Path $PSScriptRoot "windows\\docker-runtime.ps1")' in verify_windows_host
+    assert '[string]$WslDistribution = "Ubuntu"' in verify_windows_host
+    assert '$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution' in verify_windows_host
+    assert 'Get-ZetherionDockerDesktopStatus' in verify_windows_host
+    assert 'Add-Check -Name "docker_resources"' in verify_windows_host
+    assert 'Add-Check -Name "docker_service"' in verify_windows_host
+    assert 'Add-Check -Name "wsl_docker_service"' in verify_windows_host
+    assert 'Add-Check -Name "docker_unattended_recovery"' in verify_windows_host
     assert 'Get-EnvValueFromFile -Path $envPath -Key "ENABLE_OLLAMA_RUNTIME"' in verify_windows_host
     assert '$auxiliaryContainers += "zetherion-ai-ollama"' in verify_windows_host
     assert '$auxiliaryContainers += "zetherion-ai-ollama-router"' in verify_windows_host
@@ -271,3 +297,13 @@ def test_register_resilience_tasks_registers_disk_cleanup_task() -> None:
     assert "disk-cleanup.ps1" in register_script
     assert "registered_cleanup_task:$CleanupTaskName" in register_script
     assert "cleanup_task_registered" in register_script
+
+
+def test_startup_recover_uses_shared_docker_desktop_repair_flow() -> None:
+    startup_recover = (REPO_ROOT / "scripts" / "windows" / "startup-recover.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Repair-ZetherionDockerDesktopRuntime -TimeoutSeconds $TimeoutSeconds -RepairSettings -DisableAutoPause" in startup_recover
+    assert '$ActionsTaken.Value += "docker_settings_repaired"' in startup_recover
+    assert 'return [bool]$repair.success' in startup_recover

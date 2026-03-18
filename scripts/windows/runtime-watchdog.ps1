@@ -138,6 +138,7 @@ $rollbackScriptPath = Join-Path $DeployPath "scripts\windows\rollback-last-good.
 $diskStatusBefore = $null
 $diskStatusAfter = $null
 $diskCleanup = $null
+$dockerRecovery = $null
 
 try {
     if (-not (Test-Path $DeployPath)) {
@@ -148,6 +149,17 @@ try {
     }
     if (-not (Test-Path $rollbackScriptPath)) {
         throw "Rollback script not found: $rollbackScriptPath"
+    }
+
+    $dockerRecovery = Repair-ZetherionDockerDesktopRuntime -TimeoutSeconds 180 -RepairSettings -DisableAutoPause
+    foreach ($dockerAction in @($dockerRecovery.actions)) {
+        $actions += "docker_$dockerAction"
+    }
+    foreach ($dockerWarning in @($dockerRecovery.warnings)) {
+        $actions += "docker_warning:$dockerWarning"
+    }
+    if (-not $dockerRecovery.success) {
+        throw "Docker Desktop recovery did not restore the desktop-linux engine."
     }
 
     $diskStatusBefore = Get-ZetherionDiskStatus -Path $CiRoot -LowDiskFreeBytes $LowDiskFreeBytes -TargetFreeBytes $TargetFreeBytes
@@ -238,6 +250,7 @@ finally {
         actions = $actions
         consecutive_failures = [int]$state.consecutive_failures
         error = $errorText
+        docker_recovery = $dockerRecovery
         disk_status_before = $diskStatusBefore
         disk_status_after = $diskStatusAfter
         disk_cleanup = $diskCleanup
