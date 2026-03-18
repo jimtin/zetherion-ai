@@ -770,10 +770,11 @@ function Get-ZetherionDockerDesktopStatus {
     $settings = Get-ZetherionDockerDesktopSettings
     $serviceName = Get-ZetherionDockerDesktopServiceName
     $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-    $desktopProcess = @(
+    $desktopProcesses = @(
         Get-Process -Name "Docker Desktop" -ErrorAction SilentlyContinue
         Get-Process -Name "Docker" -ErrorAction SilentlyContinue
     ) | Where-Object { $null -ne $_ } | Select-Object -Unique -Property Name, Id, Path
+    $desktopProcessList = @($desktopProcesses)
     $contextStatus = Get-ZetherionDockerDesktopContextStatus
     $wslRuntimeStatus = Get-ZetherionDockerRuntimeStatus -ExecutionBackend "wsl_docker" -DockerBackend "wsl_docker"
 
@@ -798,9 +799,9 @@ function Get-ZetherionDockerDesktopStatus {
         )
         memory_meets_floor = [bool]($null -ne $settings.memory_mib -and [int]$settings.memory_mib -ge (Get-ZetherionRequiredDockerMemoryMiB))
         swap_matches_target = [bool]($null -ne $settings.swap_mib -and [int]$settings.swap_mib -eq (Get-ZetherionRequiredDockerSwapMiB))
-        process_running = [bool]($desktopProcess.Count -gt 0)
-        process_names = @($desktopProcess | ForEach-Object { [string]$_.Name })
-        process_ids = @($desktopProcess | ForEach-Object { [int]$_.Id })
+        process_running = [bool]($desktopProcessList.Count -gt 0)
+        process_names = @($desktopProcessList | ForEach-Object { [string]$_.Name })
+        process_ids = @($desktopProcessList | ForEach-Object { [int]$_.Id })
         executable_path = [string](Get-ZetherionDockerDesktopExecutablePath)
         service_name = $serviceName
         service_exists = [bool]($null -ne $service)
