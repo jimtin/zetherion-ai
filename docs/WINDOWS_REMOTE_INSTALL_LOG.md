@@ -380,3 +380,38 @@ Expected: All 5 tests pass. Router and generation should respond in <3 seconds e
 6. **Container memory limits must account for inference overhead** - Ollama needs ~2x the model file size in RAM (model weights + inference buffers). A 2.0GB model needs ~3GB container limit. Insufficient memory causes silent stalls where the API accepts connections but never returns responses.
 
 7. **Always run end-to-end verification** (Step 10) after installation. Testing from inside the Docker network catches issues that `docker exec` tests miss, since `docker exec` runs inside the container (localhost) while the bot communicates over the Docker bridge network.
+
+---
+
+## 2026-03-19 Core Cutover Staging Update
+
+The host has now been staged for a safer Windows cutover:
+
+- the dirty live runtime tree was archived to:
+  - `C:\ZetherionAI-precutover-20260318T183044Z`
+- a clean candidate checkout was created at:
+  - `C:\ZetherionAI-cutover`
+- the clean candidate currently points at:
+  - `f134cfba7c824c995e6350cf0fe32af42f7e610d`
+- the runtime `.env` was carried forward into the cutover candidate
+
+Docker Desktop stabilization also advanced:
+
+- the shared recovery scripts now enforce:
+  - `AutoStart = true`
+  - `MemoryMiB = 98304`
+  - `SwapMiB = 0`
+  - `AutoPauseTimedActivitySeconds = 0`
+  - `UseResourceSaver = false`
+- a Windows PowerShell BOM issue in `settings-store.json` was identified and
+  fixed in the repo-local recovery tooling
+- after rewriting the settings file without BOM, Docker Desktop stopped failing
+  on `settings-store.json` parsing
+
+Current live blocker before authoritative Windows certification:
+
+- the Windows-side `dockerDesktopLinuxEngine` named pipe is still not reliably
+  available to the Windows `docker.exe` client
+
+This means the next session should continue from **Windows pipe restoration**,
+not from environment harvest or clean-candidate preparation.

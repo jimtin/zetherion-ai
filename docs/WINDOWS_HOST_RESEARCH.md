@@ -258,6 +258,49 @@ Operational conclusion:
 - the Linux Docker engine was **not ready** at inspection time
 - runtime verification that depends on container operations must start by proving Docker Desktop is actually up and serving the Linux context
 
+### Latest stabilization status
+
+As of the latest live cutover work on `2026-03-19`, the host has been moved
+past the initial discovery state:
+
+- the dirty runtime tree at `C:\ZetherionAI` has been archived to:
+  - `C:\ZetherionAI-precutover-20260318T183044Z`
+- a clean cutover candidate now exists at:
+  - `C:\ZetherionAI-cutover`
+- the clean candidate is on:
+  - `f134cfba7c824c995e6350cf0fe32af42f7e610d`
+- the runtime `.env` was carried forward into the clean candidate path
+
+Docker stabilization also progressed materially:
+
+- Docker Desktop settings are now on policy in
+  `C:\Users\james\AppData\Roaming\Docker\settings-store.json`
+  - `AutoStart = true`
+  - `MemoryMiB = 98304`
+  - `SwapMiB = 0`
+  - `AutoPauseTimedActivitySeconds = 0`
+  - `UseResourceSaver = false`
+- the original recovery path was writing `settings-store.json` with a UTF-8
+  BOM from Windows PowerShell, which kept Docker Desktop from parsing the file
+  reliably
+- the repo-local Docker helper now rewrites that file as UTF-8 **without** BOM
+- after the no-BOM rewrite, the Docker backend stopped crashing on
+  `settings-store.json` parsing and began serving backend traffic again
+
+Current remaining Docker blocker:
+
+- the Windows-side `dockerDesktopLinuxEngine` named pipe is still not reliably
+  available to the Windows `docker.exe` client, even though:
+  - `com.docker.service` can be running
+  - the backend no longer dies on settings parsing
+  - the `desktop-linux` context is selected
+
+Operational rule:
+
+- future work should resume from this state and focus on restoring the Windows
+  `dockerDesktopLinuxEngine` pipe, not on redoing env harvest, cutover staging,
+  or Docker memory/autostart discovery
+
 ## Disk and Capacity Findings
 
 ### Current posture
@@ -361,13 +404,17 @@ contract:
 ## Recommended Next Steps
 
 1. Preserve this document as the Windows host source of truth.
-2. Use `prepare-runtime-cutover.ps1` to create a clean candidate path instead of mutating the dirty live tree.
-3. Start Windows certification by proving:
+2. Resume from the prepared cutover state:
+   - `C:\ZetherionAI-precutover-20260318T183044Z`
+   - `C:\ZetherionAI-cutover`
+3. Restore the Windows-side `dockerDesktopLinuxEngine` pipe and prove the
+   Windows `docker.exe` client can talk to `desktop-linux`.
+4. Start Windows certification by proving:
    - Docker Desktop Linux engine is up
    - Docker Desktop resource settings match the host policy
    - runtime verification passes
    - owner-CI worker and WSL keepalive remain healthy
-4. Promote the clean candidate only after the authoritative Windows lane family is green.
+5. Promote the clean candidate only after the authoritative Windows lane family is green.
 
 ## Summary Answer
 
