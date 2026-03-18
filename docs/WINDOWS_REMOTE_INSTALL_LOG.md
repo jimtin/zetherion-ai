@@ -109,6 +109,32 @@ $SSH "Copy-Item C:\ZetherionAI\.env.example C:\ZetherionAI\.env"
 
 Minimum required keys: `DISCORD_TOKEN`, `GEMINI_API_KEY`, `ENCRYPTION_PASSPHRASE`
 
+### Step 4b: Export Sanitized Live Env Manifests
+Before Windows certification, export a name-only env inventory from the live
+sources:
+
+- `CGS` from Vercel production
+- `Zetherion` from the Windows host `.env`
+
+Preferred command from the CGS repo on the Mac cutover machine:
+
+```bash
+bash scripts/cgs-ai/export-core-cutover-env-manifest.sh
+```
+
+Default output bundle:
+
+```text
+.artifacts/windows-live-env/computer-of-awesome-core-cutover
+```
+
+Expected files:
+
+- `cgs-live-env-manifest.json`
+- `zetherion-live-env-manifest.json`
+- `shared-cross-system-env-map.json`
+- `windows-live-env-summary.md`
+
 ### Step 5: Build and Start Services
 ```bash
 $SSH "cd C:\ZetherionAI; docker compose up -d --build"
