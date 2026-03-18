@@ -17,9 +17,9 @@ def test_prepare_runtime_cutover_stages_clean_candidate_and_rescue_archive() -> 
     assert '[string[]]$FileStatePaths = @(".env")' in script
     assert '[string[]]$PersistentDirectories = @()' in script
     assert "function Get-RepositoryForensics" in script
-    assert "git status --short --branch" in script
-    assert "git diff --stat" in script
-    assert "git ls-files --others --exclude-standard" in script
+    assert "git -c core.safecrlf=false status --short --branch" in script
+    assert "git -c core.safecrlf=false diff --stat" in script
+    assert "git -c core.safecrlf=false ls-files --others --exclude-standard" in script
     assert "Get-FileHash -LiteralPath $fullPath -Algorithm SHA256" in script
     assert "& robocopy $Source $Destination /E /COPY:DAT" in script
     assert 'Invoke-GitCommand @("clone", "--no-checkout", $RepositoryUrl, $CandidatePath)' in script

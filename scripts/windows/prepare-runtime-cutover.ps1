@@ -38,7 +38,7 @@ function Invoke-GitCommand {
         [string[]]$Arguments
     )
 
-    & git @Arguments
+    & git -c core.safecrlf=false @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
     }
@@ -79,14 +79,14 @@ function Get-RepositoryForensics {
 
     Push-Location $RepositoryPath
     try {
-        $headSha = ((git rev-parse HEAD 2>$null) | Out-String).Trim()
-        $statusLines = @((git status --short --branch 2>$null) | ForEach-Object { [string]$_ })
-        $diffStat = @((git diff --stat 2>$null) | ForEach-Object { [string]$_ })
+        $headSha = ((git -c core.safecrlf=false rev-parse HEAD 2>$null) | Out-String).Trim()
+        $statusLines = @((git -c core.safecrlf=false status --short --branch 2>$null) | ForEach-Object { [string]$_ })
+        $diffStat = @((git -c core.safecrlf=false diff --stat 2>$null) | ForEach-Object { [string]$_ })
         $trackedModified = @(
-            git diff --name-only 2>$null | ForEach-Object { [string]$_ }
+            git -c core.safecrlf=false diff --name-only 2>$null | ForEach-Object { [string]$_ }
         )
         $untracked = @(
-            git ls-files --others --exclude-standard 2>$null | ForEach-Object { [string]$_ }
+            git -c core.safecrlf=false ls-files --others --exclude-standard 2>$null | ForEach-Object { [string]$_ }
         )
     }
     finally {
