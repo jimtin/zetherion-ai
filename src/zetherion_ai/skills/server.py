@@ -6336,6 +6336,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         ):
             personal_db_pool = await _personal_pool_factory(
                 dsn=settings.postgres_dsn,
+                ssl=settings.postgres_ssl_context,
                 **pool_kwargs,
             )
             personal_storage = _personal_storage_cls(personal_db_pool)
