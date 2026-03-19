@@ -190,8 +190,26 @@ def write_manifest(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+SHELL_PATH_EXPORT_KEYS = {
+    "E2E_STACK_ROOT",
+    "E2E_RUN_MANIFEST_PATH",
+    "E2E_RUN_ENV_PATH",
+    "ZETHERION_ENV_FILE",
+    "COMPOSE_FILE",
+}
+
+
+def _normalize_shell_export_value(key: str, value: str) -> str:
+    if key not in SHELL_PATH_EXPORT_KEYS:
+        return value
+    return value.replace("\\", "/")
+
+
 def render_shell_exports(values: dict[str, str]) -> str:
-    return "\n".join(f"export {key}={shlex.quote(value)}" for key, value in sorted(values.items()))
+    return "\n".join(
+        f"export {key}={shlex.quote(_normalize_shell_export_value(key, value))}"
+        for key, value in sorted(values.items())
+    )
 
 
 def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:

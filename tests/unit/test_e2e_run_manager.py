@@ -80,6 +80,25 @@ def test_create_run_writes_manifest_and_exports(tmp_path, monkeypatch) -> None:
     assert "E2E_RUN_ID=" not in env_text
 
 
+def test_render_shell_exports_normalizes_windows_paths_for_shell_use() -> None:
+    module = _load_module()
+
+    rendered = module.render_shell_exports(
+        {
+            "COMPOSE_FILE": r"C:\ZetherionAI-cutover\docker-compose.test.yml",
+            "E2E_STACK_ROOT": r"\mnt\wsl\docker-desktop-bind-mounts\Ubuntu\stack-root",
+            "PROJECT": "zetherion-ai-test-run-fixed",
+        }
+    )
+
+    assert "export COMPOSE_FILE=C:/ZetherionAI-cutover/docker-compose.test.yml" in rendered
+    assert (
+        "export E2E_STACK_ROOT=/mnt/wsl/docker-desktop-bind-mounts/Ubuntu/stack-root"
+        in rendered
+    )
+    assert "export PROJECT=zetherion-ai-test-run-fixed" in rendered
+
+
 def test_allocate_port_map_uses_slot_offsets() -> None:
     module = _load_module()
 
