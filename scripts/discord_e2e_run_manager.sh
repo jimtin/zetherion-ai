@@ -51,9 +51,8 @@ PY
             return 0
         fi
     done
-    if [[ -n "${PYTHON_BIN:-}" \
-        && "$PYTHON_BIN" != *"/docker-python-tool.sh" \
-        && supports_httpx "$PYTHON_BIN" ]]; then
+    if [[ -n "${PYTHON_BIN:-}" && "$PYTHON_BIN" != *"/docker-python-tool.sh" ]] \
+        && supports_httpx "$PYTHON_BIN"; then
         printf '%s\n' "$PYTHON_BIN"
         return 0
     fi
