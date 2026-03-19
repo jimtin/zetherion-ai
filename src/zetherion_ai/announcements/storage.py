@@ -9,10 +9,12 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+import asyncpg  # type: ignore[import-not-found,import-untyped]
+
 from zetherion_ai.logging import get_logger
 
 if TYPE_CHECKING:
-    import asyncpg  # type: ignore[import-not-found,import-untyped]
+    pass
 
 log = get_logger("zetherion_ai.announcements.storage")
 
@@ -495,9 +497,19 @@ class AnnouncementRepository:
 
     async def initialize(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
-        async with pool.acquire() as conn:
-            await conn.execute(_SCHEMA)
-        log.info("announcement_repository.initialized")
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(_SCHEMA)
+            log.info("announcement_repository.initialized")
+        except asyncpg.UniqueViolationError:
+            # Fresh runtime/API startup can race on CREATE TABLE IF NOT EXISTS.
+            log.info(
+                "announcement_repository.initialized",
+                note="concurrent_creation_resolved",
+            )
+        except asyncpg.PostgresError as exc:
+            log.error("announcement_repository.initialization_failed", error=str(exc))
+            raise
 
     async def create_event(
         self,
