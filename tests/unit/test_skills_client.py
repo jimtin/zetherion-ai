@@ -25,7 +25,7 @@ class TestSkillsClient:
     def test_init_default(self) -> None:
         """SkillsClient should have default values."""
         client = SkillsClient()
-        assert client._base_url == "http://zetherion_ai-skills:8080"
+        assert client._base_url == "https://zetherion-ai-skills:8080"
         assert client._api_secret is None
         assert client._timeout == 30.0
 

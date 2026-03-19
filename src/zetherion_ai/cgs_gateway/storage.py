@@ -250,12 +250,14 @@ class CGSGatewayStorage:
         min_size: int = 1,
         max_size: int = 10,
         owner_portfolio_schema: str = "owner_portfolio",
+        ssl_context: object | None = None,
     ) -> None:
         self._dsn = dsn
         self._encryptor = encryptor
         self._min_size = min_size
         self._max_size = max_size
         self._owner_portfolio_schema = _validate_schema_identifier(owner_portfolio_schema)
+        self._ssl_context = ssl_context
         self._pool: asyncpg.Pool | None = None
 
     async def initialize(self) -> None:
@@ -263,6 +265,7 @@ class CGSGatewayStorage:
             dsn=self._dsn,
             min_size=self._min_size,
             max_size=max(self._min_size, self._max_size),
+            ssl=self._ssl_context,
         )
         await self._ensure_schema()
         log.info(

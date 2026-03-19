@@ -12,3 +12,5 @@ service:
 tls:
   cert: /qdrant/certs/server.crt
   key: /qdrant/certs/server.key
+  ca_cert: /qdrant/certs/ca.pem
+  verify_https_client_certificate: true

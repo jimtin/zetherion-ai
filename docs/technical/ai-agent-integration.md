@@ -261,13 +261,13 @@ of assuming one-shot success.
 
 ```bash
 # 1) Create a session
-curl -sS -X POST "http://localhost:8443/api/v1/sessions" \
+curl -sS -X POST "https://localhost:8443/api/v1/sessions" \
   -H "X-API-Key: sk_live_..." \
   -H "Content-Type: application/json" \
   -d '{"external_user_id":"user-42","metadata":{"app":"web-chat"}}'
 
 # 2) Send chat message
-curl -sS -X POST "http://localhost:8443/api/v1/chat" \
+curl -sS -X POST "https://localhost:8443/api/v1/chat" \
   -H "Authorization: Bearer zt_sess_..." \
   -H "Content-Type: application/json" \
   -d '{"message":"I need help with my order"}'

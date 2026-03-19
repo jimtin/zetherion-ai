@@ -21,6 +21,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution
 . (Join-Path $PSScriptRoot "docker-runtime.ps1")
+. (Join-Path $PSScriptRoot "internal-pki.ps1")
+. (Join-Path $PSScriptRoot "runtime-secrets.ps1")
 
 function Ensure-ParentDir {
     param([string]$Path)
@@ -196,6 +198,7 @@ function Get-OptionalComposeProfiles {
     $whatsappStateKey = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_STATE_KEY")
     $whatsappTenantId = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_TENANT_ID")
     $whatsappIngestUrl = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_INGEST_URL")
+    $strictTransport = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("STRICT_TRANSPORT_SECURITY"))
 
     if ($whatsappEnabled -and $whatsappSigningSecret -and $whatsappStateKey -and $whatsappTenantId -and $whatsappIngestUrl) {
         $profiles.Add("whatsapp-bridge")
@@ -203,6 +206,9 @@ function Get-OptionalComposeProfiles {
 
     $ollamaEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ENABLE_OLLAMA_RUNTIME"))
     if ($ollamaEnabled) {
+        if ($strictTransport) {
+            throw "ENABLE_OLLAMA_RUNTIME cannot be enabled when STRICT_TRANSPORT_SECURITY=true."
+        }
         $profiles.Add("ollama")
     }
 
@@ -245,6 +251,7 @@ function Ensure-RequiredRuntimeEnv {
     }
 
     $updatedKeys = New-Object 'System.Collections.Generic.List[string]'
+    $strictTransport = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("STRICT_TRANSPORT_SECURITY"))
 
     $apiJwtSecret = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("API_JWT_SECRET")
     if (-not $apiJwtSecret) {
@@ -265,6 +272,20 @@ function Ensure-RequiredRuntimeEnv {
     $cgsAudience = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("CGS_AUTH_AUDIENCE")
     if (-not $cgsAudience) {
         Write-Warning "CGS_AUTH_AUDIENCE is missing from $rootEnvPath. This is optional unless the gateway enforces audience matching."
+    }
+
+    if ($strictTransport) {
+        $pkiInit = Invoke-InternalPkiInitialization -DeployPath $RepositoryPath
+        foreach ($entry in (Get-InternalPkiEnvDefaults -DeployPath $RepositoryPath).GetEnumerator()) {
+            $currentValue = Get-EnvValueFromFile -Path $rootEnvPath -Keys @([string]$entry.Key)
+            if (-not $currentValue) {
+                Set-OrAddEnvLine -Lines $lines -Key ([string]$entry.Key) -Value ([string]$entry.Value)
+                $updatedKeys.Add([string]$entry.Key)
+            }
+        }
+        if ($pkiInit.generated) {
+            $updatedKeys.Add("INTERNAL_PKI_GENERATED")
+        }
     }
 
     $ollamaEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ENABLE_OLLAMA_RUNTIME"))
@@ -349,6 +370,10 @@ try {
         $bootstrappedKeys = @(Ensure-RequiredRuntimeEnv -RepositoryPath $DeployPath)
         if ($bootstrappedKeys.Count -gt 0) {
             $actionsTaken += "bootstrapped_runtime_env_keys:$($bootstrappedKeys -join ',')"
+        }
+        $runtimeSecrets = Import-RuntimeSecretsBundle -DeployPath $DeployPath -FailIfMissing:$false
+        if ($runtimeSecrets.found) {
+            $actionsTaken += "runtime_secret_bundle_loaded"
         }
         try {
             Ensure-ZetherionWslRuntimePaths -DeployPath $DeployPath

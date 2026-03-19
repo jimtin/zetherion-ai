@@ -8,6 +8,7 @@ Discovery runs at startup and every 24 hours to catch new models.
 """
 
 import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -96,9 +97,17 @@ class ModelDiscovery:
             tasks.append(self._discover_google())
             providers.append("google")
 
-        # Ollama doesn't need an API key
-        tasks.append(self._discover_ollama())
-        providers.append("ollama")
+        strict_transport = os.environ.get("STRICT_TRANSPORT_SECURITY", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if not strict_transport:
+            # Ollama doesn't need an API key, but it is intentionally excluded
+            # from the hardened production runtime.
+            tasks.append(self._discover_ollama())
+            providers.append("ollama")
 
         # Gather results, catching individual failures
         task_results = await asyncio.gather(*tasks, return_exceptions=True)

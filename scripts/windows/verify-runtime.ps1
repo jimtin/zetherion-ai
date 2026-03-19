@@ -433,7 +433,7 @@ ORDER BY key;
             $requiredKeys = @(
                 "claude_model",
                 "groq_model",
-                "ollama_generation_model",
+                "embedding_model",
                 "openai_model",
                 "router_model"
             )

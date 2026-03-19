@@ -192,7 +192,7 @@ monitoring (add/remove) without restarting the skills service.
 
 ### Prerequisites
 
-- Skills service is running (default: `http://localhost:8080`).
+- Skills service is running (default: `https://localhost:8080`).
 - Work router is enabled.
 - You know your Discord `user_id`.
 - If `SKILLS_API_SECRET` is configured, include it in all API calls.
@@ -200,13 +200,13 @@ monitoring (add/remove) without restarting the skills service.
 ### 0. Set local shell variables
 
 ```bash
-export SKILLS_URL="http://localhost:8080"
+export SKILLS_URL="https://localhost:8080"
 export SKILLS_API_SECRET="replace-if-enabled"
 export USER_ID="123456789"
 
 export GOOGLE_CLIENT_ID="your-google-client-id"
 export GOOGLE_CLIENT_SECRET="your-google-client-secret"
-export GOOGLE_REDIRECT_URI="http://localhost:8080/gmail/callback"
+export GOOGLE_REDIRECT_URI="https://localhost:8080/gmail/callback"
 ```
 
 If your local server does not enforce API-secret auth, remove the

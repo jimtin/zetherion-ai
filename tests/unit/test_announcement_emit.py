@@ -341,7 +341,7 @@ def test_flush_outbox_supports_legacy_plaintext_entries(
         json.dumps(
             {
                 "request_payload": {"target_user_id": 505, "body": "legacy"},
-                "api_url": "http://127.0.0.1:8080/announcements/events",
+                "api_url": "https://127.0.0.1:8080/announcements/events",
                 "idempotency_key": "legacy-key",
                 "event": "deploy",
                 "sha": "abc1234",

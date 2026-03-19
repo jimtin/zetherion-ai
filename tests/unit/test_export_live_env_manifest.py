@@ -71,7 +71,7 @@ def test_export_writes_sanitized_manifests(tmp_path, capsys):
                 "ZETHERION_WORKSPACE_MOUNT_TARGET=/workspace",
                 "DISCORD_TOKEN=discord-live",
                 "ANNOUNCEMENT_EMIT_ENABLED=true",
-                "ANNOUNCEMENT_API_URL=http://127.0.0.1:8080/announcements/events",
+                "ANNOUNCEMENT_API_URL=https://127.0.0.1:8080/announcements/events",
                 "ANNOUNCEMENT_API_SECRET=announce-secret",
                 "OBJECT_STORAGE_BACKEND=s3",
                 "OBJECT_STORAGE_BUCKET=zetherion-replays",

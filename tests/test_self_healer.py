@@ -499,6 +499,26 @@ class TestWarmOllamaModels:
         assert saved_action.result == "success"
         assert saved_action.details["models_found"] == 1
 
+    @pytest.mark.asyncio()
+    async def test_warm_ollama_skips_in_strict_transport_mode(
+        self,
+        healer: SelfHealer,
+        mock_storage: AsyncMock,
+    ) -> None:
+        """Strict transport mode disables Ollama warmup entirely."""
+        settings = MagicMock()
+        settings.strict_transport_security = True
+
+        with (
+            patch("zetherion_ai.config.get_settings", return_value=settings),
+            patch("httpx.AsyncClient") as client_cls,
+        ):
+            result = await healer.warm_ollama_models(trigger="anomaly")
+
+        assert result is False
+        client_cls.assert_not_called()
+        mock_storage.save_healing_action.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # adjust_rate_limits

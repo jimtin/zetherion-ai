@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import os
 import re
+import ssl
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -23,7 +24,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 DEFAULT_STATE_PATH = Path(r"C:\ZetherionAI\data\announcements\notifications-state.json")
 DEFAULT_SECRETS_PATH = Path(r"C:\ZetherionAI\data\secrets\promotions.bin")
 DEFAULT_OUTBOX_DIR = Path(r"C:\ZetherionAI\data\announcements\outbox")
-DEFAULT_API_URL = "http://127.0.0.1:8080/announcements/events"
+DEFAULT_API_URL = "https://127.0.0.1:8080/announcements/events"
 
 SUCCESSFUL_RECEIPT_STATUSES = {"accepted", "deduped", "scheduled", "deferred"}
 _OUTBOX_FORMAT = "zetherion_announcement_outbox_v1"
@@ -249,8 +250,17 @@ def _post_json(
     for key, value in headers.items():
         request.add_header(key, value)
 
+    ssl_context = None
+    if url.lower().startswith("https://"):
+        ca_path = _normalize_id(os.environ.get("INTERNAL_TLS_CA_PATH"))
+        cert_path = _normalize_id(os.environ.get("INTERNAL_TLS_CLIENT_CERT_PATH"))
+        key_path = _normalize_id(os.environ.get("INTERNAL_TLS_CLIENT_KEY_PATH"))
+        ssl_context = ssl.create_default_context(cafile=ca_path or None)
+        if cert_path and key_path:
+            ssl_context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=ssl_context) as response:
             return response.status, response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", errors="replace")

@@ -6,52 +6,63 @@ http:
       rule: "PathPrefix(`/owner/ci/worker/v1`)"
       service: skills-blue
       priority: 30
+      tls: {}
     worker-bridge:
       entryPoints:
         - api
       rule: "PathPrefix(`/worker/v1`)"
       service: skills-blue
       priority: 30
+      tls: {}
     skills:
       entryPoints:
         - skills
       rule: "PathPrefix(`/`)"
       service: skills-blue
       priority: 10
+      tls: {}
     cgs-api:
       entryPoints:
         - api
       rule: "PathPrefix(`/service/ai/v1`)"
       service: cgs-api-blue
       priority: 20
+      tls: {}
     api:
       entryPoints:
         - api
       rule: "PathPrefix(`/`)"
       service: api-blue
       priority: 10
+      tls: {}
   services:
     skills-blue:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: "http://zetherion-ai-skills-blue:8080"
+          - url: "https://zetherion-ai-skills-blue:8080"
     skills-green:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: "http://zetherion-ai-skills-green:8080"
+          - url: "https://zetherion-ai-skills-green:8080"
     api-blue:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: "http://zetherion-ai-api-blue:8443"
+          - url: "https://zetherion-ai-api-blue:8443"
     api-green:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: "http://zetherion-ai-api-green:8443"
+          - url: "https://zetherion-ai-api-green:8443"
     cgs-api-blue:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: "http://zetherion-ai-cgs-gateway-blue:8443"
+          - url: "https://zetherion-ai-cgs-gateway-blue:8443"
     cgs-api-green:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: "http://zetherion-ai-cgs-gateway-green:8443"
+          - url: "https://zetherion-ai-cgs-gateway-green:8443"

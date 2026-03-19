@@ -112,7 +112,6 @@ class TestApplyUpdate:
             "ok\n",  # up skills-green
             "ok\n",  # up api-green
             "ok\n",  # up cgs-gateway-green
-            "ok\n",  # up cgs-ui-green
             "ok\n",  # restart bot
             "zetherion-ai-bot\n",  # ps running bot
             "ok\n",  # stop old blue services
@@ -139,8 +138,8 @@ class TestApplyUpdate:
         route_text = Path(ex._route_config_path).read_text(encoding="utf-8")
         assert "api-green" in route_text
         assert "cgs-api-green" in route_text
-        assert "cgs-ui-green" in route_text
         assert "skills-green" not in route_text
+        assert "cgs-ui" not in route_text
 
     @pytest.mark.asyncio
     async def test_update_fetches_exact_tag_from_origin(self, tmp_path: Path) -> None:
@@ -150,7 +149,6 @@ class TestApplyUpdate:
             "ok\n",
             "ok\n",
             "def456\n",
-            "ok\n",
             "ok\n",
             "ok\n",
             "ok\n",

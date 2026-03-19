@@ -23,6 +23,8 @@ param(
 $ErrorActionPreference = "Continue"
 $env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution
 . (Join-Path $PSScriptRoot "windows\docker-runtime.ps1")
+. (Join-Path $PSScriptRoot "windows\internal-pki.ps1")
+. (Join-Path $PSScriptRoot "windows\runtime-secrets.ps1")
 
 $report = @{
     timestamp   = (Get-Date -Format "o")
@@ -86,6 +88,22 @@ function Test-Truthy {
     $normalized = [string]$Value
     $normalized = $normalized.Trim().ToLowerInvariant()
     return @("1", "true", "yes", "on") -contains $normalized
+}
+
+function Test-HttpsUrl {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return $true
+    }
+
+    try {
+        $uri = [Uri]$Value
+        return $uri.Scheme -eq "https"
+    }
+    catch {
+        return $false
+    }
 }
 
 # 1. SSH Server
@@ -245,6 +263,7 @@ if ($ollamaEnabled) {
     $auxiliaryContainers += "zetherion-ai-ollama"
     $auxiliaryContainers += "zetherion-ai-ollama-router"
 }
+$strictTransport = Test-Truthy -Value (Get-EnvValueFromFile -Path $envPath -Key "STRICT_TRANSPORT_SECURITY")
 
 function Test-ContainerHealthy {
     param([string]$ContainerName)
@@ -293,7 +312,10 @@ else {
 }
 
 # 6. Ollama Models
-if (-not $ollamaEnabled) {
+if ($strictTransport -and $ollamaEnabled) {
+    Add-Check -Name "ollama_models" -Status "fail" -Message "ENABLE_OLLAMA_RUNTIME is incompatible with STRICT_TRANSPORT_SECURITY=true"
+}
+elseif (-not $ollamaEnabled) {
     Add-Check -Name "ollama_models" -Status "pass" -Message "Ollama runtime is disabled by default"
 }
 else {
@@ -461,7 +483,86 @@ catch {
     Add-Check -Name "disk_space" -Status "warn" -Message "Could not check disk space"
 }
 
-# 10. Docker Credential Store
+# 10. BitLocker and runtime secret bundle
+try {
+    $fixedVolumes = @(Get-BitLockerVolume | Where-Object { $_.MountPoint -match "^[A-Z]:$" })
+    $unprotected = @(
+        $fixedVolumes | Where-Object {
+            $_.ProtectionStatus -ne "On" -and $_.ProtectionStatus -ne 1
+        } | ForEach-Object { $_.MountPoint }
+    )
+    if ($unprotected.Count -eq 0 -and $fixedVolumes.Count -gt 0) {
+        Add-Check -Name "bitlocker" -Status "pass" -Message "BitLocker is enabled on all detected fixed volumes"
+    }
+    elseif ($fixedVolumes.Count -eq 0) {
+        Add-Check -Name "bitlocker" -Status "warn" -Message "No BitLocker-managed fixed volumes were detected"
+    }
+    else {
+        Add-Check -Name "bitlocker" -Status "fail" -Message "BitLocker is not enabled on: $($unprotected -join ', ')"
+    }
+}
+catch {
+    Add-Check -Name "bitlocker" -Status "warn" -Message "Could not verify BitLocker status"
+}
+
+try {
+    $runtimeSecretPath = Resolve-RuntimeSecretBundlePath -DeployPath $DeploymentPath
+    if (Test-Path $runtimeSecretPath) {
+        Add-Check -Name "runtime_secret_bundle" -Status "pass" -Message "Runtime secret bundle present at $runtimeSecretPath"
+    }
+    elseif ($strictTransport) {
+        Add-Check -Name "runtime_secret_bundle" -Status "fail" -Message "STRICT_TRANSPORT_SECURITY=true but runtime secret bundle is missing at $runtimeSecretPath"
+    }
+    else {
+        Add-Check -Name "runtime_secret_bundle" -Status "warn" -Message "Runtime secret bundle not found at $runtimeSecretPath"
+    }
+}
+catch {
+    Add-Check -Name "runtime_secret_bundle" -Status "warn" -Message "Could not verify runtime secret bundle"
+}
+
+try {
+    $internalPkiReady = Test-InternalPkiFilesPresent -DeployPath $DeploymentPath
+    if ($internalPkiReady) {
+        Add-Check -Name "internal_pki" -Status "pass" -Message "Internal PKI certificates are present under $DeploymentPath\data\certs"
+    }
+    elseif ($strictTransport) {
+        Add-Check -Name "internal_pki" -Status "fail" -Message "STRICT_TRANSPORT_SECURITY=true but the internal PKI bundle is incomplete"
+    }
+    else {
+        Add-Check -Name "internal_pki" -Status "warn" -Message "Internal PKI bundle not found under $DeploymentPath\data\certs"
+    }
+}
+catch {
+    Add-Check -Name "internal_pki" -Status "warn" -Message "Could not verify internal PKI bundle"
+}
+
+# 11. HTTP-free strict transport policy
+try {
+    $urlsToCheck = @(
+        @{ Name = "CGS_BLOG_PUBLISH_URL"; Value = (Get-EnvValueFromFile -Path $envPath -Key "CGS_BLOG_PUBLISH_URL") },
+        @{ Name = "ANNOUNCEMENT_API_URL"; Value = (Get-EnvValueFromFile -Path $envPath -Key "ANNOUNCEMENT_API_URL") },
+        @{ Name = "TELEMETRY_CENTRAL_URL"; Value = (Get-EnvValueFromFile -Path $envPath -Key "TELEMETRY_CENTRAL_URL") },
+        @{ Name = "WHATSAPP_BRIDGE_INGEST_URL"; Value = (Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_INGEST_URL") }
+    )
+    $invalidTransportUrls = @(
+        $urlsToCheck | Where-Object { -not (Test-HttpsUrl -Value ([string]$_.Value)) } | ForEach-Object { $_.Name }
+    )
+    if (-not $strictTransport) {
+        Add-Check -Name "strict_transport_policy" -Status "warn" -Message "STRICT_TRANSPORT_SECURITY is not enabled"
+    }
+    elseif ($invalidTransportUrls.Count -eq 0) {
+        Add-Check -Name "strict_transport_policy" -Status "pass" -Message "Configured production-facing URLs are HTTPS-only"
+    }
+    else {
+        Add-Check -Name "strict_transport_policy" -Status "fail" -Message "Non-HTTPS URLs found for: $($invalidTransportUrls -join ', ')"
+    }
+}
+catch {
+    Add-Check -Name "strict_transport_policy" -Status "warn" -Message "Could not verify HTTPS-only transport policy"
+}
+
+# 12. Docker Credential Store
 try {
     $dockerConfig = Get-Content "$env:USERPROFILE\.docker\config.json" | ConvertFrom-Json
     if ($dockerConfig.credsStore -eq "desktop") {

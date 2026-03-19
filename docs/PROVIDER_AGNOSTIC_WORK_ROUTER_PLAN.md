@@ -148,12 +148,12 @@ backward compatibility with existing Gmail intents.
 ## Runtime Local Validation (No Restart)
 
 ```bash
-export SKILLS_URL="http://localhost:8080"
+export SKILLS_URL="https://localhost:8080"
 export SKILLS_API_SECRET="replace-if-enabled"
 export USER_ID="123456789"
 export GOOGLE_CLIENT_ID="your-google-client-id"
 export GOOGLE_CLIENT_SECRET="your-google-client-secret"
-export GOOGLE_REDIRECT_URI="http://localhost:8080/gmail/callback"
+export GOOGLE_REDIRECT_URI="https://localhost:8080/gmail/callback"
 ```
 
 Set runtime values:

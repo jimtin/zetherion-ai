@@ -78,6 +78,10 @@ class AgentConfig:
     api_host: str = "127.0.0.1"
     api_port: int = 8787
     api_token: str = ""
+    api_tls_cert_path: str = ""
+    api_tls_key_path: str = ""
+    internal_tls_ca_path: str = ""
+    api_require_client_cert: bool = True
     database_path: str = str(DATABASE_FILE)
     bootstrap_secret: str = ""
     bootstrap_require_once: bool = True
@@ -167,6 +171,10 @@ class AgentConfig:
             api_host=data.get("api_host", "127.0.0.1"),
             api_port=data.get("api_port", 8787),
             api_token=data.get("api_token", ""),
+            api_tls_cert_path=data.get("api_tls_cert_path", ""),
+            api_tls_key_path=data.get("api_tls_key_path", ""),
+            internal_tls_ca_path=data.get("internal_tls_ca_path", ""),
+            api_require_client_cert=data.get("api_require_client_cert", True),
             database_path=data.get("database_path", str(DATABASE_FILE)),
             bootstrap_secret=data.get("bootstrap_secret", ""),
             bootstrap_require_once=data.get("bootstrap_require_once", True),
@@ -286,6 +294,22 @@ class AgentConfig:
         cfg.api_host = os.environ.get("DEV_AGENT_API_HOST", cfg.api_host)
         cfg.api_port = _env_int("DEV_AGENT_API_PORT", cfg.api_port)
         cfg.api_token = os.environ.get("DEV_AGENT_API_TOKEN", cfg.api_token)
+        cfg.api_tls_cert_path = os.environ.get(
+            "DEV_AGENT_API_TLS_CERT_PATH",
+            cfg.api_tls_cert_path,
+        )
+        cfg.api_tls_key_path = os.environ.get(
+            "DEV_AGENT_API_TLS_KEY_PATH",
+            cfg.api_tls_key_path,
+        )
+        cfg.internal_tls_ca_path = os.environ.get(
+            "DEV_AGENT_INTERNAL_TLS_CA_PATH",
+            cfg.internal_tls_ca_path,
+        )
+        cfg.api_require_client_cert = _env_bool(
+            "DEV_AGENT_API_REQUIRE_CLIENT_CERT",
+            cfg.api_require_client_cert,
+        )
         cfg.database_path = os.environ.get("DEV_AGENT_DATABASE_PATH", cfg.database_path)
         cfg.bootstrap_secret = os.environ.get("DEV_AGENT_BOOTSTRAP_SECRET", cfg.bootstrap_secret)
         cfg.bootstrap_require_once = _env_bool(
@@ -419,6 +443,10 @@ class AgentConfig:
             f"api_host = {_toml_basic_string(self.api_host)}",
             f"api_port = {self.api_port}",
             f"api_token = {_toml_basic_string(self.api_token)}",
+            f"api_tls_cert_path = {_toml_basic_string(self.api_tls_cert_path)}",
+            f"api_tls_key_path = {_toml_basic_string(self.api_tls_key_path)}",
+            f"internal_tls_ca_path = {_toml_basic_string(self.internal_tls_ca_path)}",
+            f"api_require_client_cert = {'true' if self.api_require_client_cert else 'false'}",
             f"database_path = {_toml_basic_string(self.database_path)}",
             f"bootstrap_secret = {_toml_basic_string(self.bootstrap_secret)}",
             f"bootstrap_require_once = {'true' if self.bootstrap_require_once else 'false'}",

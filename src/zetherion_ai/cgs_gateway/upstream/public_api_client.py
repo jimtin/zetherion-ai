@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import ssl
 from typing import Any, cast
 
 import aiohttp
@@ -16,10 +17,12 @@ class PublicAPIClient:
         *,
         base_url: str,
         timeout_seconds: float = 30.0,
+        ssl_context: ssl.SSLContext | None = None,
     ) -> None:
         self._base_urls = self._parse_base_urls(base_url)
         self._base_url = self._base_urls[0]
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        self._ssl_context = ssl_context
         self._session: aiohttp.ClientSession | None = None
 
     @staticmethod
@@ -29,7 +32,8 @@ class PublicAPIClient:
 
     async def start(self) -> None:
         if self._session is None:
-            self._session = aiohttp.ClientSession(timeout=self._timeout)
+            connector = aiohttp.TCPConnector(ssl=self._ssl_context) if self._ssl_context else None
+            self._session = aiohttp.ClientSession(timeout=self._timeout, connector=connector)
 
     async def close(self) -> None:
         if self._session is not None:

@@ -173,6 +173,19 @@ class SelfHealer:
         if not self._enabled:
             return False
 
+        try:
+            from zetherion_ai.config import get_settings
+
+            if get_settings().strict_transport_security:
+                log.info(
+                    "healer_warm_ollama_skipped",
+                    reason="strict_transport_security",
+                )
+                return False
+        except Exception:
+            # If config bootstrap is unavailable, keep existing healing behavior.
+            pass
+
         if await self._in_cooldown("warm_ollama_models"):
             return False
 

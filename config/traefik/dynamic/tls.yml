@@ -1,0 +1,19 @@
+http:
+  serversTransports:
+    internal-mtls:
+      rootCAs:
+        - /etc/traefik/certs/internal/ca.pem
+      certificates:
+        - certFile: /etc/traefik/certs/internal/client.pem
+          keyFile: /etc/traefik/certs/internal/client-key.pem
+
+tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /etc/traefik/certs/internal/traefik.pem
+        keyFile: /etc/traefik/certs/internal/traefik-key.pem
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: true

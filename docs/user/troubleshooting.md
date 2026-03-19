@@ -167,7 +167,10 @@ ConnectionRefusedError: [Errno 61] Connection refused
 
 3. **Health check:**
    ```bash
-   curl http://localhost:6333/healthz
+   curl --cacert data/certs/qdrant/ca.pem \
+     --cert data/certs/internal/client.pem \
+     --key data/certs/internal/client-key.pem \
+     https://localhost:6333/healthz
    ```
    Should return: `healthy`
 
@@ -429,7 +432,10 @@ Use these commands to gather diagnostic information:
 ./status.sh                              # Overall system status
 docker-compose logs -f zetherion-ai-bot  # Bot logs (live follow)
 docker stats                             # Container resource usage
-curl http://localhost:6333/healthz       # Qdrant health check
+curl --cacert data/certs/qdrant/ca.pem \
+  --cert data/certs/internal/client.pem \
+  --key data/certs/internal/client-key.pem \
+  https://localhost:6333/healthz         # Qdrant health check
 docker exec zetherion-ai-postgres pg_isready  # PostgreSQL health check
 ```
 

@@ -23,6 +23,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution
 . (Join-Path $PSScriptRoot "docker-runtime.ps1")
+. (Join-Path $PSScriptRoot "internal-pki.ps1")
+. (Join-Path $PSScriptRoot "runtime-secrets.ps1")
 
 function Ensure-ParentDir {
     param([string]$Path)
@@ -211,6 +213,9 @@ $checks = [ordered]@{
     docker_desktop_recoverable = $false
     docker_desktop_resources_configured = $false
     wsl_host_resources_configured = $false
+    runtime_secret_bundle_present = $false
+    internal_pki_present = $false
+    bitlocker_protected = $false
 }
 
 $details = [ordered]@{
@@ -343,6 +348,42 @@ try {
         -and [bool]$dockerDesktop.wsl_resources_configured
     )
 
+    $runtimeSecretPath = Resolve-RuntimeSecretBundlePath -DeployPath $DeployPath
+    $details.runtime_secret_bundle = [ordered]@{
+        path = $runtimeSecretPath
+        exists = [bool](Test-Path $runtimeSecretPath)
+    }
+    $checks.runtime_secret_bundle_present = [bool]$details.runtime_secret_bundle.exists
+
+    $details.internal_pki = [ordered]@{
+        certificate_root = (Join-Path $DeployPath "data\certs")
+        exists = [bool](Test-InternalPkiFilesPresent -DeployPath $DeployPath)
+    }
+    $checks.internal_pki_present = [bool]$details.internal_pki.exists
+
+    try {
+        $fixedVolumes = @(Get-BitLockerVolume | Where-Object { $_.MountPoint -match "^[A-Z]:$" })
+        $details.bitlocker_volumes = @(
+            $fixedVolumes | ForEach-Object {
+                [ordered]@{
+                    mount_point = $_.MountPoint
+                    protection_status = [string]$_.ProtectionStatus
+                }
+            }
+        )
+        $checks.bitlocker_protected = [bool](
+            $fixedVolumes.Count -gt 0 -and -not (
+                $fixedVolumes | Where-Object {
+                    $_.ProtectionStatus -ne "On" -and $_.ProtectionStatus -ne 1
+                }
+            )
+        )
+    }
+    catch {
+        $details.bitlocker_error = $_.Exception.Message
+        $checks.bitlocker_protected = $false
+    }
+
     $allowServiceFallback = $false
     $fallbackRaw = [string]($env:WINDOWS_RESILIENCE_ALLOW_SERVICE_FALLBACK)
     if ($fallbackRaw) {
@@ -381,7 +422,10 @@ if (
     -and $checks.docker_service_persistent `
     -and $checks.docker_desktop_recoverable `
     -and $checks.docker_desktop_resources_configured `
-    -and $checks.wsl_host_resources_configured
+    -and $checks.wsl_host_resources_configured `
+    -and $checks.runtime_secret_bundle_present `
+    -and $checks.internal_pki_present `
+    -and $checks.bitlocker_protected
 ) {
     exit 0
 }

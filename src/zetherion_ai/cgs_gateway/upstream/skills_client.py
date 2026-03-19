@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import ssl
 import uuid
 from typing import Any
 
@@ -22,12 +23,14 @@ class SkillsClient:
         api_secret: str,
         actor_signing_secret: str | None = None,
         timeout_seconds: float = 20.0,
+        ssl_context: ssl.SSLContext | None = None,
     ) -> None:
         self._base_urls = self._parse_base_urls(base_url)
         self._base_url = self._base_urls[0]
         self._api_secret = api_secret
         self._actor_signing_secret = (actor_signing_secret or api_secret).strip()
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        self._ssl_context = ssl_context
         self._session: aiohttp.ClientSession | None = None
 
     @staticmethod
@@ -37,7 +40,8 @@ class SkillsClient:
 
     async def start(self) -> None:
         if self._session is None:
-            self._session = aiohttp.ClientSession(timeout=self._timeout)
+            connector = aiohttp.TCPConnector(ssl=self._ssl_context) if self._ssl_context else None
+            self._session = aiohttp.ClientSession(timeout=self._timeout, connector=connector)
 
     async def close(self) -> None:
         if self._session is not None:

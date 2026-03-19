@@ -13,6 +13,11 @@ from zetherion_dev_agent.policy_store import PolicyStore
 from zetherion_dev_agent.worker_runtime import WorkerRuntime, WorkerRuntimeError
 
 
+def _api_base_url(config: AgentConfig) -> str:
+    scheme = "https" if config.api_tls_cert_path and config.api_tls_key_path else "http"
+    return f"{scheme}://{config.api_host}:{config.api_port}/v1"
+
+
 @click.group()  # type: ignore[misc]
 def main() -> None:
     """Zetherion Dev Agent — monitors your development and reports to Zetherion."""
@@ -96,7 +101,7 @@ def status() -> None:
     click.echo(
         f"Cleanup schedule:  {config.cleanup_hour:02d}:{config.cleanup_minute:02d} " "(local time)"
     )
-    click.echo(f"Autopilot API:     http://{config.api_host}:{config.api_port}/v1")
+    click.echo(f"Autopilot API:     {_api_base_url(config)}")
     click.echo("\nWorker mode:")
     click.echo(f"  Control plane:   {config.worker_control_plane}")
     click.echo(f"  Base URL:        {config.worker_base_url}")
@@ -133,7 +138,7 @@ def daemon(once: bool, dry_run_cleanup: bool, verbose: bool) -> None:
         config.save()
         click.echo("Generated local API token in config.toml.")
     click.echo(
-        f"Autopilot API endpoint: http://{config.api_host}:{config.api_port}/v1 "
+        f"Autopilot API endpoint: {_api_base_url(config)} "
         "(Authorization: Bearer <api_token>)"
     )
     if not config.webhook_url:

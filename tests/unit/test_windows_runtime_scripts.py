@@ -7,6 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VERIFY_RUNTIME_PATH = REPO_ROOT / "scripts" / "windows" / "verify-runtime.ps1"
 RUNTIME_WATCHDOG_PATH = REPO_ROOT / "scripts" / "windows" / "runtime-watchdog.ps1"
+STARTUP_RECOVER_PATH = REPO_ROOT / "scripts" / "windows" / "startup-recover.ps1"
 DOCKER_RUNTIME_PATH = REPO_ROOT / "scripts" / "windows" / "docker-runtime.ps1"
 INSTALL_CI_WORKER_PATH = REPO_ROOT / "scripts" / "windows" / "install-ci-worker.ps1"
 VERIFY_CI_WORKER_CONNECTIVITY_PATH = (
@@ -211,6 +212,31 @@ def test_install_ci_worker_writes_backend_contract_and_blocks_live_runtime_path(
     )
 
 
+def test_windows_runtime_scripts_thread_internal_pki_contract() -> None:
+    deploy_runner = (REPO_ROOT / "scripts" / "windows" / "deploy-runner.ps1").read_text(
+        encoding="utf-8"
+    )
+    startup_recover = STARTUP_RECOVER_PATH.read_text(encoding="utf-8")
+    rollback_script = (REPO_ROOT / "scripts" / "windows" / "rollback-last-good.ps1").read_text(
+        encoding="utf-8"
+    )
+    verify_host = VERIFY_WINDOWS_HOST_PATH.read_text(encoding="utf-8")
+    internal_pki = (REPO_ROOT / "scripts" / "windows" / "internal-pki.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    for script in (deploy_runner, startup_recover, rollback_script):
+        assert 'Join-Path $PSScriptRoot "internal-pki.ps1"' in script
+        assert "Invoke-InternalPkiInitialization -DeployPath $RepositoryPath" in script
+        assert "Get-InternalPkiEnvDefaults -DeployPath $RepositoryPath" in script
+
+    assert 'QDRANT_CERT_PATH' in internal_pki
+    assert 'UPDATER_TLS_CERT_PATH' in internal_pki
+    assert 'DEV_AGENT_API_TLS_CERT_PATH' in internal_pki
+    assert 'Join-Path $PSScriptRoot "windows\\internal-pki.ps1"' in verify_host
+    assert 'Add-Check -Name "internal_pki"' in verify_host
+
+
 def test_verify_ci_worker_connectivity_emits_worker_certification_receipt() -> None:
     verify_connectivity = VERIFY_CI_WORKER_CONNECTIVITY_PATH.read_text(encoding="utf-8")
 
@@ -323,6 +349,7 @@ def test_verify_windows_host_treats_ollama_as_optional_runtime() -> None:
     verify_windows_host = VERIFY_WINDOWS_HOST_PATH.read_text(encoding="utf-8")
 
     assert '. (Join-Path $PSScriptRoot "windows\\docker-runtime.ps1")' in verify_windows_host
+    assert '. (Join-Path $PSScriptRoot "windows\\runtime-secrets.ps1")' in verify_windows_host
     assert '[string]$WslDistribution = "Ubuntu"' in verify_windows_host
     assert "$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution" in verify_windows_host
     assert "Get-ZetherionDockerDesktopStatus" in verify_windows_host
@@ -334,6 +361,9 @@ def test_verify_windows_host_treats_ollama_as_optional_runtime() -> None:
     assert 'Get-EnvValueFromFile -Path $envPath -Key "ENABLE_OLLAMA_RUNTIME"' in verify_windows_host
     assert '$auxiliaryContainers += "zetherion-ai-ollama"' in verify_windows_host
     assert '$auxiliaryContainers += "zetherion-ai-ollama-router"' in verify_windows_host
+    assert 'Add-Check -Name "runtime_secret_bundle"' in verify_windows_host
+    assert 'Add-Check -Name "bitlocker"' in verify_windows_host
+    assert 'Add-Check -Name "strict_transport_policy"' in verify_windows_host
     assert (
         'Add-Check -Name "ollama_models" -Status "pass" -Message '
         '"Ollama runtime is disabled by default"' in verify_windows_host

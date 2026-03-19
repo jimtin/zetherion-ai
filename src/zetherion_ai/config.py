@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import ssl
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Self
 
@@ -13,6 +14,15 @@ if TYPE_CHECKING:
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from zetherion_ai.security.transport import (
+    build_asyncpg_ssl_context,
+    build_client_ssl_context,
+    build_server_ssl_context,
+    is_production_environment,
+    require_non_ollama_backend,
+    validate_https_csv_urls,
+    validate_https_url,
+)
 
 _DISABLE_ENV_FILE = str(os.getenv("ZETHERION_DISABLE_ENV_FILE", "")).strip().lower() in {
     "1",
@@ -61,6 +71,22 @@ class Settings(BaseSettings):
     postgres_dsn: str = Field(
         default="postgresql://zetherion:password@postgres:5432/zetherion",
         description="PostgreSQL connection string",
+    )
+    postgres_use_tls: bool = Field(
+        default=False,
+        description="Require TLS for PostgreSQL connections",
+    )
+    postgres_tls_ca_path: str | None = Field(
+        default=None,
+        description="CA bundle path for PostgreSQL TLS verification",
+    )
+    postgres_tls_cert_path: str | None = Field(
+        default=None,
+        description="Client certificate path for PostgreSQL mTLS",
+    )
+    postgres_tls_key_path: str | None = Field(
+        default=None,
+        description="Client private key path for PostgreSQL mTLS",
     )
     postgres_pool_min_size: int = Field(
         default=1,
@@ -167,6 +193,10 @@ class Settings(BaseSettings):
 
     # Application
     environment: str = Field(default="production", description="Environment name")
+    strict_transport_security: bool = Field(
+        default=False,
+        description="Enforce HTTPS-only URLs, internal mTLS, and non-Ollama production transport",
+    )
     log_level: str = Field(default="INFO", description="Logging level")
 
     # Logging Configuration
@@ -228,7 +258,7 @@ class Settings(BaseSettings):
         description="Enable Docker dev-agent monitoring and cleanup automation",
     )
     dev_agent_service_url: str = Field(
-        default="http://zetherion-ai-dev-agent:8787",
+        default="https://zetherion-ai-dev-agent:8787",
         description="Base URL for the dev-agent sidecar API",
     )
     dev_agent_bootstrap_secret: str = Field(
@@ -370,6 +400,56 @@ class Settings(BaseSettings):
     encryption_strict: bool = Field(
         default=False, description="Raise errors on decryption failure instead of passing through"
     )
+    runtime_secret_bundle_path: str = Field(
+        default="data/secrets/runtime.bin",
+        description="DPAPI-protected Windows runtime secret bundle path",
+    )
+    backup_age_recipient: str = Field(
+        default="",
+        description="age public recipient used to encrypt host backups at rest",
+    )
+
+    # Internal TLS / PKI
+    internal_tls_ca_path: str | None = Field(
+        default=None,
+        description="CA bundle used to verify internal service TLS certificates",
+    )
+    internal_tls_client_cert_path: str | None = Field(
+        default=None,
+        description="Client certificate path used for internal mTLS callers",
+    )
+    internal_tls_client_key_path: str | None = Field(
+        default=None,
+        description="Client private key path used for internal mTLS callers",
+    )
+    internal_tls_require_client_cert: bool = Field(
+        default=True,
+        description="Require client certificates for internal aiohttp services",
+    )
+    api_tls_cert_path: str | None = Field(
+        default=None,
+        description="Server certificate path for the public API",
+    )
+    api_tls_key_path: str | None = Field(
+        default=None,
+        description="Server private key path for the public API",
+    )
+    skills_tls_cert_path: str | None = Field(
+        default=None,
+        description="Server certificate path for the skills API",
+    )
+    skills_tls_key_path: str | None = Field(
+        default=None,
+        description="Server private key path for the skills API",
+    )
+    cgs_gateway_tls_cert_path: str | None = Field(
+        default=None,
+        description="Server certificate path for the CGS gateway",
+    )
+    cgs_gateway_tls_key_path: str | None = Field(
+        default=None,
+        description="Server private key path for the CGS gateway",
+    )
 
     # InferenceBroker Configuration (Phase 5B)
     inference_broker_enabled: bool = Field(
@@ -486,7 +566,7 @@ class Settings(BaseSettings):
 
     # Skills Service Configuration (Phase 5D)
     skills_service_url: str = Field(
-        default="http://zetherion-ai-skills:8080",
+        default="https://zetherion-ai-skills:8080",
         description="URL of the skills service (internal Docker network)",
     )
     skills_api_secret: SecretStr | None = Field(
@@ -535,7 +615,7 @@ class Settings(BaseSettings):
         default=None, description="Google OAuth2 client secret"
     )
     google_redirect_uri: str = Field(
-        default="http://localhost:8080/gmail/callback",
+        default="https://localhost:8080/gmail/callback",
         description="OAuth2 callback URL for Gmail",
     )
     work_router_enabled: bool = Field(
@@ -608,11 +688,11 @@ class Settings(BaseSettings):
         description="Expected JWT audience for CGS auth tokens",
     )
     zetherion_public_api_base_url: str = Field(
-        default="http://zetherion-ai-api-green:8443,http://zetherion-ai-api-blue:8443",
+        default="https://zetherion-ai-api-green:8443,https://zetherion-ai-api-blue:8443",
         description="Base URL for upstream Zetherion public API",
     )
     zetherion_skills_api_base_url: str = Field(
-        default="http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080",
+        default="https://zetherion-ai-skills-green:8080,https://zetherion-ai-skills-blue:8080",
         description="Base URL for upstream Zetherion skills API",
     )
     zetherion_skills_api_secret: SecretStr | None = Field(
@@ -812,7 +892,7 @@ class Settings(BaseSettings):
         description="Enable Windows deploy/promotions announcement event emission",
     )
     announcement_api_url: str = Field(
-        default="http://127.0.0.1:8080/announcements/events",
+        default="https://127.0.0.1:8080/announcements/events",
         description="Internal Skills announcement events endpoint for Windows emit scripts",
     )
     announcement_api_secret: SecretStr | None = Field(
@@ -1035,6 +1115,66 @@ class Settings(BaseSettings):
             raise ValueError("encryption_tenant_passphrase must be at least 16 characters")
         return self
 
+    @model_validator(mode="after")
+    def validate_strict_transport_security(self) -> Self:
+        """Validate strict transport security requirements when explicitly enabled."""
+        if not self.strict_transport_security:
+            return self
+
+        validate_https_csv_urls(self.skills_service_url, field_name="skills_service_url")
+        validate_https_csv_urls(
+            self.zetherion_public_api_base_url,
+            field_name="zetherion_public_api_base_url",
+        )
+        validate_https_csv_urls(
+            self.zetherion_skills_api_base_url,
+            field_name="zetherion_skills_api_base_url",
+        )
+        validate_https_url(self.announcement_api_url, field_name="announcement_api_url")
+
+        if self.dev_agent_enabled:
+            validate_https_url(self.dev_agent_service_url, field_name="dev_agent_service_url")
+        if self.updater_service_url:
+            validate_https_url(self.updater_service_url, field_name="updater_service_url")
+        if self.telemetry_central_url:
+            validate_https_url(self.telemetry_central_url, field_name="telemetry_central_url")
+        if self.cgs_blog_publish_url:
+            validate_https_url(self.cgs_blog_publish_url, field_name="cgs_blog_publish_url")
+        if self.google_redirect_uri and is_production_environment(self.environment):
+            validate_https_url(self.google_redirect_uri, field_name="google_redirect_uri")
+
+        if not self.qdrant_use_tls:
+            raise ValueError("qdrant_use_tls must be enabled in strict transport mode")
+        if not self.postgres_use_tls:
+            raise ValueError("postgres_use_tls must be enabled in strict transport mode")
+
+        require_non_ollama_backend(self.router_backend, field_name="router_backend")
+        require_non_ollama_backend(self.embeddings_backend, field_name="embeddings_backend")
+
+        required_fields = {
+            "internal_tls_ca_path": self.internal_tls_ca_path,
+            "internal_tls_client_cert_path": self.internal_tls_client_cert_path,
+            "internal_tls_client_key_path": self.internal_tls_client_key_path,
+            "api_tls_cert_path": self.api_tls_cert_path,
+            "api_tls_key_path": self.api_tls_key_path,
+            "skills_tls_cert_path": self.skills_tls_cert_path,
+            "skills_tls_key_path": self.skills_tls_key_path,
+            "cgs_gateway_tls_cert_path": self.cgs_gateway_tls_cert_path,
+            "cgs_gateway_tls_key_path": self.cgs_gateway_tls_key_path,
+            "postgres_tls_ca_path": self.postgres_tls_ca_path,
+            "postgres_tls_cert_path": self.postgres_tls_cert_path,
+            "postgres_tls_key_path": self.postgres_tls_key_path,
+            "qdrant_cert_path": self.qdrant_cert_path,
+            "runtime_secret_bundle_path": self.runtime_secret_bundle_path,
+            "backup_age_recipient": self.backup_age_recipient,
+        }
+        missing = [name for name, value in required_fields.items() if not str(value or "").strip()]
+        if missing:
+            raise ValueError(
+                "Strict transport security requires non-empty values for: " + ", ".join(missing)
+            )
+        return self
+
     @property
     def ollama_url(self) -> str:
         """Get the full Ollama URL (generation container)."""
@@ -1079,6 +1219,56 @@ class Settings(BaseSettings):
         port = self.qdrant_port if self.qdrant_tenant_port is None else self.qdrant_tenant_port
         scheme = "https" if use_tls else "http"
         return f"{scheme}://{host}:{port}"
+
+    @property
+    def internal_client_ssl_context(self) -> ssl.SSLContext | None:
+        """TLS client context for internal HTTP callers."""
+        return build_client_ssl_context(
+            ca_path=self.internal_tls_ca_path,
+            cert_path=self.internal_tls_client_cert_path,
+            key_path=self.internal_tls_client_key_path,
+            require_tls=self.strict_transport_security,
+        )
+
+    @property
+    def postgres_ssl_context(self) -> ssl.SSLContext | None:
+        """TLS client context for PostgreSQL pools."""
+        return build_asyncpg_ssl_context(
+            ca_path=self.postgres_tls_ca_path,
+            cert_path=self.postgres_tls_cert_path,
+            key_path=self.postgres_tls_key_path,
+            require_tls=self.postgres_use_tls,
+        )
+
+    @property
+    def api_server_ssl_context(self) -> ssl.SSLContext | None:
+        """TLS server context for the public API."""
+        return build_server_ssl_context(
+            cert_path=self.api_tls_cert_path,
+            key_path=self.api_tls_key_path,
+            ca_path=self.internal_tls_ca_path,
+            require_client_cert=self.internal_tls_require_client_cert,
+        )
+
+    @property
+    def skills_server_ssl_context(self) -> ssl.SSLContext | None:
+        """TLS server context for the skills API."""
+        return build_server_ssl_context(
+            cert_path=self.skills_tls_cert_path,
+            key_path=self.skills_tls_key_path,
+            ca_path=self.internal_tls_ca_path,
+            require_client_cert=self.internal_tls_require_client_cert,
+        )
+
+    @property
+    def cgs_gateway_server_ssl_context(self) -> ssl.SSLContext | None:
+        """TLS server context for the CGS gateway."""
+        return build_server_ssl_context(
+            cert_path=self.cgs_gateway_tls_cert_path,
+            key_path=self.cgs_gateway_tls_key_path,
+            ca_path=self.internal_tls_ca_path,
+            require_client_cert=self.internal_tls_require_client_cert,
+        )
 
     # Backward-compatible accessors (deprecated): prefer object_storage_*.
     @property

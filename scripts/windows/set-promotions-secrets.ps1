@@ -24,7 +24,7 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$AnnouncementEmitEnabled = "",
     [Parameter(Mandatory = $false)]
-    [string]$AnnouncementApiUrl = "http://127.0.0.1:8080/announcements/events",
+    [string]$AnnouncementApiUrl = "https://127.0.0.1:8080/announcements/events",
     [Parameter(Mandatory = $false)]
     [string]$AnnouncementApiSecret = "",
     [Parameter(Mandatory = $false)]

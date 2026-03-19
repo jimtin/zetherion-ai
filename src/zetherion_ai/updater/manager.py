@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import ssl
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -138,8 +139,9 @@ class UpdateManager:
         storage: HealthStorage | None = None,
         updater_url: str = "",
         updater_secret: str = "",  # noqa: S107  # nosec B107 — not a real password
-        health_url: str = "http://localhost:8080/health",
+        health_url: str = "https://localhost:8080/health",
         github_token: str | None = None,
+        ssl_context: ssl.SSLContext | None = None,
         verify_signatures: bool = False,
         verify_identity: str = "",
         verify_oidc_issuer: str = "https://token.actions.githubusercontent.com",
@@ -154,6 +156,7 @@ class UpdateManager:
         self._updater_secret = updater_secret
         self._health_url = health_url
         self._github_token = github_token
+        self._ssl_context = ssl_context
         self._verify_signatures = verify_signatures
         self._verify_identity = verify_identity.strip() or self._default_verify_identity()
         self._verify_oidc_issuer = verify_oidc_issuer
@@ -281,7 +284,10 @@ class UpdateManager:
             if self._updater_secret:
                 headers["X-Updater-Secret"] = self._updater_secret
 
-            async with httpx.AsyncClient(timeout=900) as client:
+            async with httpx.AsyncClient(
+                timeout=900,
+                verify=self._ssl_context if self._ssl_context is not None else True,
+            ) as client:
                 resp = await client.post(
                     f"{self._updater_url}/update/apply",
                     json={
@@ -401,7 +407,10 @@ class UpdateManager:
             if self._updater_secret:
                 headers["X-Updater-Secret"] = self._updater_secret
 
-            async with httpx.AsyncClient(timeout=900) as client:
+            async with httpx.AsyncClient(
+                timeout=900,
+                verify=self._ssl_context if self._ssl_context is not None else True,
+            ) as client:
                 resp = await client.post(
                     f"{self._updater_url}/update/rollback",
                     json={"previous_sha": previous_sha},
@@ -454,7 +463,10 @@ class UpdateManager:
             if self._updater_secret:
                 headers["X-Updater-Secret"] = self._updater_secret
 
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(
+                timeout=30,
+                verify=self._ssl_context if self._ssl_context is not None else True,
+            ) as client:
                 resp = await client.post(f"{self._updater_url}/update/unpause", headers=headers)
 
             if resp.status_code >= 400:
@@ -480,7 +492,10 @@ class UpdateManager:
             if self._updater_secret:
                 headers["X-Updater-Secret"] = self._updater_secret
 
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(
+                timeout=30,
+                verify=self._ssl_context if self._ssl_context is not None else True,
+            ) as client:
                 resp = await client.get(f"{self._updater_url}/status", headers=headers)
             if resp.status_code != 200:
                 return None
@@ -497,7 +512,10 @@ class UpdateManager:
         """Check the health endpoint, retrying on failure."""
         for attempt in range(retries):
             try:
-                async with httpx.AsyncClient(timeout=10) as client:
+                async with httpx.AsyncClient(
+                    timeout=10,
+                    verify=self._ssl_context if self._ssl_context is not None else True,
+                ) as client:
                     resp = await client.get(self._health_url)
                 if resp.status_code == 200:
                     log.debug(

@@ -173,10 +173,17 @@ In any channel where the bot has access, send:
 
 The bot should respond within a few seconds.
 
-### Check Qdrant Dashboard
+### Check Qdrant Health
 
-Open [http://localhost:6333/dashboard](http://localhost:6333/dashboard) in your
-browser to verify the vector database is running and accessible.
+In the hardened runtime, Qdrant requires TLS and a trusted internal client
+certificate. Verify it with:
+
+```bash
+curl --cacert data/certs/qdrant/ca.pem \
+  --cert data/certs/internal/client.pem \
+  --key data/certs/internal/client-key.pem \
+  https://localhost:6333/healthz
+```
 
 ---
 

@@ -14,6 +14,7 @@ Intents:
 
 from __future__ import annotations
 
+import ssl
 from typing import TYPE_CHECKING, Any
 
 from zetherion_ai import __version__
@@ -53,6 +54,7 @@ class UpdateCheckerSkill(Skill):
         enabled: bool = True,
         updater_url: str = "",
         updater_secret: str = "",  # noqa: S107  # nosec B107 — not a real password
+        ssl_context: ssl.SSLContext | None = None,
         check_every_n_beats: int = _DEFAULT_CHECK_EVERY_N_BEATS,
         verify_signatures: bool = False,
         verify_identity: str = "",
@@ -70,6 +72,7 @@ class UpdateCheckerSkill(Skill):
         self._enabled = enabled
         self._updater_url = updater_url
         self._updater_secret = updater_secret
+        self._ssl_context = ssl_context
         self._check_every_n_beats = max(1, int(check_every_n_beats))
         self._verify_signatures = verify_signatures
         self._verify_identity = verify_identity
@@ -134,6 +137,7 @@ class UpdateCheckerSkill(Skill):
             github_token=self._github_token,
             updater_url=self._updater_url,
             updater_secret=self._updater_secret,
+            ssl_context=self._ssl_context,
             verify_signatures=self._verify_signatures,
             verify_identity=self._verify_identity,
             verify_oidc_issuer=self._verify_oidc_issuer,

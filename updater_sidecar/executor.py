@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shlex
 import tempfile
 import time
@@ -46,28 +47,20 @@ CGS_GATEWAY_SERVICES: dict[str, str] = {
     "green": "zetherion-ai-cgs-gateway-green",
 }
 
-CGS_UI_SERVICES: dict[str, str] = {
-    "blue": "zetherion-ai-cgs-ui-blue",
-    "green": "zetherion-ai-cgs-ui-green",
-}
-
 BOT_SERVICE = "zetherion-ai-bot"
-ROUTED_HEALTH_KEYS = ("routed_api", "routed_cgs_api", "routed_cgs_ui")
+ROUTED_HEALTH_KEYS = ("routed_api", "routed_cgs_api")
 
 DEFAULT_HEALTH_URLS: dict[str, str] = {
     # Direct service health checks
-    "zetherion-ai-skills-blue": "http://zetherion-ai-skills-blue:8080/health",
-    "zetherion-ai-skills-green": "http://zetherion-ai-skills-green:8080/health",
-    "zetherion-ai-api-blue": "http://zetherion-ai-api-blue:8443/health",
-    "zetherion-ai-api-green": "http://zetherion-ai-api-green:8443/health",
-    "zetherion-ai-cgs-gateway-blue": "http://zetherion-ai-cgs-gateway-blue:8443/service/ai/v1/health",
-    "zetherion-ai-cgs-gateway-green": "http://zetherion-ai-cgs-gateway-green:8443/service/ai/v1/health",
-    "zetherion-ai-cgs-ui-blue": "http://zetherion-ai-cgs-ui-blue:3000/cgs/api/health",
-    "zetherion-ai-cgs-ui-green": "http://zetherion-ai-cgs-ui-green:3000/cgs/api/health",
+    "zetherion-ai-skills-blue": "https://zetherion-ai-skills-blue:8080/health",
+    "zetherion-ai-skills-green": "https://zetherion-ai-skills-green:8080/health",
+    "zetherion-ai-api-blue": "https://zetherion-ai-api-blue:8443/health",
+    "zetherion-ai-api-green": "https://zetherion-ai-api-green:8443/health",
+    "zetherion-ai-cgs-gateway-blue": "https://zetherion-ai-cgs-gateway-blue:8443/service/ai/v1/health",
+    "zetherion-ai-cgs-gateway-green": "https://zetherion-ai-cgs-gateway-green:8443/service/ai/v1/health",
     # Routed health checks through Traefik
-    "routed_api": "http://zetherion-ai-traefik:8443/health",
-    "routed_cgs_api": "http://zetherion-ai-traefik:8443/service/ai/v1/health",
-    "routed_cgs_ui": "http://zetherion-ai-traefik:8443/cgs/api/health",
+    "routed_api": "https://zetherion-ai-traefik:8443/health",
+    "routed_cgs_api": "https://zetherion-ai-traefik:8443/service/ai/v1/health",
 }
 
 DEFAULT_STATE_PATH = "/app/data/updater-state.json"
@@ -102,6 +95,27 @@ class UpdateExecutor:
         self._current_operation: str | None = None
         self._runtime = self._load_state()
         self._ensure_routing_config(self.active_color)
+
+    def _health_check_config(
+        self,
+        *,
+        retries: int,
+        delay_seconds: int,
+        timeout_seconds: int = 10,
+    ) -> HealthCheckConfig:
+        """Build TLS-aware health-check config from the runtime environment."""
+        ca_path = os.environ.get("INTERNAL_TLS_CA_PATH", "").strip()
+        cert_path = os.environ.get("INTERNAL_TLS_CLIENT_CERT_PATH", "").strip()
+        key_path = os.environ.get("INTERNAL_TLS_CLIENT_KEY_PATH", "").strip()
+        cert_pair = (cert_path, key_path) if cert_path and key_path else None
+        verify: str | bool = ca_path if ca_path else True
+        return HealthCheckConfig(
+            retries=retries,
+            delay_seconds=delay_seconds,
+            timeout_seconds=timeout_seconds,
+            verify=verify,
+            cert=cert_pair,
+        )
 
     # ------------------------------------------------------------------
     # Public status surface
@@ -313,7 +327,6 @@ class UpdateExecutor:
                 SKILLS_SERVICES[target_color],
                 API_SERVICES[target_color],
                 CGS_GATEWAY_SERVICES[target_color],
-                CGS_UI_SERVICES[target_color],
             ]
             build_services = [*target_services, BOT_SERVICE]
             services_str = " ".join(build_services)
@@ -344,7 +357,7 @@ class UpdateExecutor:
                     self._current_operation = f"Waiting for {service} health"
                     healthy = await check_service_health(
                         health_url,
-                        HealthCheckConfig(retries=8, delay_seconds=8),
+                        self._health_check_config(retries=8, delay_seconds=8),
                     )
                     if not healthy:
                         result.error = f"Health check failed for {service}"
@@ -362,7 +375,7 @@ class UpdateExecutor:
                 self._current_operation = f"Validating {routed_name}"
                 healthy = await check_service_health(
                     routed_url,
-                    HealthCheckConfig(retries=8, delay_seconds=5),
+                    self._health_check_config(retries=8, delay_seconds=5),
                 )
                 if not healthy:
                     result.error = f"Routed health failed for {routed_name}"
@@ -386,7 +399,6 @@ class UpdateExecutor:
                 SKILLS_SERVICES[previous_color],
                 API_SERVICES[previous_color],
                 CGS_GATEWAY_SERVICES[previous_color],
-                CGS_UI_SERVICES[previous_color],
             ]
             old_services_str = " ".join(old_services)
             self._current_operation = f"Stopping old color ({previous_color})"
@@ -663,7 +675,6 @@ class UpdateExecutor:
             SKILLS_SERVICES[previous_color],
             API_SERVICES[previous_color],
             CGS_GATEWAY_SERVICES[previous_color],
-            CGS_UI_SERVICES[previous_color],
             BOT_SERVICE,
         ]
         services_str = " ".join(rollback_services)
@@ -679,7 +690,6 @@ class UpdateExecutor:
             SKILLS_SERVICES[previous_color],
             API_SERVICES[previous_color],
             CGS_GATEWAY_SERVICES[previous_color],
-            CGS_UI_SERVICES[previous_color],
         ):
             ok = await self._run_cmd(
                 f"docker compose -f {self._compose_file} up -d --no-deps {service}",
@@ -693,7 +703,7 @@ class UpdateExecutor:
             if health_url:
                 healthy = await check_service_health(
                     health_url,
-                    HealthCheckConfig(retries=8, delay_seconds=8),
+                    self._health_check_config(retries=8, delay_seconds=8),
                 )
                 if not healthy:
                     log.error("Rollback: health check failed for %s", service)
@@ -706,7 +716,7 @@ class UpdateExecutor:
         for routed_name in ROUTED_HEALTH_KEYS:
             healthy = await check_service_health(
                 self._health_urls[routed_name],
-                HealthCheckConfig(retries=8, delay_seconds=5),
+                self._health_check_config(retries=8, delay_seconds=5),
             )
             if not healthy:
                 log.error("Rollback: routed health failed for %s", routed_name)
@@ -725,7 +735,6 @@ class UpdateExecutor:
             SKILLS_SERVICES[inactive],
             API_SERVICES[inactive],
             CGS_GATEWAY_SERVICES[inactive],
-            CGS_UI_SERVICES[inactive],
         ]
         inactive_str = " ".join(inactive_services)
         await self._run_cmd(
@@ -855,43 +864,35 @@ class UpdateExecutor:
       rule: \"PathPrefix(`/service/ai/v1`)\"
       service: cgs-api-{active_color}
       priority: 30
-    cgs-ui:
-      entryPoints:
-        - api
-      rule: \"PathPrefix(`/cgs`)\"
-      service: cgs-ui-{active_color}
-      priority: 20
+      tls: {{}}
     api:
       entryPoints:
         - api
       rule: \"PathPrefix(`/`)\"
       service: api-{active_color}
       priority: 10
+      tls: {{}}
   services:
     api-blue:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: \"http://{API_SERVICES['blue']}:8443\"
+          - url: \"https://{API_SERVICES['blue']}:8443\"
     api-green:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: \"http://{API_SERVICES['green']}:8443\"
+          - url: \"https://{API_SERVICES['green']}:8443\"
     cgs-api-blue:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: \"http://{CGS_GATEWAY_SERVICES['blue']}:8443\"
+          - url: \"https://{CGS_GATEWAY_SERVICES['blue']}:8443\"
     cgs-api-green:
       loadBalancer:
+        serversTransport: internal-mtls@file
         servers:
-          - url: \"http://{CGS_GATEWAY_SERVICES['green']}:8443\"
-    cgs-ui-blue:
-      loadBalancer:
-        servers:
-          - url: \"http://{CGS_UI_SERVICES['blue']}:3000\"
-    cgs-ui-green:
-      loadBalancer:
-        servers:
-          - url: \"http://{CGS_UI_SERVICES['green']}:3000\"
+          - url: \"https://{CGS_GATEWAY_SERVICES['green']}:8443\"
 """
 
     async def _is_service_running(self, service: str) -> bool:

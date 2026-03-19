@@ -287,7 +287,7 @@ The skills service URL and authentication are configured via environment variabl
 
 ```env
 # Skills service URL (Docker internal network)
-SKILLS_SERVICE_URL=http://zetherion-ai-skills:8080
+SKILLS_SERVICE_URL=https://zetherion-ai-skills:8080
 
 # API authentication
 SKILLS_API_SECRET=your-secret-here

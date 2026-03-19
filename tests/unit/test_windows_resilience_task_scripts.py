@@ -64,11 +64,17 @@ def test_resilience_ready_requires_matching_task_user() -> None:
     assert "docker_desktop_recoverable = $false" in script
     assert "docker_desktop_resources_configured = $false" in script
     assert "wsl_host_resources_configured = $false" in script
+    assert "runtime_secret_bundle_present = $false" in script
+    assert "internal_pki_present = $false" in script
+    assert "bitlocker_protected = $false" in script
     assert "Get-ZetherionDockerDesktopStatus" in script
     assert "$checks.docker_desktop_recoverable = [bool](" in script
     assert "-and [bool]$checks.docker_desktop_launch_task_ready `" in script
     assert "$checks.docker_desktop_resources_configured = [bool](" in script
     assert "$checks.wsl_host_resources_configured = [bool](" in script
+    assert "Resolve-RuntimeSecretBundlePath -DeployPath $DeployPath" in script
+    assert "Test-InternalPkiFilesPresent -DeployPath $DeployPath" in script
+    assert "Get-BitLockerVolume" in script
 
 
 def test_bootstrap_resilience_tasks_threads_task_user_through() -> None:

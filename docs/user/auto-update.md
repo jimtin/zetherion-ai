@@ -28,7 +28,10 @@ Paused state is stored in `/app/data/updater-state.json`.
 Call updater sidecar:
 
 ```bash
-curl -X POST http://zetherion-ai-updater:9090/update/unpause \
+curl --cacert data/certs/internal/ca.pem \
+  --cert data/certs/internal/client.pem \
+  --key data/certs/internal/client-key.pem \
+  -X POST https://zetherion-ai-updater:9090/update/unpause \
   -H "X-Updater-Secret: <shared-secret>"
 ```
 

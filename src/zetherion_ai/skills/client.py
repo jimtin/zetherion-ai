@@ -9,6 +9,7 @@ import base64
 import hashlib
 import hmac
 import json
+import ssl
 from typing import Any, cast
 
 import httpx
@@ -54,10 +55,11 @@ class SkillsClient:
 
     def __init__(
         self,
-        base_url: str = "http://zetherion_ai-skills:8080",
+        base_url: str = "https://zetherion-ai-skills:8080",
         api_secret: str | None = None,
         actor_signing_secret: str | None = None,
         timeout: float = 30.0,
+        ssl_context: ssl.SSLContext | None = None,
     ):
         """Initialize the skills client.
 
@@ -71,6 +73,7 @@ class SkillsClient:
         self._api_secret = api_secret
         self._actor_signing_secret = (actor_signing_secret or api_secret or "").strip()
         self._timeout = timeout
+        self._ssl_context = ssl_context
         self._client: httpx.AsyncClient | None = None
 
         log.info("skills_client_initialized", base_urls=self._base_urls)
@@ -78,7 +81,7 @@ class SkillsClient:
     @staticmethod
     def _parse_base_urls(base_url: str) -> list[str]:
         urls = [piece.strip().rstrip("/") for piece in base_url.split(",") if piece.strip()]
-        return urls or ["http://zetherion_ai-skills:8080"]
+        return urls or ["https://zetherion-ai-skills:8080"]
 
     def _iter_base_urls(self) -> list[str]:
         preferred = self._base_url
@@ -105,6 +108,7 @@ class SkillsClient:
                 base_url=target_base_url,
                 headers=headers,
                 timeout=self._timeout,
+                verify=self._ssl_context if self._ssl_context is not None else True,
             )
         return self._client
 
@@ -612,10 +616,14 @@ async def create_skills_client(
     settings = get_settings()
 
     url = base_url or str(
-        getattr(settings, "skills_service_url", "http://zetherion_ai-skills:8080")
+        getattr(settings, "skills_service_url", "https://zetherion-ai-skills:8080")
     )
     secret = api_secret or getattr(settings, "skills_api_secret", None)
     if secret and hasattr(secret, "get_secret_value"):
         secret = secret.get_secret_value()
 
-    return SkillsClient(base_url=url, api_secret=secret)
+    return SkillsClient(
+        base_url=url,
+        api_secret=secret,
+        ssl_context=getattr(settings, "internal_client_ssl_context", None),
+    )

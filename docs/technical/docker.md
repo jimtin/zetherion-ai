@@ -13,15 +13,20 @@ Production topology:
 - `zetherion-ai-traefik` (internal traffic switch)
 - `zetherion-ai-updater` (GitHub tag pull + build + rollout orchestration)
 - `zetherion-ai-cloudflared` (public API tunnel)
-- `postgres`, `qdrant`, `ollama`, `ollama-router`
+- `postgres`, `qdrant`
+
+Local-model services (`ollama`, `ollama-router`) remain available only as an
+explicit local-development profile and are not part of the hardened production
+runtime.
 
 ## Traffic Model
 
-- Bot -> Skills: `http://zetherion-ai-traefik:8080`
+- Bot -> Skills: `https://zetherion-ai-traefik:8080`
 - Routed Skills backend: blue or green (`config/traefik/dynamic/updater-routes.yml`)
 - Routed API backend: blue or green (same route file, API entrypoint `:8443`)
 - Routed CGS gateway backend: blue or green (`/service/ai/v1` on API entrypoint `:8443`)
-- Cloudflared depends on Traefik and API availability; tunnel routing is managed in Cloudflare.
+- Cloudflared depends on Traefik and API availability, and the tunnel origin is
+  expected to terminate at HTTPS on Traefik.
 
 ## Blue/Green Update Flow
 
@@ -63,8 +68,6 @@ Runtime updater state is persisted in `/app/data/updater-state.json`.
 | `zetherion-ai-cloudflared` | Cloudflare tunnel | none |
 | `postgres` | Relational storage | none |
 | `qdrant` | Vector memory | `6333` |
-| `ollama` | Generation + embeddings | `11434` |
-| `ollama-router` | Routing model | none |
 
 ## Notes
 

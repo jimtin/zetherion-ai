@@ -1,4 +1,4 @@
-"""HTTP server for the updater sidecar.
+"""HTTPS-capable server for the updater sidecar.
 
 Exposes a REST API for triggering updates, rollbacks,
 and checking status. Only accessible on the internal
@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import ssl
 import time
 from collections import deque
 
@@ -27,6 +28,32 @@ from updater_sidecar.models import (
 log = logging.getLogger("updater_sidecar.server")
 
 MAX_HISTORY = 50
+
+
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_server_ssl_context() -> ssl.SSLContext | None:
+    cert_path = os.environ.get("UPDATER_TLS_CERT_PATH", "").strip()
+    key_path = os.environ.get("UPDATER_TLS_KEY_PATH", "").strip()
+    if not cert_path or not key_path:
+        return None
+
+    ca_path = (
+        os.environ.get("UPDATER_TLS_CA_PATH", "").strip()
+        or os.environ.get("INTERNAL_TLS_CA_PATH", "").strip()
+    )
+    require_client_cert = _truthy(os.environ.get("UPDATER_TLS_REQUIRE_CLIENT_CERT"))
+
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+    if ca_path:
+        context.load_verify_locations(cafile=ca_path)
+    context.verify_mode = ssl.CERT_REQUIRED if require_client_cert else ssl.CERT_NONE
+    context.check_hostname = False
+    return context
 
 
 def create_app(
@@ -68,7 +95,7 @@ def create_app(
 def _parse_health_urls(urls_str: str) -> dict[str, str]:
     """Parse HEALTH_URLS env var into a dict.
 
-    Format: 'http://svc1:8080/health,http://svc2:8443/health'
+    Format: 'https://svc1:8080/health,https://svc2:8443/health'
     Maps container name to URL based on URL hostname.
     """
     if not urls_str:
@@ -80,7 +107,7 @@ def _parse_health_urls(urls_str: str) -> dict[str, str]:
         if not url:
             continue
         # Extract hostname from URL (e.g., 'zetherion-ai-skills' from
-        # 'http://zetherion-ai-skills:8080/health')
+        # 'https://zetherion-ai-skills:8080/health')
         try:
             from urllib.parse import urlparse
 
@@ -301,13 +328,15 @@ async def run_server(
     secret = get_or_create_secret(secret_path)  # gitleaks:allow
 
     app = create_app(secret=secret)
+    ssl_context = _build_server_ssl_context()
 
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, host, port)
+    site = web.TCPSite(runner, host, port, ssl_context=ssl_context)
     await site.start()
 
-    log.info("Updater sidecar started on %s:%d", host, port)
+    scheme = "https" if ssl_context is not None else "http"
+    log.info("Updater sidecar started on %s://%s:%d", scheme, host, port)
 
     # Run forever
     try:

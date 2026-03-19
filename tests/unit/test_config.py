@@ -179,6 +179,88 @@ class TestEncryptionStrict:
         assert settings.encryption_strict is True
 
 
+class TestStrictTransportSecurity:
+    """Tests for strict production transport hardening controls."""
+
+    def test_strict_transport_rejects_http_urls(self):
+        with pytest.raises(ValidationError, match="skills_service_url must use https://"):
+            _make_settings(
+                strict_transport_security=True,
+                postgres_use_tls=True,
+                qdrant_use_tls=True,
+                router_backend="gemini",
+                embeddings_backend="openai",
+                internal_tls_ca_path="/certs/ca.pem",
+                internal_tls_client_cert_path="/certs/client.pem",
+                internal_tls_client_key_path="/certs/client-key.pem",
+                api_tls_cert_path="/certs/api.pem",
+                api_tls_key_path="/certs/api-key.pem",
+                skills_tls_cert_path="/certs/skills.pem",
+                skills_tls_key_path="/certs/skills-key.pem",
+                cgs_gateway_tls_cert_path="/certs/gateway.pem",
+                cgs_gateway_tls_key_path="/certs/gateway-key.pem",
+                postgres_tls_ca_path="/certs/pg-ca.pem",
+                postgres_tls_cert_path="/certs/pg-client.pem",
+                postgres_tls_key_path="/certs/pg-client-key.pem",
+                qdrant_cert_path="/certs/qdrant-ca.pem",
+                backup_age_recipient="age1example",
+                skills_service_url="http://zetherion-ai-skills:8080",
+            )
+
+    def test_strict_transport_rejects_ollama_backends(self):
+        with pytest.raises(ValidationError, match="router_backend cannot be 'ollama'"):
+            _make_settings(
+                strict_transport_security=True,
+                postgres_use_tls=True,
+                qdrant_use_tls=True,
+                router_backend="ollama",
+                embeddings_backend="openai",
+                internal_tls_ca_path="/certs/ca.pem",
+                internal_tls_client_cert_path="/certs/client.pem",
+                internal_tls_client_key_path="/certs/client-key.pem",
+                api_tls_cert_path="/certs/api.pem",
+                api_tls_key_path="/certs/api-key.pem",
+                skills_tls_cert_path="/certs/skills.pem",
+                skills_tls_key_path="/certs/skills-key.pem",
+                cgs_gateway_tls_cert_path="/certs/gateway.pem",
+                cgs_gateway_tls_key_path="/certs/gateway-key.pem",
+                postgres_tls_ca_path="/certs/pg-ca.pem",
+                postgres_tls_cert_path="/certs/pg-client.pem",
+                postgres_tls_key_path="/certs/pg-client-key.pem",
+                qdrant_cert_path="/certs/qdrant-ca.pem",
+                backup_age_recipient="age1example",
+            )
+
+    def test_strict_transport_accepts_https_and_tls_configuration(self):
+        settings = _make_settings(
+            strict_transport_security=True,
+            postgres_use_tls=True,
+            qdrant_use_tls=True,
+            router_backend="gemini",
+            embeddings_backend="openai",
+            skills_service_url="https://zetherion-ai-skills:8080",
+            zetherion_public_api_base_url="https://zetherion-ai-api-green:8443",
+            zetherion_skills_api_base_url="https://zetherion-ai-skills-green:8080",
+            announcement_api_url="https://127.0.0.1:8080/announcements/events",
+            internal_tls_ca_path="/certs/ca.pem",
+            internal_tls_client_cert_path="/certs/client.pem",
+            internal_tls_client_key_path="/certs/client-key.pem",
+            api_tls_cert_path="/certs/api.pem",
+            api_tls_key_path="/certs/api-key.pem",
+            skills_tls_cert_path="/certs/skills.pem",
+            skills_tls_key_path="/certs/skills-key.pem",
+            cgs_gateway_tls_cert_path="/certs/gateway.pem",
+            cgs_gateway_tls_key_path="/certs/gateway-key.pem",
+            postgres_tls_ca_path="/certs/pg-ca.pem",
+            postgres_tls_cert_path="/certs/pg-client.pem",
+            postgres_tls_key_path="/certs/pg-client-key.pem",
+            qdrant_cert_path="/certs/qdrant-ca.pem",
+            runtime_secret_bundle_path="C:/ZetherionAI/data/secrets/runtime.bin",
+            backup_age_recipient="age1example",
+        )
+        assert settings.strict_transport_security is True
+
+
 class TestDynamicSettingsFallback:
     """Tests for get_dynamic() DB -> env -> default cascade."""
 

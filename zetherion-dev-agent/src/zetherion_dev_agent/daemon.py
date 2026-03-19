@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+import ssl
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -27,6 +28,22 @@ from zetherion_dev_agent.sender import send_event
 
 def _json_response(payload: dict[str, Any], status: int = 200) -> web.Response:
     return web.json_response(payload, status=status)
+
+
+def _build_ssl_context(config: AgentConfig) -> ssl.SSLContext | None:
+    cert_path = str(config.api_tls_cert_path or "").strip()
+    key_path = str(config.api_tls_key_path or "").strip()
+    if not cert_path or not key_path:
+        return None
+
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+    if config.internal_tls_ca_path:
+        context.load_verify_locations(cafile=config.internal_tls_ca_path)
+    context.verify_mode = ssl.CERT_REQUIRED if config.api_require_client_cert else ssl.CERT_NONE
+    context.check_hostname = False
+    return context
 
 
 @dataclass
@@ -69,6 +86,7 @@ class DevAutopilotDaemon:
         self._last_cleanup_date: str | None = None
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
+        self._ssl_context = _build_ssl_context(config)
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._stop_event = asyncio.Event()
 
@@ -245,8 +263,13 @@ class DevAutopilotDaemon:
             self._runner,
             host=self._config.api_host,
             port=int(self._config.api_port),
+            ssl_context=self._ssl_context,
         )
         await self._site.start()
+
+    def _api_base_url(self) -> str:
+        scheme = "https" if self._ssl_context is not None else "http"
+        return f"{scheme}://{self._config.api_host}:{int(self._config.api_port)}/v1"
 
     @web.middleware
     async def _auth_middleware(self, request: web.Request, handler: Any) -> web.StreamResponse:
@@ -284,9 +307,7 @@ class DevAutopilotDaemon:
                         "error": "Bootstrap already completed",
                         "already_bootstrapped": True,
                         "bootstrap_completed_at": bootstrapped_at,
-                        "api_base_url": (
-                            f"http://{self._config.api_host}:{int(self._config.api_port)}/v1"
-                        ),
+                        "api_base_url": self._api_base_url(),
                     },
                     status=409,
                 )
@@ -361,7 +382,7 @@ class DevAutopilotDaemon:
             {
                 "ok": True,
                 "api_token": self._config.api_token,
-                "api_base_url": (f"http://{self._config.api_host}:{int(self._config.api_port)}/v1"),
+                "api_base_url": self._api_base_url(),
                 "bootstrap_completed_at": completed_at,
             }
         )

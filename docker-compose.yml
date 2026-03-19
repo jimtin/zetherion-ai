@@ -26,14 +26,18 @@ services:
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      # Generation container (large model + embeddings)
-      - OLLAMA_HOST=ollama
-      - OLLAMA_PORT=11434
-      # Router container (small, fast model for classification)
-      - OLLAMA_ROUTER_HOST=ollama-router
-      - OLLAMA_ROUTER_PORT=11434
-      - SKILLS_SERVICE_URL=http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080
+      - QDRANT_CERT_PATH=/app/data/certs/qdrant/ca.pem
+      - SKILLS_SERVICE_URL=https://zetherion-ai-skills-green:8080,https://zetherion-ai-skills-blue:8080
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - POSTGRES_USE_TLS=true
+      - POSTGRES_TLS_CA_PATH=/app/data/certs/postgres/ca.pem
+      - POSTGRES_TLS_CERT_PATH=/app/data/certs/postgres/client.pem
+      - POSTGRES_TLS_KEY_PATH=/app/data/certs/postgres/client-key.pem
+      - QDRANT_USE_TLS=true
+      - STRICT_TRANSPORT_SECURITY=true
+      - INTERNAL_TLS_CA_PATH=/app/data/certs/internal/ca.pem
+      - INTERNAL_TLS_CLIENT_CERT_PATH=/app/data/certs/internal/client.pem
+      - INTERNAL_TLS_CLIENT_KEY_PATH=/app/data/certs/internal/client-key.pem
       - ENVIRONMENT=production
       - LOG_FILE_PREFIX=bot
     volumes:
@@ -82,11 +86,18 @@ services:
       - API_PORT=8443
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      # LLM providers for chat inference
-      - OLLAMA_HOST=ollama
-      - OLLAMA_PORT=11434
-      - OLLAMA_ROUTER_HOST=ollama-router
-      - OLLAMA_ROUTER_PORT=11434
+      - QDRANT_CERT_PATH=/app/data/certs/qdrant/ca.pem
+      - QDRANT_USE_TLS=true
+      - POSTGRES_USE_TLS=true
+      - POSTGRES_TLS_CA_PATH=/app/data/certs/postgres/ca.pem
+      - POSTGRES_TLS_CERT_PATH=/app/data/certs/postgres/client.pem
+      - POSTGRES_TLS_KEY_PATH=/app/data/certs/postgres/client-key.pem
+      - STRICT_TRANSPORT_SECURITY=true
+      - INTERNAL_TLS_CA_PATH=/app/data/certs/internal/ca.pem
+      - INTERNAL_TLS_CLIENT_CERT_PATH=/app/data/certs/internal/client.pem
+      - INTERNAL_TLS_CLIENT_KEY_PATH=/app/data/certs/internal/client-key.pem
+      - API_TLS_CERT_PATH=/app/data/certs/internal/api.pem
+      - API_TLS_KEY_PATH=/app/data/certs/internal/api-key.pem
       - ENVIRONMENT=production
       - LOG_FILE_PREFIX=api-blue
     volumes:
@@ -135,10 +146,18 @@ services:
       - API_PORT=8443
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - OLLAMA_HOST=ollama
-      - OLLAMA_PORT=11434
-      - OLLAMA_ROUTER_HOST=ollama-router
-      - OLLAMA_ROUTER_PORT=11434
+      - QDRANT_CERT_PATH=/app/data/certs/qdrant/ca.pem
+      - QDRANT_USE_TLS=true
+      - POSTGRES_USE_TLS=true
+      - POSTGRES_TLS_CA_PATH=/app/data/certs/postgres/ca.pem
+      - POSTGRES_TLS_CERT_PATH=/app/data/certs/postgres/client.pem
+      - POSTGRES_TLS_KEY_PATH=/app/data/certs/postgres/client-key.pem
+      - STRICT_TRANSPORT_SECURITY=true
+      - INTERNAL_TLS_CA_PATH=/app/data/certs/internal/ca.pem
+      - INTERNAL_TLS_CLIENT_CERT_PATH=/app/data/certs/internal/client.pem
+      - INTERNAL_TLS_CLIENT_KEY_PATH=/app/data/certs/internal/client-key.pem
+      - API_TLS_CERT_PATH=/app/data/certs/internal/api.pem
+      - API_TLS_KEY_PATH=/app/data/certs/internal/api-key.pem
       - ENVIRONMENT=production
       - LOG_FILE_PREFIX=api-green
     volumes:
@@ -181,14 +200,24 @@ services:
       - .env
     environment:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - POSTGRES_USE_TLS=true
+      - POSTGRES_TLS_CA_PATH=/app/data/certs/postgres/ca.pem
+      - POSTGRES_TLS_CERT_PATH=/app/data/certs/postgres/client.pem
+      - POSTGRES_TLS_KEY_PATH=/app/data/certs/postgres/client-key.pem
       - CGS_GATEWAY_HOST=0.0.0.0
       - CGS_GATEWAY_PORT=8443
-      - ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-api-green:8443,http://zetherion-ai-api-blue:8443
-      - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080
+      - ZETHERION_PUBLIC_API_BASE_URL=https://zetherion-ai-api-green:8443,https://zetherion-ai-api-blue:8443
+      - ZETHERION_SKILLS_API_BASE_URL=https://zetherion-ai-skills-green:8080,https://zetherion-ai-skills-blue:8080
       - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-}}
       - CGS_AUTH_JWKS_URL=${CGS_AUTH_JWKS_URL:-}
       - CGS_AUTH_ISSUER=${CGS_AUTH_ISSUER:-}
       - CGS_AUTH_AUDIENCE=${CGS_AUTH_AUDIENCE:-}
+      - STRICT_TRANSPORT_SECURITY=true
+      - INTERNAL_TLS_CA_PATH=/app/data/certs/internal/ca.pem
+      - INTERNAL_TLS_CLIENT_CERT_PATH=/app/data/certs/internal/client.pem
+      - INTERNAL_TLS_CLIENT_KEY_PATH=/app/data/certs/internal/client-key.pem
+      - CGS_GATEWAY_TLS_CERT_PATH=/app/data/certs/internal/cgs-gateway.pem
+      - CGS_GATEWAY_TLS_KEY_PATH=/app/data/certs/internal/cgs-gateway-key.pem
       - ENVIRONMENT=production
       - LOG_FILE_PREFIX=cgs-gateway-blue
     volumes:
@@ -231,14 +260,24 @@ services:
       - .env
     environment:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - POSTGRES_USE_TLS=true
+      - POSTGRES_TLS_CA_PATH=/app/data/certs/postgres/ca.pem
+      - POSTGRES_TLS_CERT_PATH=/app/data/certs/postgres/client.pem
+      - POSTGRES_TLS_KEY_PATH=/app/data/certs/postgres/client-key.pem
       - CGS_GATEWAY_HOST=0.0.0.0
       - CGS_GATEWAY_PORT=8443
-      - ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-api-green:8443,http://zetherion-ai-api-blue:8443
-      - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080
+      - ZETHERION_PUBLIC_API_BASE_URL=https://zetherion-ai-api-green:8443,https://zetherion-ai-api-blue:8443
+      - ZETHERION_SKILLS_API_BASE_URL=https://zetherion-ai-skills-green:8080,https://zetherion-ai-skills-blue:8080
       - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-}}
       - CGS_AUTH_JWKS_URL=${CGS_AUTH_JWKS_URL:-}
       - CGS_AUTH_ISSUER=${CGS_AUTH_ISSUER:-}
       - CGS_AUTH_AUDIENCE=${CGS_AUTH_AUDIENCE:-}
+      - STRICT_TRANSPORT_SECURITY=true
+      - INTERNAL_TLS_CA_PATH=/app/data/certs/internal/ca.pem
+      - INTERNAL_TLS_CLIENT_CERT_PATH=/app/data/certs/internal/client.pem
+      - INTERNAL_TLS_CLIENT_KEY_PATH=/app/data/certs/internal/client-key.pem
+      - CGS_GATEWAY_TLS_CERT_PATH=/app/data/certs/internal/cgs-gateway.pem
+      - CGS_GATEWAY_TLS_KEY_PATH=/app/data/certs/internal/cgs-gateway-key.pem
       - ENVIRONMENT=production
       - LOG_FILE_PREFIX=cgs-gateway-green
     volumes:
@@ -302,7 +341,9 @@ services:
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"
       - "--entrypoints.api.address=:8443"
+      - "--entrypoints.api.http.tls=true"
       - "--entrypoints.skills.address=:8080"
+      - "--entrypoints.skills.http.tls=true"
       - "--api.insecure=false"
       - "--log.level=WARN"
     ports:
@@ -310,6 +351,7 @@ services:
       - "127.0.0.1:${TRAEFIK_DASHBOARD_PORT:-18080}:8080"
     volumes:
       - ./config/traefik/dynamic:/etc/traefik/dynamic
+      - ./data/certs:/etc/traefik/certs:ro
     networks:
       - zetherion-ai-net
     deploy:
@@ -344,17 +386,23 @@ services:
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      # Generation container (large model + embeddings)
-      - OLLAMA_HOST=ollama
-      - OLLAMA_PORT=11434
-      # Router container (small, fast model for classification)
-      - OLLAMA_ROUTER_HOST=ollama-router
-      - OLLAMA_ROUTER_PORT=11434
+      - QDRANT_CERT_PATH=/app/data/certs/qdrant/ca.pem
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - POSTGRES_USE_TLS=true
+      - POSTGRES_TLS_CA_PATH=/app/data/certs/postgres/ca.pem
+      - POSTGRES_TLS_CERT_PATH=/app/data/certs/postgres/client.pem
+      - POSTGRES_TLS_KEY_PATH=/app/data/certs/postgres/client-key.pem
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
-      - UPDATER_SERVICE_URL=http://zetherion-ai-updater:9090
+      - UPDATER_SERVICE_URL=https://zetherion-ai-updater:9090
       - UPDATER_SECRET_PATH=/app/data/.updater-secret
+      - QDRANT_USE_TLS=true
+      - STRICT_TRANSPORT_SECURITY=true
+      - INTERNAL_TLS_CA_PATH=/app/data/certs/internal/ca.pem
+      - INTERNAL_TLS_CLIENT_CERT_PATH=/app/data/certs/internal/client.pem
+      - INTERNAL_TLS_CLIENT_KEY_PATH=/app/data/certs/internal/client-key.pem
+      - SKILLS_TLS_CERT_PATH=/app/data/certs/internal/skills.pem
+      - SKILLS_TLS_KEY_PATH=/app/data/certs/internal/skills-key.pem
       - LOG_FILE_PREFIX=skills-blue
     volumes:
       - ./data:/app/data
@@ -399,15 +447,23 @@ services:
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - OLLAMA_HOST=ollama
-      - OLLAMA_PORT=11434
-      - OLLAMA_ROUTER_HOST=ollama-router
-      - OLLAMA_ROUTER_PORT=11434
+      - QDRANT_CERT_PATH=/app/data/certs/qdrant/ca.pem
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - POSTGRES_USE_TLS=true
+      - POSTGRES_TLS_CA_PATH=/app/data/certs/postgres/ca.pem
+      - POSTGRES_TLS_CERT_PATH=/app/data/certs/postgres/client.pem
+      - POSTGRES_TLS_KEY_PATH=/app/data/certs/postgres/client-key.pem
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
-      - UPDATER_SERVICE_URL=http://zetherion-ai-updater:9090
+      - UPDATER_SERVICE_URL=https://zetherion-ai-updater:9090
       - UPDATER_SECRET_PATH=/app/data/.updater-secret
+      - QDRANT_USE_TLS=true
+      - STRICT_TRANSPORT_SECURITY=true
+      - INTERNAL_TLS_CA_PATH=/app/data/certs/internal/ca.pem
+      - INTERNAL_TLS_CLIENT_CERT_PATH=/app/data/certs/internal/client.pem
+      - INTERNAL_TLS_CLIENT_KEY_PATH=/app/data/certs/internal/client-key.pem
+      - SKILLS_TLS_CERT_PATH=/app/data/certs/internal/skills.pem
+      - SKILLS_TLS_KEY_PATH=/app/data/certs/internal/skills-key.pem
       - LOG_FILE_PREFIX=skills-green
     volumes:
       - ./data:/app/data
@@ -507,18 +563,22 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    command: ["sh", "/usr/local/bin/start-postgres-tls.sh"]
     environment:
       POSTGRES_DB: zetherion
       POSTGRES_USER: zetherion
       POSTGRES_PASSWORD: password
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zetherion"]
+      test: ["CMD-SHELL", "pg_isready -U zetherion -h 127.0.0.1 -p 5432"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./data/certs/postgres:/etc/postgres-certs:ro
+      - ./config/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./scripts/postgres/start-postgres-tls.sh:/usr/local/bin/start-postgres-tls.sh:ro
     networks:
       - zetherion-ai-net
     deploy:
@@ -548,10 +608,8 @@ services:
       start_period: 10s
     volumes:
       - qdrant_storage:/qdrant/storage
-      # TLS certificates (Phase 5A) - run scripts/generate-qdrant-certs.sh first
-      # Uncomment below when TLS is enabled:
-      # - ./data/certs/qdrant:/qdrant/certs:ro
-      # - ./config/qdrant.yaml:/qdrant/config/production.yaml:ro
+      - ./data/certs/qdrant:/qdrant/certs:ro
+      - ./config/qdrant.yaml:/qdrant/config/production.yaml:ro
     networks:
       - zetherion-ai-net
     # Resource limits for vector database
@@ -579,10 +637,17 @@ services:
     environment:
       - COMPOSE_FILE=/project/docker-compose.yml
       - PROJECT_DIR=/project
-      - HEALTH_URLS=http://zetherion-ai-skills-blue:8080/health,http://zetherion-ai-skills-green:8080/health,http://zetherion-ai-api-blue:8443/health,http://zetherion-ai-api-green:8443/health,http://zetherion-ai-cgs-gateway-blue:8443/service/ai/v1/health,http://zetherion-ai-cgs-gateway-green:8443/service/ai/v1/health
+      - HEALTH_URLS=https://zetherion-ai-skills-blue:8080/health,https://zetherion-ai-skills-green:8080/health,https://zetherion-ai-api-blue:8443/health,https://zetherion-ai-api-green:8443/health,https://zetherion-ai-cgs-gateway-blue:8443/service/ai/v1/health,https://zetherion-ai-cgs-gateway-green:8443/service/ai/v1/health
       - UPDATER_SECRET_PATH=/app/data/.updater-secret
       - UPDATER_STATE_PATH=/app/data/updater-state.json
       - UPDATER_TRAEFIK_DYNAMIC_PATH=/project/config/traefik/dynamic/updater-routes.yml
+      - STRICT_TRANSPORT_SECURITY=true
+      - INTERNAL_TLS_CA_PATH=/app/data/certs/internal/ca.pem
+      - INTERNAL_TLS_CLIENT_CERT_PATH=/app/data/certs/internal/client.pem
+      - INTERNAL_TLS_CLIENT_KEY_PATH=/app/data/certs/internal/client-key.pem
+      - UPDATER_TLS_CERT_PATH=/app/data/certs/internal/updater.pem
+      - UPDATER_TLS_KEY_PATH=/app/data/certs/internal/updater-key.pem
+      - UPDATER_TLS_REQUIRE_CLIENT_CERT=true
       - AUTO_UPDATE_PAUSE_ON_FAILURE=${AUTO_UPDATE_PAUSE_ON_FAILURE:-true}
       - UPDATER_VERIFY_SIGNATURES=${UPDATER_VERIFY_SIGNATURES:-true}
       - UPDATER_VERIFY_IDENTITY=${UPDATER_VERIFY_IDENTITY:-}
@@ -631,6 +696,10 @@ services:
       - ZETHERION_DEV_AGENT_HOME=/app/data/dev-agent
       - DEV_AGENT_API_HOST=0.0.0.0
       - DEV_AGENT_API_PORT=8787
+      - DEV_AGENT_API_TLS_CERT_PATH=/app/data/certs/internal/dev-agent.pem
+      - DEV_AGENT_API_TLS_KEY_PATH=/app/data/certs/internal/dev-agent-key.pem
+      - DEV_AGENT_INTERNAL_TLS_CA_PATH=/app/data/certs/internal/ca.pem
+      - DEV_AGENT_API_REQUIRE_CLIENT_CERT=true
       - DEV_AGENT_DATABASE_PATH=/app/data/dev-agent/daemon.db
       - DEV_AGENT_BOOTSTRAP_SECRET=${DEV_AGENT_BOOTSTRAP_SECRET:-}
       - DEV_AGENT_BOOTSTRAP_REQUIRE_ONCE=true
@@ -685,7 +754,7 @@ services:
       - WHATSAPP_BRIDGE_BOOTSTRAP_SECRET=${WHATSAPP_BRIDGE_BOOTSTRAP_SECRET:-}
       - WHATSAPP_BRIDGE_BOOTSTRAP_REQUIRE_ONCE=true
       - WHATSAPP_BRIDGE_TENANT_ID=${WHATSAPP_BRIDGE_TENANT_ID:-00000000-0000-0000-0000-000000000000}
-      - WHATSAPP_BRIDGE_INGEST_URL=${WHATSAPP_BRIDGE_INGEST_URL:-http://zetherion-ai-skills-blue:8080/bridge/v1/tenants/${WHATSAPP_BRIDGE_TENANT_ID:-00000000-0000-0000-0000-000000000000}/messaging/ingest}
+      - WHATSAPP_BRIDGE_INGEST_URL=${WHATSAPP_BRIDGE_INGEST_URL:-https://zetherion-ai-skills-blue:8080/bridge/v1/tenants/${WHATSAPP_BRIDGE_TENANT_ID:-00000000-0000-0000-0000-000000000000}/messaging/ingest}
       - WHATSAPP_BRIDGE_SIGNING_SECRET=${WHATSAPP_BRIDGE_SIGNING_SECRET:-}
       - WHATSAPP_BRIDGE_SKILLS_API_SECRET=${WHATSAPP_BRIDGE_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-}}
       - WHATSAPP_BRIDGE_STATE_PATH=/app/data/whatsapp-bridge-state.enc

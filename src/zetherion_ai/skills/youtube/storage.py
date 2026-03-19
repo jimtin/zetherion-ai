@@ -227,6 +227,7 @@ class YouTubeStorage:
                 dsn=self._dsn,
                 min_size=pool_min,
                 max_size=pool_max,
+                ssl=settings.postgres_ssl_context,
             )
             log.info(
                 "youtube_storage_pool_created",

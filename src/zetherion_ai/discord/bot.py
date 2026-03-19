@@ -2070,14 +2070,22 @@ class ZetherionAIBot(discord.Client):
         settings = get_settings()
         raw = get_dynamic("dev_agent", "service_url", settings.dev_agent_service_url)
         if not isinstance(raw, str):
-            return "http://zetherion-ai-dev-agent:8787"
+            return "https://zetherion-ai-dev-agent:8787"
         return raw.rstrip("/")
 
     async def _dev_agent_healthcheck(self) -> bool:
         """Check dev-agent health endpoint reachability."""
         url = f"{self._dev_agent_base_url()}/v1/health"
+        settings = get_settings()
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(
+                timeout=10,
+                verify=(
+                    settings.internal_client_ssl_context
+                    if settings.internal_client_ssl_context is not None
+                    else True
+                ),
+            ) as client:
                 resp = await client.get(url)
             return resp.status_code == 200
         except httpx.RequestError:
@@ -2119,6 +2127,7 @@ class ZetherionAIBot(discord.Client):
                 if settings.github_token is not None
                 else None
             ),
+            ssl_context=settings.internal_client_ssl_context,
             verify_signatures=settings.updater_verify_signatures,
             verify_identity=settings.updater_verify_identity,
             verify_oidc_issuer=settings.updater_verify_oidc_issuer,

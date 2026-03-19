@@ -393,7 +393,7 @@ if ($ExerciseRelayFailover -and $relayHealthUrl) {
     $relayFailover = Invoke-WorkerOnce `
         -PythonExe $pythonExe `
         -ConfigRoot $ConfigHome `
-        -Overrides @{ "DEV_AGENT_WORKER_BASE_URL" = "http://127.0.0.1:9/owner/ci/worker/v1" }
+        -Overrides @{ "DEV_AGENT_WORKER_BASE_URL" = "https://127.0.0.1:9/owner/ci/worker/v1" }
 }
 
 $heartbeating = [bool]$directHealth.ok -or [bool]($relayHealth -and $relayHealth.ok)

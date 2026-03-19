@@ -5,7 +5,7 @@
 The Skills API runs on port `8080` and is designed for trusted internal callers
 (bot service, internal operators, and routed internal tooling).
 
-**Base URL:** `http://zetherion-ai-skills:8080` (or the routed internal URL set by `SKILLS_SERVICE_URL`)
+**Base URL:** `https://zetherion-ai-skills:8080` (or the routed internal URL set by `SKILLS_SERVICE_URL`)
 
 For external app integrations, use the [Public API Reference](public-api-reference.md).
 

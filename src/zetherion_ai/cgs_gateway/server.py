@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import ssl
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
@@ -127,6 +128,7 @@ class CGSGatewayServer:
         rag_allowed_providers: set[str] | None = None,
         rag_allowed_models: set[str] | None = None,
         mutation_rate_limiter: TenantMutationRateLimiter | None = None,
+        ssl_context: ssl.SSLContext | None = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -140,6 +142,7 @@ class CGSGatewayServer:
         self._rag_allowed_providers = rag_allowed_providers or {"groq", "openai", "anthropic"}
         self._rag_allowed_models = rag_allowed_models or set()
         self._mutation_rate_limiter = mutation_rate_limiter
+        self._ssl_context = ssl_context
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
 
@@ -185,7 +188,7 @@ class CGSGatewayServer:
 
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
-        site = web.TCPSite(self._runner, self._host, self._port)
+        site = web.TCPSite(self._runner, self._host, self._port, ssl_context=self._ssl_context)
         await site.start()
         log.info("cgs_gateway_started", host=self._host, port=self._port)
 
@@ -220,6 +223,9 @@ async def run_server(
     rag_allowed_providers: set[str] | None = None,
     rag_allowed_models: set[str] | None = None,
     mutation_rate_limiter: TenantMutationRateLimiter | None = None,
+    ssl_context: ssl.SSLContext | None = None,
+    upstream_ssl_context: ssl.SSLContext | None = None,
+    postgres_ssl_context: ssl.SSLContext | None = None,
 ) -> None:
     """Create and run CGS gateway server until cancelled."""
     key_manager = KeyManager(encryption_passphrase, encryption_salt_path)
@@ -229,15 +235,21 @@ async def run_server(
         dsn=postgres_dsn,
         encryptor=encryptor,
         owner_portfolio_schema=postgres_owner_portfolio_schema,
+        ssl_context=postgres_ssl_context,
     )
     portfolio_storage = PortfolioStorage(
         dsn=postgres_dsn,
         owner_portfolio_schema=postgres_owner_portfolio_schema,
+        ssl_context=postgres_ssl_context,
     )
-    public_client = PublicAPIClient(base_url=zetherion_public_api_base_url)
+    public_client = PublicAPIClient(
+        base_url=zetherion_public_api_base_url,
+        ssl_context=upstream_ssl_context,
+    )
     skills_client = SkillsClient(
         base_url=zetherion_skills_api_base_url,
         api_secret=zetherion_skills_api_secret,  # gitleaks:allow
+        ssl_context=upstream_ssl_context,
     )
     verifier = JWTVerifier(jwks_url=jwks_url, issuer=issuer, audience=audience)
 
@@ -254,6 +266,7 @@ async def run_server(
         rag_allowed_providers=rag_allowed_providers,
         rag_allowed_models=rag_allowed_models,
         mutation_rate_limiter=mutation_rate_limiter,
+        ssl_context=ssl_context,
     )
 
     await server.start()
@@ -292,7 +305,7 @@ def main() -> None:
         getattr(
             settings,
             "zetherion_public_api_base_url",
-            "http://zetherion-ai-api-green:8443,http://zetherion-ai-api-blue:8443",
+            "https://zetherion-ai-api-green:8443,https://zetherion-ai-api-blue:8443",
         ),
     )
     z_skills = os.environ.get(
@@ -300,7 +313,7 @@ def main() -> None:
         getattr(
             settings,
             "zetherion_skills_api_base_url",
-            "http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080",
+            "https://zetherion-ai-skills-green:8080,https://zetherion-ai-skills-blue:8080",
         ),
     )
 
@@ -380,6 +393,9 @@ def main() -> None:
                 rag_allowed_providers=rag_allowed_providers,
                 rag_allowed_models=rag_allowed_models,
                 mutation_rate_limiter=mutation_limiter,
+                ssl_context=settings.cgs_gateway_server_ssl_context,
+                upstream_ssl_context=settings.internal_client_ssl_context,
+                postgres_ssl_context=settings.postgres_ssl_context,
             )
         )
     except KeyboardInterrupt:

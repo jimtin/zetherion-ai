@@ -6,7 +6,7 @@ The upstream API runs on port `8443` and is consumed by the CGS gateway.
 It exposes tenant-scoped session/chat/document/reporting capabilities under `/api/v1`,
 plus optional tenant-scoped YouTube endpoints.
 
-**Internal Base URL:** `http://<host>:8443/api/v1`
+**Internal Base URL:** `https://<host>:8443/api/v1`
 
 This API is distinct from the internal Skills API (`:8080`) and is not the public
 client contract. External clients must integrate through CGS `/service/ai/v1`.

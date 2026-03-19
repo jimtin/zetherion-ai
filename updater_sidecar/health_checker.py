@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import ssl
 from dataclasses import dataclass
 
 import httpx
@@ -18,6 +19,8 @@ class HealthCheckConfig:
     retries: int = 6
     delay_seconds: int = 10
     timeout_seconds: int = 10
+    verify: ssl.SSLContext | str | bool = True
+    cert: tuple[str, str] | None = None
 
 
 async def check_service_health(
@@ -32,7 +35,13 @@ async def check_service_health(
 
     for attempt in range(cfg.retries):
         try:
-            async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
+            client_kwargs: dict[str, object] = {
+                "timeout": cfg.timeout_seconds,
+                "verify": cfg.verify,
+            }
+            if cfg.cert is not None:
+                client_kwargs["cert"] = cfg.cert
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 resp = await client.get(url)
             if resp.status_code == 200:
                 log.info("Health check passed: %s (attempt %d)", url, attempt + 1)

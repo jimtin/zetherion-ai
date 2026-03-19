@@ -12,17 +12,15 @@ This document reflects the current shipped topology:
 - public API (`:8443`) with tenant auth
 - blue/green API and skills deployment behind Traefik
 
-Important: this document describes the current shipped topology, not the stricter
-"no HTTP anywhere" target state. As of 2026-03-20, the required production bar
-has been raised to:
+As of 2026-03-20, the production bar for this repo is:
 
 - all data encrypted in transit
 - all data encrypted at rest
 - no HTTP routes in the live production path
 
-The current runtime does not yet fully meet that stricter bar. Public edge TLS
-can exist while internal hops still use plain HTTP, and some at-rest protections
-remain field-level or selective rather than universal.
+The hardened production candidate in this repo enforces that bar through
+strict-transport configuration, internal PKI distribution, DPAPI-backed Windows
+runtime secrets, and layered host/application encryption controls.
 
 ---
 
@@ -40,19 +38,12 @@ remain field-level or selective rather than universal.
 
 ## Network Security
 
-| Boundary | Current behavior |
+| Boundary | Hardened production contract |
 |---|---|
-| Internal service network | Docker bridge network for service-to-service traffic |
-| Public exposure | Public API reachable through routed API service path; tunnel optional via cloudflared |
-| Host-exposed ports | Qdrant (`6333`) and Ollama generation (`11434`) by default in compose |
-| Internal-only services | Skills/API backends, Traefik internal entrypoints, updater sidecar, postgres, ollama-router |
-
-Current gap against the stricter transport requirement:
-
-- several live internal links still use `http://...`
-- Traefik currently routes to backend services over HTTP
-- the internal Skills API remains documented and configured as an HTTP service
-- loopback/admin/event paths on Windows still include HTTP defaults
+| Internal service network | Internal PKI-backed TLS with client-certificate authentication on live service-to-service hops |
+| Public exposure | Public edge stays on TLS; Cloudflare Tunnel must target an HTTPS Traefik origin |
+| Host-exposed ports | Only TLS-protected admin/runtime ports are allowed in the hardened path |
+| Internal-only services | Skills/API backends, Traefik internal entrypoints, updater sidecar, postgres, qdrant, dev-agent |
 
 Important: Zetherion now includes an inbound public API surface (`/api/v1`).
 The older “Discord-only inbound” assumption is no longer valid.
@@ -89,13 +80,15 @@ The older “Discord-only inbound” assumption is no longer valid.
 - key material derived from `ENCRYPTION_PASSPHRASE` + persistent salt
 - strict decrypt behavior controlled by `ENCRYPTION_STRICT`
 
-Current gap against the stricter at-rest requirement:
+At-rest protection is layered:
 
-- encryption is strong where it is applied, but it is not yet universal across
-  every persisted byte of the live system
-- field-level encrypted storage does not automatically cover every volume, log,
-  temp artifact, or vector payload representation
-- Qdrant vectors are not encrypted at the application layer
+- application-layer encryption for secrets and sensitive persisted fields
+- DPAPI-protected secret bundles on Windows for long-lived runtime secrets
+- BitLocker-protected host storage for runtime volumes, Docker/WSL data, and Qdrant payloads
+- age-encrypted backups for host snapshots and recovery artifacts
+
+Qdrant vectors remain the documented application-layer exception; they rely on
+encrypted host storage rather than per-vector application encryption.
 
 ### Secrets Handling
 

@@ -8,6 +8,7 @@ CRM reporting reads.
 from __future__ import annotations
 
 import asyncio
+import ssl
 from contextlib import suppress
 from typing import Any
 
@@ -112,6 +113,7 @@ class PublicAPIServer:
         announcement_repository: Any = None,
         announcement_policy_engine: Any = None,
         announcement_channel_registry: Any = None,
+        ssl_context: ssl.SSLContext | None = None,
     ) -> None:
         self._tenant_manager = tenant_manager
         self._jwt_secret = jwt_secret
@@ -131,6 +133,7 @@ class PublicAPIServer:
         self._announcement_repository = announcement_repository
         self._announcement_policy_engine = announcement_policy_engine
         self._announcement_channel_registry = announcement_channel_registry
+        self._ssl_context = ssl_context
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._rate_limiter = RateLimiter()
@@ -319,7 +322,7 @@ class PublicAPIServer:
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
 
-        site = web.TCPSite(self._runner, self._host, self._port)
+        site = web.TCPSite(self._runner, self._host, self._port, ssl_context=self._ssl_context)
         await site.start()
 
         if self._analytics_jobs_enabled:
@@ -386,6 +389,7 @@ async def run_server(
     announcement_repository: Any = None,
     announcement_policy_engine: Any = None,
     announcement_channel_registry: Any = None,
+    ssl_context: ssl.SSLContext | None = None,
 ) -> None:
     """Run the public API server (main entry point for Docker container)."""
     server = PublicAPIServer(
@@ -406,6 +410,7 @@ async def run_server(
         announcement_repository=announcement_repository,
         announcement_policy_engine=announcement_policy_engine,
         announcement_channel_registry=announcement_channel_registry,
+        ssl_context=ssl_context,
     )
     await server.start()
 
@@ -580,6 +585,7 @@ def main() -> None:
                 announcement_repository=announcement_repository,
                 announcement_policy_engine=announcement_policy_engine,
                 announcement_channel_registry=announcement_channel_registry,
+                ssl_context=settings.api_server_ssl_context,
             )
         finally:
             if api_broker is not None:

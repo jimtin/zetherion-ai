@@ -386,6 +386,7 @@ class SkillsServer:
         announcement_policy_engine: AnnouncementPolicyEngine | None = None,
         oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
         oauth_authorizers: dict[str, OAuthAuthorizeHandler] | None = None,
+        ssl_context: ssl.SSLContext | None = None,
     ):
         """Initialize the skills server.
 
@@ -419,6 +420,7 @@ class SkillsServer:
         )
         self._oauth_handlers = oauth_handlers or {}
         self._oauth_authorizers = oauth_authorizers or {}
+        self._ssl_context = ssl_context
         self._admin_nonce_cache: dict[str, datetime] = {}
         self._admin_nonce_ttl = timedelta(minutes=10)
         self._admin_actor_max_skew = timedelta(minutes=5)
@@ -5729,7 +5731,7 @@ class SkillsServer:
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
 
-        site = web.TCPSite(self._runner, self._host, self._port)
+        site = web.TCPSite(self._runner, self._host, self._port, ssl_context=self._ssl_context)
         await site.start()
 
         if self._tenant_admin_manager is not None and self._messaging_ttl_cleanup_task is None:
@@ -5767,6 +5769,7 @@ async def run_server(  # pragma: no cover — starts infinite loop
     announcement_policy_engine: AnnouncementPolicyEngine | None = None,
     oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
     oauth_authorizers: dict[str, OAuthAuthorizeHandler] | None = None,
+    ssl_context: ssl.SSLContext | None = None,
 ) -> None:
     """Run the skills server.
 
@@ -5792,6 +5795,7 @@ async def run_server(  # pragma: no cover — starts infinite loop
         announcement_policy_engine=announcement_policy_engine,
         oauth_handlers=oauth_handlers,
         oauth_authorizers=oauth_authorizers,
+        ssl_context=ssl_context,
     )
 
     await server.start()
@@ -5868,6 +5872,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             github_token=github_token,
             updater_url=settings.updater_service_url,
             updater_secret=updater_secret,
+            ssl_context=settings.internal_client_ssl_context,
             check_every_n_beats=check_every_n_beats,
             verify_signatures=settings.updater_verify_signatures,
             verify_identity=settings.updater_verify_identity,
@@ -5999,6 +6004,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
             runtime_db_pool = await asyncpg.create_pool(
                 dsn=settings.postgres_dsn,
+                ssl=settings.postgres_ssl_context,
                 **pool_kwargs,
             )
             try:
@@ -6143,6 +6149,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
             integration_pool = await asyncpg.create_pool(
                 dsn=settings.postgres_dsn,
+                ssl=settings.postgres_ssl_context,
                 **pool_kwargs,
             )
             if encryptor is None:
@@ -6353,6 +6360,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 announcement_policy_engine=announcement_policy_engine,
                 oauth_handlers=oauth_handlers,
                 oauth_authorizers=oauth_authorizers,
+                ssl_context=settings.skills_server_ssl_context,
             )
         finally:
             if security_pipeline is not None:

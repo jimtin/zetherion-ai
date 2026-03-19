@@ -38,6 +38,44 @@ class TestQdrantMemory:
 
             return QdrantMemory()
 
+    def test_tls_client_uses_verify_and_client_cert(
+        self,
+        mock_qdrant_client,
+        mock_embeddings,
+        monkeypatch,
+    ) -> None:
+        """TLS-enabled Qdrant clients should verify the server and present a client cert."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("ENCRYPTION_PASSPHRASE", "test-passphrase-minimum-16-chars")
+        monkeypatch.setenv("QDRANT_USE_TLS", "true")
+        monkeypatch.setenv("QDRANT_CERT_PATH", "/certs/qdrant-ca.pem")
+        monkeypatch.setenv("INTERNAL_TLS_CLIENT_CERT_PATH", "/certs/internal-client.pem")
+        monkeypatch.setenv("INTERNAL_TLS_CLIENT_KEY_PATH", "/certs/internal-client-key.pem")
+
+        with (
+            patch(
+                "zetherion_ai.memory.qdrant.AsyncQdrantClient",
+                return_value=mock_qdrant_client,
+            ) as client_cls,
+            patch(
+                "zetherion_ai.memory.qdrant.get_embeddings_client",
+                return_value=mock_embeddings,
+            ),
+        ):
+            from zetherion_ai.memory.qdrant import QdrantMemory
+
+            QdrantMemory()
+
+        client_cls.assert_called_once()
+        kwargs = client_cls.call_args.kwargs
+        assert kwargs["https"] is True
+        assert kwargs["verify"] == "/certs/qdrant-ca.pem"
+        assert kwargs["cert"] == (
+            "/certs/internal-client.pem",
+            "/certs/internal-client-key.pem",
+        )
+
     @pytest.mark.asyncio
     async def test_initialize_creates_collections(self, memory_client, mock_qdrant_client):
         """Test that initialize creates required collections."""

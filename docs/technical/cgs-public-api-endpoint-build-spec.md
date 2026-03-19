@@ -677,8 +677,8 @@ Defaults:
 
 Upstream defaults:
 
-- `ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-traefik:8443`
-- `ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-traefik:8080`
+- `ZETHERION_PUBLIC_API_BASE_URL=https://zetherion-ai-traefik:8443`
+- `ZETHERION_SKILLS_API_BASE_URL=https://zetherion-ai-traefik:8080`
 
 ## 11. Network and Routing Requirements
 

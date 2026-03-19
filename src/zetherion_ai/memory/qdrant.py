@@ -192,6 +192,12 @@ class QdrantMemory:
             }
             if connection["cert_path"]:
                 kwargs["verify"] = connection["cert_path"]
+            client_cert_path = _string_override(
+                getattr(settings, "internal_tls_client_cert_path", None)
+            )
+            client_key_path = _string_override(getattr(settings, "internal_tls_client_key_path", None))
+            if client_cert_path and client_key_path:
+                kwargs["cert"] = (client_cert_path, client_key_path)
             self._client = AsyncQdrantClient(**kwargs)
         else:
             self._client = AsyncQdrantClient(

@@ -39,7 +39,7 @@ cp .env.example .env
 | `DEV_AGENT_WEBHOOK_NAME` | `zetherion-dev-agent` | Trusted dev webhook sender |
 | `DEV_AGENT_WEBHOOK_ID` | empty | Optional Discord webhook ID allowlist for dev-agent ingestion |
 | `DEV_AGENT_ENABLED` | `false` | Enable dev-agent monitoring and cleanup automation |
-| `DEV_AGENT_SERVICE_URL` | `http://zetherion-ai-dev-agent:8787` | Dev-agent sidecar base URL |
+| `DEV_AGENT_SERVICE_URL` | `https://zetherion-ai-dev-agent:8787` | Dev-agent sidecar base URL |
 | `DEV_AGENT_BOOTSTRAP_SECRET` | empty | One-time bootstrap secret for dev-agent provisioning |
 | `DEV_AGENT_CLEANUP_HOUR` | `2` | Daily cleanup hour (0-23) for dev-agent tasks |
 | `DEV_AGENT_CLEANUP_MINUTE` | `30` | Daily cleanup minute (0-59) for dev-agent tasks |
@@ -68,6 +68,9 @@ cp .env.example .env
 ---
 
 ## Ollama and Embeddings
+
+Important: Ollama is local-development only once `STRICT_TRANSPORT_SECURITY=true`.
+Production runtime must use HTTPS-native providers for routing and embeddings.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -128,7 +131,7 @@ in `config.py`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `SKILLS_SERVICE_URL` | `http://zetherion-ai-skills:8080` | Internal skills API URL |
+| `SKILLS_SERVICE_URL` | `https://zetherion-ai-skills:8080` | Internal skills API URL (mTLS in hardened production) |
 | `SKILLS_API_SECRET` | unset | Shared secret for `X-API-Secret` |
 | `SKILLS_REQUEST_TIMEOUT` | `30` | Skills API timeout (seconds) |
 
@@ -145,7 +148,7 @@ Runtime settings/secrets APIs are exposed by the skills service:
 |---|---|---|
 | `GOOGLE_CLIENT_ID` | unset | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | unset | Google OAuth client secret |
-| `GOOGLE_REDIRECT_URI` | `http://localhost:8080/gmail/callback` | OAuth callback URI |
+| `GOOGLE_REDIRECT_URI` | `https://localhost:8080/gmail/callback` | OAuth callback URI |
 | `WORK_ROUTER_ENABLED` | `false` | Enable provider-agnostic work router |
 | `PROVIDER_OUTLOOK_ENABLED` | `false` | Enable Outlook adapter scaffold |
 | `EMAIL_SECURITY_GATE_ENABLED` | `true` | Security gate for email ingestion |
@@ -279,8 +282,8 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `CGS_AUTH_JWKS_URL` | empty | JWKS URL for validating CGS JWT bearer tokens |
 | `CGS_AUTH_ISSUER` | empty | Expected JWT issuer for CGS auth tokens |
 | `CGS_AUTH_AUDIENCE` | empty | Expected JWT audience for CGS auth tokens |
-| `ZETHERION_PUBLIC_API_BASE_URL` | `http://zetherion-ai-traefik:8443` | Upstream Zetherion public API base URL for CGS gateway |
-| `ZETHERION_SKILLS_API_BASE_URL` | `http://zetherion-ai-traefik:8080` | Upstream Zetherion skills API base URL for CGS gateway |
+| `ZETHERION_PUBLIC_API_BASE_URL` | `https://zetherion-ai-traefik:8443` | Upstream Zetherion public API base URL for CGS gateway |
+| `ZETHERION_SKILLS_API_BASE_URL` | `https://zetherion-ai-traefik:8080` | Upstream Zetherion skills API base URL for CGS gateway |
 | `CGS_DOCUMENT_MUTATION_RPM` | `30` | Tenant-aware document mutation rate-limit bucket (requests/minute) |
 | `CGS_ADMIN_MUTATION_RPM` | `20` | Tenant-aware internal admin mutation rate-limit bucket (requests/minute) |
 | `ZETHERION_SKILLS_API_SECRET` | unset | Optional override secret for CGS gateway -> skills API calls |
@@ -292,7 +295,7 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `BLOG_PUBLISH_ENABLED` | `true` | Windows promotions toggle for blog generation/publish |
 | `RELEASE_AUTO_INCREMENT_ENABLED` | `true` | Windows promotions toggle for mandatory GitHub SemVer patch release increment |
 | `ANNOUNCEMENT_EMIT_ENABLED` | `false` | Windows deploy/promotions announcement emit toggle |
-| `ANNOUNCEMENT_API_URL` | `http://127.0.0.1:8080/announcements/events` | Internal Skills announcement event endpoint used by Windows scripts |
+| `ANNOUNCEMENT_API_URL` | `https://127.0.0.1:8080/announcements/events` | Internal Skills announcement event endpoint used by Windows scripts |
 | `ANNOUNCEMENT_API_SECRET` | unset | Shared secret for `X-API-Secret` when Windows emits internal announcement events |
 | `ANNOUNCEMENT_TARGET_USER_ID` | unset | Legacy default Discord DM target user id for Windows deploy/promotions and Discord canary events; structured recipients now travel in the announcement API payload |
 | `DISCORD_E2E_ENABLED` | `false` | Enable the narrow synthetic Discord E2E bypass for isolated test channels |
