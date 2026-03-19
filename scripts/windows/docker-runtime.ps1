@@ -1867,18 +1867,11 @@ case "$mount_line" in
     exit 1
     ;;
 esac
-owner_user=$(stat -c '%U' "$repo_path")
-owner_group=$(stat -c '%G' "$repo_path")
-if [ -z "$owner_user" ] || [ "$owner_user" = "UNKNOWN" ]; then
-  echo "Unable to resolve a writable WSL owner for $repo_path." >&2
-  exit 1
-fi
 for rel in __RELATIVE_PATHS__; do
   target="$repo_path/$rel"
   mkdir -p "$target"
-  chown -R "$owner_user:$owner_group" "$target"
-  chmod -R u+rwX,g+rwX "$target"
-  runuser -u "$owner_user" -- touch "$target/.wsl-write-check"
+  chmod -R a+rwX "$target"
+  touch "$target/.wsl-write-check"
   rm -f "$target/.wsl-write-check"
 done
 '@
