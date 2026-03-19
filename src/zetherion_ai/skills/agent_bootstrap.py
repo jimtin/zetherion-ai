@@ -3928,7 +3928,7 @@ class AgentBootstrapSkill(Skill):
             status="succeeded" if success else "failed",
             payload={
                 "route_path": route_path,
-                "request_id": request.id,
+                "request_id": str(request.id),
             },
         )
         summary = (
