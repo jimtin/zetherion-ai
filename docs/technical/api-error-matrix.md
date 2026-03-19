@@ -153,6 +153,16 @@ Non-error sandbox behavior:
 - `GET /api/v1/analytics/recommendations` in test mode returns `200` with an empty list.
 - `POST /api/v1/analytics/sessions/end` in test mode returns `200` with `execution_mode="test"` but does not persist derived recommendations or funnel updates.
 
+## Chat Endpoint Specifics
+
+| Endpoint | Failure Case | Result |
+|---|---|---|
+| `POST /api/v1/chat` or `POST /api/v1/chat/stream` | `selection_mode` is not one of `auto`, `prefer`, `lock` | `400` |
+| `POST /api/v1/chat` or `POST /api/v1/chat/stream` | `provider` is unsupported | `400` |
+| `POST /api/v1/chat` or `POST /api/v1/chat/stream` | `task_type` is unsupported | `400` |
+| `POST /api/v1/chat` or `POST /api/v1/chat/stream` | `selection_mode=prefer|lock` without `provider` or `model` | `400` |
+| `POST /api/v1/chat` or `POST /api/v1/chat/stream` | `model` is supplied without a known default provider mapping and `provider` is omitted | `400` |
+
 ## Notification Endpoint Specifics
 
 | Endpoint | Failure Case | Result |

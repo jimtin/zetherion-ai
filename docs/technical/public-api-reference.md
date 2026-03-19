@@ -11,7 +11,23 @@ plus optional tenant-scoped YouTube endpoints.
 This API is distinct from the internal Skills API (`:8080`) and is not the public
 client contract. External clients must integrate through CGS `/service/ai/v1`.
 
-Maintenance note (2026-03-10):
+Maintenance note (2026-03-19):
+- Upstream session chat now accepts optional runtime selection hints on both
+  `POST /api/v1/chat` and `POST /api/v1/chat/stream`:
+  - `selection_mode`: `auto|prefer|lock` (defaults to `auto`)
+  - `provider`
+  - `model`
+  - `task_type`
+  - `agent_profile_id`
+  - `fallback_allowed`
+- Sync chat responses now expose `provider`, `usage`, and `selection` metadata.
+- Streaming chat responses now emit those same fields on the final `done` SSE
+  payload.
+- Session bearer auth, tenant scoping, and the underlying chat route paths are
+  unchanged; invalid runtime selection payloads now fail with `400`.
+- Document/archive and notification route contracts remain unchanged by this
+  chat runtime update.
+- Previous 2026-03-10 maintenance updates:
 - Segment 6 adds tenant notification routes on top of the shared announcement core:
   - `GET /api/v1/notifications/channels`
   - `POST /api/v1/notifications/events`
@@ -603,11 +619,27 @@ When the session token carries `execution_mode=test`, chat uses the sandbox runt
 ```json
 {
   "message": "What changed in this release?",
+  "selection_mode": "prefer",
+  "provider": "openai",
+  "model": "gpt-4o",
+  "task_type": "conversation",
+  "agent_profile_id": "support-default",
+  "fallback_allowed": true,
   "metadata": {
     "channel": "web"
   }
 }
 ```
+
+Request field notes:
+- `selection_mode=auto` lets the runtime choose the provider/model.
+- `selection_mode=prefer` tries the requested route first and can fall back
+  when `fallback_allowed=true`.
+- `selection_mode=lock` requires the requested provider/model exactly and
+  disables fallback.
+- `provider` or `model` is required when `selection_mode` is `prefer` or `lock`.
+- If only `model` is supplied, the runtime accepts it only when it maps to a
+  known runtime default provider.
 
 **Response 200:**
 
@@ -618,7 +650,26 @@ When the session token carries `execution_mode=test`, chat uses the sandbox runt
   "role": "assistant",
   "content": "...",
   "created_at": "2026-02-24T18:10:00+00:00",
-  "model": "sandbox-simulated"
+  "model": "gpt-4o",
+  "provider": "openai",
+  "usage": {
+    "input_tokens": 321,
+    "output_tokens": 118,
+    "total_tokens": 439,
+    "estimated_cost_usd": 0.0047,
+    "model": "gpt-4o",
+    "provider": "openai"
+  },
+  "selection": {
+    "selection_mode": "prefer",
+    "requested_provider": "openai",
+    "requested_model": "gpt-4o",
+    "task_type": "conversation",
+    "agent_profile_id": "support-default",
+    "fallback_allowed": true,
+    "effective_provider": "openai",
+    "effective_model": "gpt-4o"
+  }
 }
 ```
 
@@ -628,12 +679,15 @@ Stream assistant output via Server-Sent Events.
 
 **Headers:** `Authorization: Bearer zt_sess_...`
 
+Request body matches `POST /api/v1/chat`, including the optional runtime
+selection fields.
+
 Event payloads:
 
 - `{"type":"token","content":"..."}` repeated
-- `{"type":"done","message_id":"...","model":"..."}` final
+- `{"type":"done","message_id":"...","model":"...","provider":"...","usage":{...},"selection":{...}}` final
 
-In test mode, the final `model` is usually `sandbox-simulated` unless the matching sandbox rule overrides it.
+In test mode, the final `model` is usually `sandbox-simulated` unless the matching sandbox rule overrides it. Live and test mode both keep the same final `done` envelope shape.
 
 ### GET /api/v1/chat/history
 

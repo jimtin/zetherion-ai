@@ -29,7 +29,14 @@ It does not cover external gateway/public API mapping.
 5. `seg5-zeth-archive-worker-guardrails` (completed): archive/purge maintenance worker logic, server lifecycle loop wiring, retrieval exclusion for `archiving|archived|purged`, and regression tests.
 6. Remaining segments continue in strict one-PR-per-segment order for additional hardening only.
 
-## Implementation Status Update (2026-03-10)
+## Implementation Status Update (2026-03-19)
+
+- Upstream session chat routes now accept optional runtime provider/model
+  selection hints and return provider/usage/selection metadata.
+- That chat runtime change does not modify document archive/delete/restore
+  routes, archive worker semantics, retention rules, or the lifecycle contract
+  defined in this specification.
+- Previous 2026-03-10 implementation updates:
 
 - Segment 6 adds upstream tenant notification APIs under `/api/v1/notifications/*`
   on top of the generalized announcement core.

@@ -6,7 +6,18 @@ Authoritative exposure rule:
 - External clients authenticate only against CGS `/service/ai/v1`.
 - Zetherion `/api/v1` auth is internal upstream auth between CGS and Zetherion.
 
-## Maintenance Note (2026-03-10)
+## Maintenance Note (2026-03-19)
+
+- Upstream session bearer chat routes still authenticate only with
+  `Authorization: Bearer zt_sess_...`.
+- `POST /api/v1/chat` and `POST /api/v1/chat/stream` now accept optional
+  runtime selection hints in the JSON body (`selection_mode`, `provider`,
+  `model`, `task_type`, `agent_profile_id`, `fallback_allowed`).
+- Those hints do not introduce a new header, credential family, scope, or
+  tenant resolution rule; they only influence provider/model routing inside the
+  existing tenant-scoped session runtime.
+- Invalid selection hints fail with `400`, while auth behavior remains unchanged.
+- Previous 2026-03-10 maintenance updates:
 
 - Segment 6 adds upstream tenant notification routes:
   - `GET /api/v1/notifications/channels`

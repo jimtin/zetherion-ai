@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment 7 upstream chat runtime selection contract (2026-03-19)
+
+- Impacted capability IDs:
+  - `CAP-ZAI-UPSTREAM-CHAT-RUNTIME-SELECTION`
+- Impacted workflow scenario IDs:
+  - `SCN-ZAI-UPSTREAM-CHAT-PROVIDER-OVERRIDE`
+  - `SCN-ZAI-UPSTREAM-CHAT-LOCKED-MODEL`
+- Extended `src/zetherion_ai/api/routes/chat.py` and `src/zetherion_ai/skills/client_chat.py` so upstream session chat accepts optional runtime selection hints (`selection_mode`, `provider`, `model`, `task_type`, `agent_profile_id`, `fallback_allowed`) for both sync and streaming chat.
+- Sync responses now surface `provider`, `usage`, and `selection` metadata, and streaming `done` events now expose the same effective-provider/effective-model envelope without changing auth headers or route paths.
+- Invalid runtime selection payloads now fail with `400`, and the upstream docs bundle (`public-api-reference`, `openapi-public-api`, auth/error matrix, and related component/spec notes) was refreshed to match the new contract.
+
 ### Added - Segment 6 tenant notification API (2026-03-10)
 
 - Impacted capability IDs:

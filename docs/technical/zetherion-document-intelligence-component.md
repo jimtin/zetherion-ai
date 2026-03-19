@@ -9,7 +9,14 @@ Public exposure rule:
 - External clients must not call Zetherion `/api/v1` directly.
 - CGS `/service/ai/v1` is the only supported public API for this capability.
 
-## Maintenance Note (2026-03-10)
+## Maintenance Note (2026-03-19)
+
+- Upstream session chat routes (`/api/v1/chat*`) now accept optional runtime
+  provider/model selection hints and return provider/usage/selection metadata.
+- That change stays inside the session chat runtime and does not alter document
+  intelligence route contracts, retrieval authorization, storage layout, or
+  archive lifecycle behavior.
+- Previous 2026-03-10 maintenance updates:
 
 - Segment 6 adds upstream tenant notification routes under `/api/v1/notifications/*`
   backed by the generalized announcement core.

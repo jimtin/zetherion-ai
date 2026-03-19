@@ -3,7 +3,7 @@ info:
   title: Zetherion Upstream API
   version: 1.0.0
   description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
-  x-maintenance-note: "2026-03-10: added upstream tenant notification routes for channel discovery, subscription CRUD, and event publishing on top of the shared announcement core. Email notifications use a tenant-connected Google mailbox when present; webhook delivery remains always available. sk_test_ keys are still restricted away from /api/v1/notifications/*. 2026-03-09: added upstream tenant sandbox controls, sk_test_ API-key handling for POST /api/v1/sessions plus /api/v1/test/*, execution_mode tagging on session tokens/sessions/messages/analytics rows, and deterministic test-mode chat/stream behavior that preserves the live wire format while suppressing tenant-derived writes. 2026-03-08: /api/v1/sessions now accepts optional memory_subject_id, derives a tenant-local subject when omitted, and returns conversation_summary metadata for tenant-scoped conversational recall. /api/v1/chat and /api/v1/chat/stream now assemble prompt context from tenant_raw session summaries plus tenant subject memories without changing auth modes or route paths. 2026-03-06: added internal data-plane isolation foundations (owner/tenant Qdrant routing, scoped object-storage prefixes, additive PostgreSQL isolation schemas, and owner-vs-tenant encryption domains) without changing the upstream /api/v1 route contract. 2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
+  x-maintenance-note: "2026-03-19: /api/v1/chat and /api/v1/chat/stream now accept optional runtime selection hints (selection_mode, provider, model, task_type, agent_profile_id, fallback_allowed) and return provider/usage/selection metadata without changing auth headers or route paths. 2026-03-10: added upstream tenant notification routes for channel discovery, subscription CRUD, and event publishing on top of the shared announcement core. Email notifications use a tenant-connected Google mailbox when present; webhook delivery remains always available. sk_test_ keys are still restricted away from /api/v1/notifications/*. 2026-03-09: added upstream tenant sandbox controls, sk_test_ API-key handling for POST /api/v1/sessions plus /api/v1/test/*, execution_mode tagging on session tokens/sessions/messages/analytics rows, and deterministic test-mode chat/stream behavior that preserves the live wire format while suppressing tenant-derived writes. 2026-03-08: /api/v1/sessions now accepts optional memory_subject_id, derives a tenant-local subject when omitted, and returns conversation_summary metadata for tenant-scoped conversational recall. /api/v1/chat and /api/v1/chat/stream now assemble prompt context from tenant_raw session summaries plus tenant subject memories without changing auth modes or route paths. 2026-03-06: added internal data-plane isolation foundations (owner/tenant Qdrant routing, scoped object-storage prefixes, additive PostgreSQL isolation schemas, and owner-vs-tenant encryption domains) without changing the upstream /api/v1 route contract. 2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
 servers:
   - url: https://{host}
     variables:
@@ -323,19 +323,45 @@ paths:
   /api/v1/chat:
     post:
       summary: Send a chat message
+      description: Send one message and receive one assistant message. Optional runtime selection hints can request or lock provider/model routing.
       security:
         - SessionBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageRequest'
       responses:
         '200':
           description: Assistant message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessageResponse'
+        '400':
+          description: Invalid message body or runtime selection payload
   /api/v1/chat/stream:
     post:
       summary: Stream chat response (SSE)
+      description: Stream assistant output as Server-Sent Events. The final done event includes model, provider, usage, and selection metadata.
       security:
         - SessionBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageRequest'
       responses:
         '200':
           description: Streaming response
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Invalid message body or runtime selection payload
   /api/v1/chat/history:
     get:
       summary: Retrieve chat history
@@ -871,6 +897,108 @@ components:
         - created_at
         - last_active
         - expires_at
+    ChatMessageRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          maxLength: 10000
+        metadata:
+          type: object
+          additionalProperties: true
+        selection_mode:
+          type: string
+          enum: [auto, prefer, lock]
+          default: auto
+        provider:
+          type: string
+          nullable: true
+          description: Optional provider override. Required with prefer/lock unless model maps to a known runtime default.
+        model:
+          type: string
+          nullable: true
+        task_type:
+          type: string
+          nullable: true
+          description: Optional task routing hint. Aliases such as chat->conversation are normalized server-side.
+        agent_profile_id:
+          type: string
+          nullable: true
+        fallback_allowed:
+          type: boolean
+          nullable: true
+          description: Optional override for prefer-mode fallback behavior. Ignored for lock mode.
+    ChatUsage:
+      type: object
+      properties:
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        estimated_cost_usd:
+          type: number
+          format: float
+        model:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+    ChatSelection:
+      type: object
+      properties:
+        selection_mode:
+          type: string
+          enum: [auto, prefer, lock]
+        requested_provider:
+          type: string
+          nullable: true
+        requested_model:
+          type: string
+          nullable: true
+        task_type:
+          type: string
+        agent_profile_id:
+          type: string
+          nullable: true
+        fallback_allowed:
+          type: boolean
+        effective_provider:
+          type: string
+          nullable: true
+        effective_model:
+          type: string
+          nullable: true
+    ChatMessageResponse:
+      type: object
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        model:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+        usage:
+          $ref: '#/components/schemas/ChatUsage'
+        selection:
+          $ref: '#/components/schemas/ChatSelection'
+      required: [message_id, session_id, role, content, created_at]
     TestProfileCreateRequest:
       type: object
       required: [name]
