@@ -70,6 +70,42 @@ resolve_bootstrap_python() {
     return 1
 }
 
+python_supports_project_minimum() {
+    "$@" - <<'PY' >/dev/null 2>&1
+import sys
+
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+}
+
+create_repo_helper_venv() {
+    local venv_root="$1"
+    local candidate
+    local -a launcher=()
+
+    if command -v py >/dev/null 2>&1; then
+        for candidate in -3.14 -3.13 -3.12 -3; do
+            launcher=(py "$candidate")
+            if python_supports_project_minimum "${launcher[@]}"; then
+                "${launcher[@]}" -m venv "$venv_root" >/dev/null
+                return 0
+            fi
+        done
+    fi
+
+    for candidate in python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            launcher=("$(command -v "$candidate")")
+            if python_supports_project_minimum "${launcher[@]}"; then
+                "${launcher[@]}" -m venv "$venv_root" >/dev/null
+                return 0
+            fi
+        fi
+    done
+
+    return 1
+}
+
 install_repo_python_dependencies() {
     local python_bin="$1"
     "$python_bin" -m pip install --disable-pip-version-check -r "$REPO_DIR/requirements-dev.txt" >/dev/null
@@ -84,16 +120,10 @@ ensure_json_helper_python() {
         return 0
     fi
 
-    local bootstrap_python=""
-    bootstrap_python="$(resolve_bootstrap_python || true)"
-    if [[ -z "$bootstrap_python" ]]; then
-        return 1
-    fi
-
     local venv_root="$REPO_DIR/.venv"
     local venv_python="$venv_root/Scripts/python.exe"
     if [[ ! -f "$venv_python" ]]; then
-        "$bootstrap_python" -m venv "$venv_root" >/dev/null
+        create_repo_helper_venv "$venv_root" || return 1
     fi
     if [[ ! -f "$venv_python" ]]; then
         return 1
