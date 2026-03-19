@@ -155,6 +155,7 @@ services:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
+      - SKILLS_API_SECRET=${SKILLS_API_SECRET:-test-skills-secret}
       - ENCRYPTION_SALT_PATH=/app/data/salt.bin
       - EMBEDDINGS_BACKEND=${EMBEDDINGS_BACKEND:-openai}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
