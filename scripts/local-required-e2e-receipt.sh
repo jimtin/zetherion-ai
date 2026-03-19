@@ -15,6 +15,7 @@ DOCKER_LOG_PATH="${DOCKER_LOG_PATH:-docker-e2e.log}"
 DISCORD_LOG_PATH="${DISCORD_LOG_PATH:-discord-e2e.log}"
 DISCORD_RESULT_PATH="${DISCORD_RESULT_PATH:-.artifacts/discord-e2e-last-run.json}"
 DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
+LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE="${LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE:-false}"
 E2E_ENABLE_OLLAMA="${E2E_ENABLE_OLLAMA:-false}"
 OLLAMA_DOCKER_IMAGE="${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed}"
 CURRENT_HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
@@ -526,6 +527,7 @@ ensure_optional_ollama_profile
 if [[ "$DISCORD_E2E_PROVIDER" == "groq" ]]; then
     required_env+=("GROQ_API_KEY")
 fi
+LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE="$(normalize_bool "$LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE")"
 
 declare -a missing_env=()
 for var_name in "${required_env[@]}"; do
@@ -620,17 +622,22 @@ if python_requires_thread_timeout "$PYTHON_BIN"; then
     PYTEST_TIMEOUT_ARGS+=(--timeout-method=thread)
 fi
 
-run_suite \
-    "docker" \
-    "$DOCKER_LOG_PATH" \
-    env DOCKER_MANAGED_EXTERNALLY=true "${SSL_CERT_ENV_ARGS[@]}" \
-    "$DOCKER_SUITE_RUNNER" -m pytest tests/integration/test_e2e.py \
-    -m "integration and not optional_e2e" \
-    "${PYTEST_TIMEOUT_ARGS[@]}" \
-    -v \
-    --tb=short \
-    -s \
-    --no-cov
+if [[ "$LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE" == "true" ]]; then
+    SUITE_DOCKER_STATUS="passed"
+    SUITE_DOCKER_REASON="skipped_by_policy"
+else
+    run_suite \
+        "docker" \
+        "$DOCKER_LOG_PATH" \
+        env DOCKER_MANAGED_EXTERNALLY=true "${SSL_CERT_ENV_ARGS[@]}" \
+        "$DOCKER_SUITE_RUNNER" -m pytest tests/integration/test_e2e.py \
+        -m "integration and not optional_e2e" \
+        "${PYTEST_TIMEOUT_ARGS[@]}" \
+        -v \
+        --tb=short \
+        -s \
+        --no-cov
+fi
 
 run_suite \
     "discord" \

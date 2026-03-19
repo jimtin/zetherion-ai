@@ -189,11 +189,15 @@ def test_local_required_e2e_receipt_uses_thread_timeout_on_windows() -> None:
     assert 'DOCKER_SUITE_RUNNER="$PYTHON_BIN"' in rendered
     assert 'if [[ -x "$DOCKER_PYTHON_WRAPPER" ]]; then' in rendered
     assert 'DOCKER_SUITE_RUNNER="$DOCKER_PYTHON_WRAPPER"' in rendered
+    assert 'LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE="${LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE:-false}"' in rendered
+    assert 'LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE="$(normalize_bool "$LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE")"' in rendered
     assert "PYTEST_TIMEOUT_ARGS=(--timeout=120)" in rendered
     assert "python_requires_thread_timeout()" in rendered
     assert 'if python_requires_thread_timeout "$PYTHON_BIN"; then' in rendered
     assert "--timeout-method=thread" in rendered
     assert '"${PYTEST_TIMEOUT_ARGS[@]}"' in rendered
+    assert 'if [[ "$LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE" == "true" ]]; then' in rendered
+    assert 'SUITE_DOCKER_REASON="skipped_by_policy"' in rendered
 
 
 def test_local_required_e2e_receipt_passes_discord_scope_to_wrapper() -> None:
@@ -206,6 +210,14 @@ def test_local_required_e2e_receipt_passes_discord_scope_to_wrapper() -> None:
     assert 'TEST_DISCORD_BOT_TOKEN="${TEST_DISCORD_BOT_TOKEN:-}"' in rendered
     assert 'TEST_DISCORD_GUILD_ID="${TEST_DISCORD_GUILD_ID:-}"' in rendered
     assert 'OPENAI_API_KEY="${OPENAI_API_KEY:-}"' in rendered
+
+
+def test_live_discord_lanes_skip_non_blocking_docker_suite() -> None:
+    rendered = (REPO_ROOT / "scripts/testing/lanes.mjs").read_text(encoding="utf-8")
+    assert (
+        '"LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE=true ./scripts/local-required-e2e-receipt.sh"'
+        in rendered
+    )
 
 
 def test_windows_docker_e2e_logs_are_ascii_safe() -> None:

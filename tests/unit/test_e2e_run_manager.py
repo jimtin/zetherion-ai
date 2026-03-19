@@ -80,6 +80,77 @@ def test_create_run_writes_manifest_and_exports(tmp_path, monkeypatch) -> None:
     assert "E2E_RUN_ID=" not in env_text
 
 
+def test_create_run_uses_repo_env_fallbacks_when_process_env_is_missing(tmp_path, monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "make_run_id", lambda prefix="run": "run-fixed")
+    monkeypatch.setattr(module, "allocate_port_map", lambda service_slot=None: dict(PORTS))
+    for key in (
+        "OPENAI_API_KEY",
+        "GROQ_API_KEY",
+        "DISCORD_TOKEN_TEST",
+        "DISCORD_TOKEN",
+        "DISCORD_E2E_ENABLED",
+        "DISCORD_E2E_ALLOWED_AUTHOR_IDS",
+        "DISCORD_E2E_GUILD_ID",
+        "DISCORD_E2E_CATEGORY_ID",
+        "DISCORD_E2E_CHANNEL_PREFIX",
+        "EMBEDDINGS_BACKEND",
+        "ENCRYPTION_PASSPHRASE",
+        "GEMINI_API_KEY",
+        "ZETHERION_SOURCE_ENV_FILE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    compose_dir = tmp_path / "compose-root"
+    compose_dir.mkdir()
+    compose_file = compose_dir / "docker-compose.test.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    (compose_dir / ".env").write_text(
+        "\n".join(
+            (
+                "OPENAI_API_KEY=file-openai",
+                "GROQ_API_KEY=file-groq",
+                "DISCORD_TOKEN_TEST=file-test-token",
+                "DISCORD_E2E_ENABLED=true",
+                "DISCORD_E2E_ALLOWED_AUTHOR_IDS=123,456",
+                "DISCORD_E2E_GUILD_ID=file-guild",
+                "DISCORD_E2E_CATEGORY_ID=file-category",
+                "DISCORD_E2E_CHANNEL_PREFIX=file-prefix",
+                "EMBEDDINGS_BACKEND=ollama",
+                "ENCRYPTION_PASSPHRASE=file-passphrase",
+                "GEMINI_API_KEY=file-gemini",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    manifest, exports = module.create_run(
+        runs_root=tmp_path / "runs",
+        compose_file=compose_file,
+        project_prefix="zetherion-ai-test",
+        ttl_minutes=90,
+        service_slot="slot_a",
+    )
+
+    assert exports["OPENAI_API_KEY"] == "file-openai"
+    assert exports["GROQ_API_KEY"] == "file-groq"
+    assert exports["DISCORD_TOKEN_TEST"] == "file-test-token"
+    assert exports["DISCORD_TOKEN"] == "file-test-token"
+    assert exports["DISCORD_E2E_ENABLED"] == "true"
+    assert exports["DISCORD_E2E_ALLOWED_AUTHOR_IDS"] == "123,456"
+    assert exports["DISCORD_E2E_GUILD_ID"] == "file-guild"
+    assert exports["DISCORD_E2E_CATEGORY_ID"] == "file-category"
+    assert exports["DISCORD_E2E_CHANNEL_PREFIX"] == "file-prefix"
+    assert exports["EMBEDDINGS_BACKEND"] == "ollama"
+    assert exports["ENCRYPTION_PASSPHRASE"] == "file-passphrase"
+    assert exports["GEMINI_API_KEY"] == "file-gemini"
+
+    env_text = Path(manifest["env_file"]).read_text(encoding="utf-8")
+    assert "GROQ_API_KEY=file-groq" in env_text
+    assert "DISCORD_E2E_ALLOWED_AUTHOR_IDS=123,456" in env_text
+
+
 def test_render_shell_exports_normalizes_windows_paths_for_shell_use() -> None:
     module = _load_module()
 

@@ -195,7 +195,11 @@ export const LANE_DEFINITIONS = {
     description: "Live Discord DM and channel canary receipt lane",
     timeoutSeconds: 3600,
     heartbeat: true,
-    command: ["bash", "./scripts/local-required-e2e-receipt.sh"],
+    command: [
+      "bash",
+      "-lc",
+      "LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE=true ./scripts/local-required-e2e-receipt.sh",
+    ],
   },
   "z-e2e-discord-security": {
     description: "Live Discord security canary lane",
@@ -241,7 +245,11 @@ export const LANE_DEFINITIONS = {
     description: "Compatibility live Discord canary receipt lane",
     timeoutSeconds: 3600,
     heartbeat: true,
-    command: ["bash", "./scripts/local-required-e2e-receipt.sh"],
+    command: [
+      "bash",
+      "-lc",
+      "LOCAL_REQUIRED_E2E_SKIP_DOCKER_SUITE=true ./scripts/local-required-e2e-receipt.sh",
+    ],
   },
   "z-release": {
     description: "Local release verification and canonical heavy gate",

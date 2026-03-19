@@ -178,6 +178,54 @@ def write_env_file(path: Path, values: dict[str, str]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def load_env_file_values(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+
+    values: dict[str, str] = {}
+    for index, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines()):
+        line = raw_line.lstrip("\ufeff") if index == 0 else raw_line
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[len("export ") :].lstrip()
+        key, separator, value = stripped.partition("=")
+        if not separator:
+            continue
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def resolve_source_env_path(compose_file: Path) -> Path:
+    override = os.environ.get("ZETHERION_SOURCE_ENV_FILE", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return compose_file.parent / ".env"
+
+
+def resolve_source_env_values(compose_file: Path) -> dict[str, str]:
+    return load_env_file_values(resolve_source_env_path(compose_file))
+
+
+def resolve_runtime_env_value(
+    source_env_values: dict[str, str], name: str, default: str = ""
+) -> str:
+    process_value = os.environ.get(name)
+    if process_value:
+        return process_value
+    source_value = source_env_values.get(name, "")
+    if source_value:
+        return source_value
+    return default
+
+
 def load_manifest(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -325,23 +373,42 @@ def create_run(
     project_name = f"{project_prefix}-{run_id}"
     created_at = _now()
     expires_at = created_at + timedelta(minutes=ttl_minutes)
+    source_env_values = resolve_source_env_values(compose_file)
     runtime_env_defaults = {
-        "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
-        "DISCORD_TOKEN_TEST": os.environ.get("DISCORD_TOKEN_TEST", "test-discord-token"),
-        "DISCORD_TOKEN": os.environ.get(
+        "OPENAI_API_KEY": resolve_runtime_env_value(source_env_values, "OPENAI_API_KEY", ""),
+        "DISCORD_TOKEN_TEST": resolve_runtime_env_value(
+            source_env_values, "DISCORD_TOKEN_TEST", "test-discord-token"
+        ),
+        "DISCORD_TOKEN": resolve_runtime_env_value(
+            source_env_values,
             "DISCORD_TOKEN",
-            os.environ.get("DISCORD_TOKEN_TEST", "test-discord-token"),
+            resolve_runtime_env_value(source_env_values, "DISCORD_TOKEN_TEST", "test-discord-token"),
         ),
-        "DISCORD_E2E_ENABLED": os.environ.get("DISCORD_E2E_ENABLED", "false"),
-        "DISCORD_E2E_ALLOWED_AUTHOR_IDS": os.environ.get("DISCORD_E2E_ALLOWED_AUTHOR_IDS", ""),
-        "DISCORD_E2E_GUILD_ID": os.environ.get("DISCORD_E2E_GUILD_ID", ""),
-        "DISCORD_E2E_CATEGORY_ID": os.environ.get("DISCORD_E2E_CATEGORY_ID", ""),
-        "DISCORD_E2E_CHANNEL_PREFIX": os.environ.get("DISCORD_E2E_CHANNEL_PREFIX", "zeth-e2e"),
-        "EMBEDDINGS_BACKEND": os.environ.get("EMBEDDINGS_BACKEND", "openai"),
-        "ENCRYPTION_PASSPHRASE": os.environ.get(
-            "ENCRYPTION_PASSPHRASE", "test-encryption-passphrase"
+        "DISCORD_E2E_ENABLED": resolve_runtime_env_value(
+            source_env_values, "DISCORD_E2E_ENABLED", "false"
         ),
-        "GEMINI_API_KEY": os.environ.get("GEMINI_API_KEY", "test-gemini-api-key"),
+        "DISCORD_E2E_ALLOWED_AUTHOR_IDS": resolve_runtime_env_value(
+            source_env_values, "DISCORD_E2E_ALLOWED_AUTHOR_IDS", ""
+        ),
+        "DISCORD_E2E_GUILD_ID": resolve_runtime_env_value(
+            source_env_values, "DISCORD_E2E_GUILD_ID", ""
+        ),
+        "DISCORD_E2E_CATEGORY_ID": resolve_runtime_env_value(
+            source_env_values, "DISCORD_E2E_CATEGORY_ID", ""
+        ),
+        "DISCORD_E2E_CHANNEL_PREFIX": resolve_runtime_env_value(
+            source_env_values, "DISCORD_E2E_CHANNEL_PREFIX", "zeth-e2e"
+        ),
+        "EMBEDDINGS_BACKEND": resolve_runtime_env_value(
+            source_env_values, "EMBEDDINGS_BACKEND", "openai"
+        ),
+        "ENCRYPTION_PASSPHRASE": resolve_runtime_env_value(
+            source_env_values, "ENCRYPTION_PASSPHRASE", "test-encryption-passphrase"
+        ),
+        "GEMINI_API_KEY": resolve_runtime_env_value(
+            source_env_values, "GEMINI_API_KEY", "test-gemini-api-key"
+        ),
+        "GROQ_API_KEY": resolve_runtime_env_value(source_env_values, "GROQ_API_KEY", ""),
     }
 
     exports: dict[str, str] = {
