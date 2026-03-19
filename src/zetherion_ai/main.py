@@ -1,6 +1,7 @@
 """Main entry point for Zetherion AI."""
 
 import asyncio
+import os
 from typing import Any
 
 from zetherion_ai.admin import TenantAdminManager
@@ -94,6 +95,22 @@ async def _bootstrap_dynamic_dev_agent_settings(
         )
 
 
+def _discord_headless_requested() -> bool:
+    """Return True when the runtime should avoid a live Discord login."""
+    return os.getenv("ZETHERION_HEADLESS_DISCORD", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+async def _run_headless_discord_runtime(bot: ZetherionAIBot) -> None:
+    """Initialize runtime services without connecting to Discord."""
+    await bot.setup_hook()
+    await asyncio.Event().wait()
+
+
 async def main() -> None:
     """Main application entry point."""
     setup_logging()
@@ -179,7 +196,11 @@ async def main() -> None:
     log.info("bot_created")
 
     try:
-        await bot.start(settings.discord_token.get_secret_value())
+        if _discord_headless_requested():
+            log.info("discord_runtime_headless", reason="ZETHERION_HEADLESS_DISCORD=true")
+            await _run_headless_discord_runtime(bot)
+        else:
+            await bot.start(settings.discord_token.get_secret_value())
     except KeyboardInterrupt:
         log.info("shutdown_requested")
     finally:

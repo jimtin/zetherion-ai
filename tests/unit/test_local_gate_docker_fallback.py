@@ -144,6 +144,9 @@ def test_run_service_lane_uses_module_aware_test_runner_resolution() -> None:
     assert 'python_supports_module "$resolved" pytest' in rendered
     assert 'printf \'%s\\n\' "$REPO_DIR/scripts/docker-python-tool.sh"' in rendered
     assert 'TEST_RUNNER="${TEST_RUNNER:-$(resolve_test_runner)}"' in rendered
+    assert 'if [[ "${DISCORD_E2E_ENABLED:-false}" == "true" ]]; then' in rendered
+    assert 'ZETHERION_HEADLESS_DISCORD="${ZETHERION_HEADLESS_DISCORD:-false}"' in rendered
+    assert 'ZETHERION_HEADLESS_DISCORD="${ZETHERION_HEADLESS_DISCORD:-true}"' in rendered
 
 
 def test_repo_node_tool_prefers_repo_and_windows_node_paths() -> None:

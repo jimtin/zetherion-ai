@@ -27,10 +27,11 @@ services:
       - QDRANT_PORT=6333
       - SKILLS_SERVICE_URL=http://zetherion-ai-skills:8080
       - ENVIRONMENT=test
+      - ZETHERION_HEADLESS_DISCORD=${ZETHERION_HEADLESS_DISCORD:-true}
       - EMBEDDINGS_BACKEND=${EMBEDDINGS_BACKEND:-openai}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
       - OPENAI_EMBEDDING_DIMENSIONS=${OPENAI_EMBEDDING_DIMENSIONS:-3072}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-test-openai-key}
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
       - OLLAMA_ROUTER_HOST=ollama-router
@@ -77,7 +78,7 @@ services:
       - EMBEDDINGS_BACKEND=${EMBEDDINGS_BACKEND:-openai}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
       - OPENAI_EMBEDDING_DIMENSIONS=${OPENAI_EMBEDDING_DIMENSIONS:-3072}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-test-openai-key}
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
       - OLLAMA_ROUTER_HOST=ollama-router
@@ -160,7 +161,7 @@ services:
       - EMBEDDINGS_BACKEND=${EMBEDDINGS_BACKEND:-openai}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
       - OPENAI_EMBEDDING_DIMENSIONS=${OPENAI_EMBEDDING_DIMENSIONS:-3072}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-test-openai-key}
     # Expose port for integration test health checks
     ports:
       - "${E2E_SKILLS_HOST_PORT:-18080}:8080"

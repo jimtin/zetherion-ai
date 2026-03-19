@@ -10,6 +10,11 @@ from pydantic import ValidationError
 from zetherion_ai.trust.scope import TrustDomain
 
 
+@pytest.fixture(autouse=True)
+def _disable_headless_discord(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ZETHERION_HEADLESS_DISCORD", "false")
+
+
 class TestMainStartup:
     """Tests for main() startup wiring and encryption initialization."""
 
@@ -343,3 +348,77 @@ class TestMainStartup:
             call.args[1] for call in mock_settings_mgr.seed_if_missing.await_args_list if call.args
         }
         assert expected_keys.issubset(seeded_keys)
+
+    @patch("zetherion_ai.main._run_headless_discord_runtime", new_callable=AsyncMock)
+    @patch("zetherion_ai.main.ensure_trust_storage_schema", new_callable=AsyncMock)
+    @patch("zetherion_ai.main.ensure_postgres_isolation_schemas", new_callable=AsyncMock)
+    @patch("zetherion_ai.main.set_settings_manager")
+    @patch("zetherion_ai.main.SettingsManager")
+    @patch("zetherion_ai.main.UserManager")
+    @patch("zetherion_ai.main.ZetherionAIBot")
+    @patch("zetherion_ai.main.QdrantMemory")
+    @patch("zetherion_ai.main.build_runtime_encryptors")
+    @patch("zetherion_ai.main.get_settings")
+    @patch("zetherion_ai.main.setup_logging")
+    @patch("zetherion_ai.main.get_logger")
+    async def test_headless_discord_mode_skips_live_login(
+        self,
+        mock_get_logger,
+        mock_setup_logging,
+        mock_get_settings,
+        mock_build_runtime_encryptors,
+        mock_qdrant_memory_cls,
+        mock_bot_cls,
+        mock_user_manager_cls,
+        mock_settings_manager_cls,
+        mock_set_settings_manager,
+        mock_ensure_postgres_isolation_schemas,
+        mock_ensure_trust_storage_schema,
+        mock_run_headless_runtime,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Headless test mode should initialize services without a Discord login."""
+        from zetherion_ai.main import main
+
+        monkeypatch.setenv("ZETHERION_HEADLESS_DISCORD", "true")
+
+        settings = MagicMock()
+        settings.encryption_passphrase.get_secret_value.return_value = "test-passphrase-long-enough"
+        settings.encryption_salt_path = "data/salt.bin"
+        settings.encryption_strict = False
+        settings.environment = "test"
+        settings.qdrant_url = "http://localhost:6333"
+        settings.qdrant_owner_url = "http://localhost:6333"
+        settings.discord_token.get_secret_value.return_value = "fake-token"
+        settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
+        settings.postgres_owner_personal_schema = "owner_personal"
+        settings.postgres_control_plane_schema = "control_plane"
+        mock_get_settings.return_value = settings
+        mock_get_logger.return_value = MagicMock()
+
+        mock_build_runtime_encryptors.return_value = SimpleNamespace(
+            owner_personal=MagicMock(name="owner_encryptor"),
+            tenant_data=MagicMock(name="tenant_encryptor"),
+            owner_personal_salt_path="data/owner-salt.bin",
+            tenant_data_salt_path="data/tenant-salt.bin",
+        )
+
+        mock_memory = AsyncMock()
+        mock_qdrant_memory_cls.return_value = mock_memory
+
+        mock_user_mgr = AsyncMock()
+        mock_user_mgr._pool = MagicMock()
+        mock_user_manager_cls.return_value = mock_user_mgr
+
+        mock_settings_mgr = AsyncMock()
+        mock_settings_manager_cls.return_value = mock_settings_mgr
+
+        mock_bot = AsyncMock()
+        mock_bot.start = AsyncMock()
+        mock_bot.close = AsyncMock()
+        mock_bot_cls.return_value = mock_bot
+
+        await main()
+
+        mock_run_headless_runtime.assert_awaited_once_with(mock_bot)
+        mock_bot.start.assert_not_awaited()

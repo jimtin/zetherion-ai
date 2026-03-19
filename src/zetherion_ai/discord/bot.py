@@ -435,9 +435,12 @@ class ZetherionAIBot(discord.Client):
                 log.exception("heartbeat_user_list_failed")
         await self._heartbeat_scheduler.start()
 
-        # Sync commands
-        await self._tree.sync()
-        log.info("commands_synced")
+        # Sync commands only when Discord has supplied an application ID.
+        if self.application_id is not None:
+            await self._tree.sync()
+            log.info("commands_synced")
+        else:
+            log.info("commands_sync_skipped", reason="application_id_missing")
 
     def _resolve_runtime_pool(self) -> Any | None:
         if self._user_manager is None:
