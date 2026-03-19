@@ -101,6 +101,8 @@ source_env_file() {
 }
 
 load_repo_env() {
+    local env_file="$DEFAULT_ZETHERION_ENV_FILE"
+
     if [[ -n "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
         if [[ ! -f "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
             if is_generated_e2e_env_file "$EXPLICIT_ZETHERION_ENV_FILE"; then
