@@ -567,9 +567,8 @@ class InferenceBroker:
                 provider=provider.value,
                 error=str(e),
             )
-            if forced_provider is not None:
-                if not allow_forced_fallback:
-                    raise
+            if forced_provider is not None and not allow_forced_fallback:
+                raise
             # Try fallbacks
             result = await self._try_fallbacks(
                 task_type=task_type,

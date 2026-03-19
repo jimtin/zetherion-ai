@@ -12,12 +12,12 @@ from zetherion_ai.owner_ci.system_validation import (
     _candidate_set_from_input,
     _duration_seconds,
     _normalized_state,
-    build_validation_matrix,
     build_system_coaching,
     build_system_rollout_readiness,
     build_system_run_plan,
     build_system_run_report,
     build_system_run_usage_summary,
+    build_validation_matrix,
     resolve_system_run_batches,
 )
 
@@ -513,7 +513,7 @@ def test_system_run_report_and_usage_summarize_executed_system_validation() -> N
     assert usage["step_count"] == 2
     assert usage["billable_minutes"] == 2.0
 
-    usage_summary = build_system_run_usage_summary(
+    extra_usage_summary = build_system_run_usage_summary(
         system_run_id="system-run-extra",
         system_id="cgs-zetherion",
         mode_id="combined_system",
@@ -958,8 +958,12 @@ def test_system_run_helpers_cover_cycles_list_candidates_and_unplanned_shards(
             "completed_at": "2026-03-17T10:01:00Z",
         }
     )
+    assert extra_usage_summary["failed_shard_count"] == 1
 
     codes = {finding["code"] for finding in report["diagnostic_findings"]}
     assert "system_shard_failed" in codes
     assert "system_run_readiness_blocked" in codes
-    assert any(node["node_id"] == "system-shard:system-run-extra:ad-hoc" for node in report["run_graph"]["nodes"])
+    assert any(
+        node["node_id"] == "system-shard:system-run-extra:ad-hoc"
+        for node in report["run_graph"]["nodes"]
+    )

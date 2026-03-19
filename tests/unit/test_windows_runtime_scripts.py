@@ -50,8 +50,14 @@ def test_runtime_watchdog_skips_restarts_for_non_restartable_failures() -> None:
     runtime_watchdog = RUNTIME_WATCHDOG_PATH.read_text(encoding="utf-8")
 
     assert "function Test-RestartableRuntimeFailure" in runtime_watchdog
-    assert "Repair-ZetherionDockerDesktopRuntime -TimeoutSeconds 180 -RepairSettings -DisableAutoPause" in runtime_watchdog
-    assert 'throw "Docker Desktop recovery did not restore the desktop-linux engine."' in runtime_watchdog
+    assert (
+        "Repair-ZetherionDockerDesktopRuntime -TimeoutSeconds 180 "
+        "-RepairSettings -DisableAutoPause"
+    ) in runtime_watchdog
+    assert (
+        'throw "Docker Desktop recovery did not restore the '
+        'desktop-linux engine."'
+    ) in runtime_watchdog
     assert "docker_recovery = $dockerRecovery" in runtime_watchdog
     assert "restart_skipped_nonrestartable_failure" in runtime_watchdog
     assert "$state.consecutive_failures = 0" in runtime_watchdog
@@ -119,20 +125,41 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert '$script:ZetherionRequiredWslSwapMiB = 0' in docker_runtime
     assert '$script:ZetherionDockerDesktopContextName = "desktop-linux"' in docker_runtime
     assert '$script:ZetherionDockerDesktopServiceName = "com.docker.service"' in docker_runtime
-    assert '$script:ZetherionDockerDesktopStartupTaskName = "ZetherionDockerAutoStart"' in docker_runtime
-    assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "autoStart" -Value $true' in docker_runtime
-    assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "memoryMiB" -Value $MemoryMiB' in docker_runtime
-    assert 'Set-ZetherionObjectPropertyValue -Object $settings -Name "swapMiB" -Value $SwapMiB' in docker_runtime
+    assert (
+        '$script:ZetherionDockerDesktopStartupTaskName = '
+        '"ZetherionDockerAutoStart"'
+    ) in docker_runtime
+    assert (
+        'Set-ZetherionObjectPropertyValue -Object $settings '
+        '-Name "autoStart" -Value $true'
+    ) in docker_runtime
+    assert (
+        'Set-ZetherionObjectPropertyValue -Object $settings '
+        '-Name "memoryMiB" -Value $MemoryMiB'
+    ) in docker_runtime
+    assert (
+        'Set-ZetherionObjectPropertyValue -Object $settings '
+        '-Name "swapMiB" -Value $SwapMiB'
+    ) in docker_runtime
     assert "New-Object System.Text.UTF8Encoding($false)" in docker_runtime
-    assert "return ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)" in docker_runtime
+    assert (
+        "return ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB "
+        '-and $bytes[2] -eq 0xBF)'
+    ) in docker_runtime
     assert "$requiresEncodingRewrite = Test-ZetherionUtf8Bom -Path $current.path" in docker_runtime
-    assert "Set-ZetherionUtf8NoBomContent -Path $current.path -Content $settingsJson" in docker_runtime
+    assert (
+        "Set-ZetherionUtf8NoBomContent -Path $current.path "
+        "-Content $settingsJson"
+    ) in docker_runtime
     assert 'return "$([int]($ValueMiB / 1024))GB"' in docker_runtime
     assert 'memory=$memoryLiteral' in docker_runtime
     assert 'swap=$swapLiteral' in docker_runtime
     assert 'updated_wsl_host_config:$($wslChangedKeys -join ' in docker_runtime
     assert "encoding_rewritten = [bool]$requiresEncodingRewrite" in docker_runtime
-    assert 'action_matches = [bool](Test-ZetherionScheduledTaskActionContains -Task $task -Needle "Docker Desktop.exe")' in docker_runtime
+    assert (
+        'action_matches = [bool](Test-ZetherionScheduledTaskActionContains '
+        '-Task $task -Needle "Docker Desktop.exe")'
+    ) in docker_runtime
     assert 'Start-ScheduledTask -TaskName $taskStatus.task_name -ErrorAction Stop' in docker_runtime
     assert 'method = "scheduled_task"' in docker_runtime
     assert 'started_docker_desktop_process:$($startResult.method)' in docker_runtime
@@ -210,7 +237,10 @@ def test_verify_ci_worker_connectivity_emits_worker_certification_receipt() -> N
     assert 'key = "wsl_keepalive_task_running"' in verify_connectivity
     assert 'Get-ScheduledTaskSummary' in verify_connectivity
     assert 'wsl_keepalive_task = $wslKeepaliveTask' in verify_connectivity
-    assert 'last_task_result = if ($info) { [int]$info.LastTaskResult } else { $null }' in verify_connectivity
+    assert (
+        'last_task_result = if ($info) { [int]$info.LastTaskResult } '
+        'else { $null }'
+    ) in verify_connectivity
     assert '$wslKeepaliveHealthy = [bool](' in verify_connectivity
     assert 'key = "wsl_idle_timeout_configured"' in verify_connectivity
     assert 'key = "wsl_docker_config_ready"' in verify_connectivity
@@ -338,6 +368,9 @@ def test_startup_recover_uses_shared_docker_desktop_repair_flow() -> None:
         encoding="utf-8"
     )
 
-    assert "Repair-ZetherionDockerDesktopRuntime -TimeoutSeconds $TimeoutSeconds -RepairSettings -DisableAutoPause" in startup_recover
+    assert (
+        "Repair-ZetherionDockerDesktopRuntime -TimeoutSeconds $TimeoutSeconds "
+        "-RepairSettings -DisableAutoPause"
+    ) in startup_recover
     assert '$ActionsTaken.Value += "docker_settings_repaired"' in startup_recover
     assert 'return [bool]$repair.success' in startup_recover

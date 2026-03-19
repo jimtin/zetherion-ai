@@ -285,7 +285,8 @@ class QueueStorage:
 
             if attempt_count >= max_attempts:
                 # Move to dead-letter state
-                await conn.execute(  # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
+                # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
+                await conn.execute(
                     """
                     UPDATE message_queue
                     SET status     = 'dead',
@@ -308,7 +309,8 @@ class QueueStorage:
                 delay = _RETRY_BACKOFF_SECONDS[backoff_idx]
                 next_run = datetime.now(tz=UTC) + timedelta(seconds=delay)
 
-                await conn.execute(  # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
+                # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
+                await conn.execute(
                     """
                     UPDATE message_queue
                     SET status        = 'queued',

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import inspect
 import importlib
+import inspect
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch

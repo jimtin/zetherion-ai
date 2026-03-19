@@ -1229,7 +1229,9 @@ def test_system_run_request_helpers_cover_candidate_shapes_and_errors() -> None:
 
 
 @pytest.mark.asyncio
-async def test_system_run_execution_helpers_cover_failures_and_blocked_states(tmp_path: Path) -> None:
+async def test_system_run_execution_helpers_cover_failures_and_blocked_states(
+    tmp_path: Path,
+) -> None:
     storage = _storage()
     skill = AgentBootstrapSkill(storage=storage)
     skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]

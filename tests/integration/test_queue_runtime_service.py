@@ -64,13 +64,14 @@ async def postgres_pool():
                 "TRUNCATE TABLE message_queue, runtime_service_status RESTART IDENTITY CASCADE"
             )
             await conn.execute(
-                "TRUNCATE TABLE announcement_deliveries, announcement_events RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE announcement_deliveries, announcement_events "
+                "RESTART IDENTITY CASCADE"
             )
         await pool.close()
 
 
 class _FakeMessage:
-    def __init__(self, channel: "_FakeChannel") -> None:
+    def __init__(self, channel: _FakeChannel) -> None:
         self.channel = channel
         self.replies: list[str] = []
 

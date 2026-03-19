@@ -881,7 +881,8 @@ async def _build_storage_report(
         )
     elif degraded_count > 0:
         alerts.append(
-            "Storage pressure is trending in the wrong direction. Clean up before the next heavy run."
+            "Storage pressure is trending in the wrong direction. "
+            "Clean up before the next heavy run."
         )
     if top_consumers:
         top_repo = top_consumers[0]

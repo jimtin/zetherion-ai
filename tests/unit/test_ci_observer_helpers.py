@@ -692,7 +692,8 @@ async def test_ci_observer_storage_and_vercel_report_helpers_cover_alerting_path
 
 
 @pytest.mark.asyncio
-async def test_ci_observer_storage_report_covers_healthy_inventory_without_cleanup_receipts() -> None:
+async def test_ci_observer_storage_report_covers_healthy_inventory_without_cleanup_receipts(
+) -> None:
     storage = _storage()
     storage.list_repo_profiles.return_value = [{"repo_id": "repo-a", "display_name": "Repo A"}]
     storage.list_runs.return_value = [
@@ -717,7 +718,14 @@ async def test_ci_observer_storage_report_covers_healthy_inventory_without_clean
         }
     ]
     storage.get_worker_resource_report.return_value = {
-        "samples": [{"sample": {"disk_used_bytes": 1024, "disk_free_bytes": 100 * 1024 * 1024 * 1024}}]
+        "samples": [
+            {
+                "sample": {
+                    "disk_used_bytes": 1024,
+                    "disk_free_bytes": 100 * 1024 * 1024 * 1024,
+                }
+            }
+        ]
     }
 
     storage_report = await _build_storage_report(storage=storage, owner_id="owner-1", limit=5)
@@ -727,7 +735,10 @@ async def test_ci_observer_storage_report_covers_healthy_inventory_without_clean
     assert storage_report.alerts == [
         "Highest current disk consumer is repo-a at 1024 bytes peak usage."
     ]
-    assert storage_report.coaching == ["Top disk consumer right now is `repo-a`. Start retention tuning there before broad policy changes."]
+    assert storage_report.coaching == [
+        "Top disk consumer right now is `repo-a`. "
+        "Start retention tuning there before broad policy changes."
+    ]
     assert storage_report.announcement_events[0]["category"] == "ops.storage_pressure"
     assert storage_report.announcement_events[0]["severity"] == "high"
     assert storage_report.workers[0]["storage_status"] == "healthy"

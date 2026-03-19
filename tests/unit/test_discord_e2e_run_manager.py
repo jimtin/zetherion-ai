@@ -445,8 +445,9 @@ def test_janitor_skips_active_run_with_fresh_heartbeat(tmp_path: Path) -> None:
         },
     )
 
-    test_api = FakeDiscordAPI(user_id=1111, channels=[{"id": "456", "type": 4, "name": "zeth-e2e"}])
-    admin_api = FakeDiscordAPI(user_id=3333, channels=[{"id": "456", "type": 4, "name": "zeth-e2e"}])
+    shared_channels = [{"id": "456", "type": 4, "name": "zeth-e2e"}]
+    test_api = FakeDiscordAPI(user_id=1111, channels=shared_channels)
+    admin_api = FakeDiscordAPI(user_id=3333, channels=shared_channels)
 
     result = module.janitor(
         runs_root=tmp_path,

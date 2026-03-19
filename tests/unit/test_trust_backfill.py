@@ -352,7 +352,10 @@ def test_map_personal_mode_covers_all_branches(mode: PolicyMode, expected: Trust
         ("archive_item", TrustRiskClass.MODERATE),
     ],
 )
-def test_map_personal_risk_distinguishes_high_and_moderate(action: str, expected: TrustRiskClass) -> None:
+def test_map_personal_risk_distinguishes_high_and_moderate(
+    action: str,
+    expected: TrustRiskClass,
+) -> None:
     assert _map_personal_risk(action) == expected
 
 

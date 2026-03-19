@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from zetherion_ai.memory.embeddings import get_embedding_dimension
 from zetherion_ai.skills.base import SkillRequest, SkillStatus
 from zetherion_ai.skills.permissions import Permission
 from zetherion_ai.skills.profile_skill import (
@@ -13,7 +14,6 @@ from zetherion_ai.skills.profile_skill import (
     ProfileSkill,
     ProfileSummary,
 )
-from zetherion_ai.memory.embeddings import get_embedding_dimension
 
 
 class TestProfileSummary:

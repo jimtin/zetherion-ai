@@ -56,10 +56,19 @@ def test_write_local_readiness_receipt_synthesizes_shards_from_execution_log(
         "\n".join(
             [
                 "# Test Execution Log",
-                "| Timestamp (UTC) | Lane | Command | Result | Duration (s) | Reason | Diagnostics |",
+                (
+                    "| Timestamp (UTC) | Lane | Command | Result | Duration (s) "
+                    "| Reason | Diagnostics |"
+                ),
                 "|---|---|---|---|---:|---|---|",
-                "| 2026-03-13T00:00:00Z | z-int-runtime-queue | `pytest runtime` | passed | 8 |  | - |",
-                "| 2026-03-13T00:02:00Z | z-e2e-discord-live | `bash ./scripts/local-required-e2e-receipt.sh` | passed | 120 |  | - |",
+                (
+                    "| 2026-03-13T00:00:00Z | z-int-runtime-queue | "
+                    "`pytest runtime` | passed | 8 |  | - |"
+                ),
+                (
+                    "| 2026-03-13T00:02:00Z | z-e2e-discord-live | "
+                    "`bash ./scripts/local-required-e2e-receipt.sh` | passed | 120 |  | - |"
+                ),
                 "",
             ]
         ),
