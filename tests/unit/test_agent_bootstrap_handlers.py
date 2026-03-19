@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 
@@ -144,6 +145,14 @@ def _skill(storage: MagicMock) -> AgentBootstrapSkill:
     skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
     skill._ensure_default_service_capabilities = AsyncMock()  # type: ignore[method-assign]
     skill._record_interaction_outcome = AsyncMock()  # type: ignore[method-assign]
+    return skill
+
+
+def _skill_with_real_outcome_recording(storage: MagicMock) -> AgentBootstrapSkill:
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_service_capabilities = AsyncMock()  # type: ignore[method-assign]
     return skill
 
 
@@ -1642,3 +1651,31 @@ async def test_managed_repo_and_payload_guard_handlers_cover_remaining_branches(
     assert missing_gap_update_args.error == "gap_id and status are required"
     assert missing_gap_update.success is False
     assert "Gap `missing-gap` not found" in (missing_gap_update.error or "")
+
+
+@pytest.mark.asyncio
+async def test_principal_upsert_records_json_safe_audit_payloads() -> None:
+    storage = _storage()
+    principal_uuid = uuid4()
+    storage.upsert_agent_principal.return_value = {
+        "principal_id": "codex-1",
+        "display_name": "Codex 1",
+        "metadata": {"principal_uuid": principal_uuid},
+    }
+    skill = _skill_with_real_outcome_recording(storage)
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="agent_principal_upsert",
+            user_id="owner-1",
+            context={"principal_id": "codex-1", "display_name": "Codex 1"},
+        )
+    )
+
+    assert response.success is True
+    create_action_kwargs = storage.create_agent_action.await_args.kwargs
+    assert create_action_kwargs["payload"]["request_id"] == str(response.request_id)
+    create_outcome_kwargs = storage.create_agent_outcome.await_args.kwargs
+    assert create_outcome_kwargs["payload"]["principal"]["metadata"]["principal_uuid"] == str(
+        principal_uuid
+    )

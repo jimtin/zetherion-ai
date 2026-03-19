@@ -16,6 +16,7 @@ import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from zetherion_ai.logging import get_logger
 from zetherion_ai.owner_ci import OwnerCiStorage, default_repo_profile, default_repo_profiles
@@ -778,6 +779,12 @@ def _redact_payload(value: Any) -> Any:
         return [_redact_payload(item) for item in value]
     if isinstance(value, tuple):
         return [_redact_payload(item) for item in value]
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Path):
+        return str(value)
     if isinstance(value, str) and len(value) > 4000:
         return f"{value[:4000]}…"
     return value
