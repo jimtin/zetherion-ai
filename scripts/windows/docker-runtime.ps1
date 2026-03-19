@@ -1845,26 +1845,32 @@ function Ensure-ZetherionWslRuntimePaths {
     }
 
     $driveRoot = $driveMatch.Groups[1].Value
-    $escapedRelativePaths = New-Object 'System.Collections.Generic.List[string]'
-    foreach ($relativePath in $RelativePaths) {
-        $escapedRelativePaths.Add((ConvertTo-ZetherionBashLiteral -Value $relativePath))
-    }
-
-    $relativePathsLiteral = $escapedRelativePaths -join " "
-    $repoLiteral = ConvertTo-ZetherionBashLiteral -Value $repoWslPath
     $driveLiteral = ConvertTo-ZetherionBashLiteral -Value $driveRoot
-    $command = [string]::Join("; ", @(
+    $mountCheckCommand = [string]::Join("; ", @(
         "set -euo pipefail",
-        "repo_path=$repoLiteral",
         "drive_root=$driveLiteral",
         'mount_line=$(mount | grep " on $drive_root " | head -n 1 || true)',
         'if [ -z "$mount_line" ]; then echo "Unable to resolve WSL mount metadata for $drive_root." >&2; exit 1; fi',
-        'case "$mount_line" in *metadata*) ;; *) echo "WSL automount for $drive_root must include the metadata option to support writable runtime bind mounts." >&2; exit 1 ;; esac',
-        "for rel in $relativePathsLiteral; do target=`"$repo_path/$rel`"; mkdir -p `"$target`"; chmod -R a+rwX `"$target`"; touch `"$target/.wsl-write-check`"; rm -f `"$target/.wsl-write-check`"; done"
+        'case "$mount_line" in *metadata*) ;; *) echo "WSL automount for $drive_root must include the metadata option to support writable runtime bind mounts." >&2; exit 1 ;; esac'
     ))
 
     try {
-        Invoke-ZetherionWslCommand -User "root" -Command $command | Out-Null
+        Invoke-ZetherionWslCommand -User "root" -Command $mountCheckCommand | Out-Null
+
+        foreach ($relativePath in $RelativePaths) {
+            $targetWindowsPath = Join-Path $DeployPath $relativePath
+            $targetWslPath = ConvertTo-ZetherionWslPath -WindowsPath $targetWindowsPath
+            $targetLiteral = ConvertTo-ZetherionBashLiteral -Value $targetWslPath
+            $preparePathCommand = [string]::Join("; ", @(
+                "set -euo pipefail",
+                "target=$targetLiteral",
+                'mkdir -p "$target"',
+                'chmod -R a+rwX "$target"',
+                'touch "$target/.wsl-write-check"',
+                'rm -f "$target/.wsl-write-check"'
+            ))
+            Invoke-ZetherionWslCommand -User "root" -Command $preparePathCommand | Out-Null
+        }
     } catch {
         $reason = $_.Exception.Message
         if ($reason) {

@@ -84,8 +84,11 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "function Ensure-ZetherionWslDockerHeadlessConfig" in docker_runtime
     assert "function Get-ZetherionDiskStatus" in docker_runtime
     assert "function Invoke-ZetherionDiskCleanup" in docker_runtime
-    assert 'target=`"$repo_path/$rel`"' in docker_runtime
-    assert 'touch `"$target/.wsl-write-check`"' in docker_runtime
+    assert 'mount_line=$(mount | grep " on $drive_root " | head -n 1 || true)' in docker_runtime
+    assert "$targetWindowsPath = Join-Path $DeployPath $relativePath" in docker_runtime
+    assert "$targetWslPath = ConvertTo-ZetherionWslPath -WindowsPath $targetWindowsPath" in docker_runtime
+    assert 'target=$targetLiteral' in docker_runtime
+    assert 'touch "$target/.wsl-write-check"' in docker_runtime
     assert "image_prune_unused" in docker_runtime
     assert "volume_prune_unused" in docker_runtime
     assert "workspace_artifact_cleanup" in docker_runtime
