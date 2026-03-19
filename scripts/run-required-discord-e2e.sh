@@ -127,7 +127,8 @@ load_repo_env() {
         fi
     done
 
-    tr -d '\r' <"$env_file" >"$normalized_env"
+    awk 'NR == 1 {sub(/^\xef\xbb\xbf/, "")} {gsub(/\r/, "")} {print}' \
+        "$env_file" >"$normalized_env"
 
     set -a
     # shellcheck disable=SC1090

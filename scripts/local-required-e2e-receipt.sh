@@ -136,7 +136,8 @@ load_repo_env() {
     if [[ -f "$env_file" ]]; then
         local normalized_env
         normalized_env="$(mktemp "${TMPDIR:-/tmp}/zetherion-e2e-env.XXXXXX")"
-        tr -d '\r' <"$env_file" >"$normalized_env"
+        awk 'NR == 1 {sub(/^\xef\xbb\xbf/, "")} {gsub(/\r/, "")} {print}' \
+            "$env_file" >"$normalized_env"
         set -a
         # shellcheck disable=SC1090
         source "$normalized_env"
