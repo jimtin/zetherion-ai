@@ -268,7 +268,7 @@ past the initial discovery state:
 - a clean cutover candidate now exists at:
   - `C:\ZetherionAI-cutover`
 - the clean candidate is on:
-  - `f134cfba7c824c995e6350cf0fe32af42f7e610d`
+  - `8cc65f39ce5710ff35ab24e406159009c0fe9e6b`
 - the runtime `.env` was carried forward into the clean candidate path
 
 Docker stabilization also progressed materially:
@@ -286,20 +286,55 @@ Docker stabilization also progressed materially:
 - the repo-local Docker helper now rewrites that file as UTF-8 **without** BOM
 - after the no-BOM rewrite, the Docker backend stopped crashing on
   `settings-store.json` parsing and began serving backend traffic again
+- the interactive scheduled task `\ZetherionDockerAutoStart` had to be enabled
+  and used as the preferred recovery path for Docker Desktop in the disconnected
+  user session
+- the current host now passes the repo-local Docker recovery and resilience
+  checks:
+  - Docker Desktop process and service healthy
+  - `desktop-linux` reachable from `docker.exe`
+  - `ZetherionDockerAutoStart` enabled and runnable
+  - readiness receipt reports `docker_desktop_recoverable = true`
 
-Current remaining Docker blocker:
+Current remaining cutover blocker:
 
-- the Windows-side `dockerDesktopLinuxEngine` named pipe is still not reliably
-  available to the Windows `docker.exe` client, even though:
-  - `com.docker.service` can be running
-  - the backend no longer dies on settings parsing
-  - the `desktop-linux` context is selected
+- the clean cutover candidate at `C:\ZetherionAI-cutover` is **not running as a
+  compose project yet**
+- `docker compose ls` shows the live project still running from:
+  - `C:\ZetherionAI\docker-compose.yml`
+- `docker compose ps --format json` from `C:\ZetherionAI-cutover` returns no
+  running services
+- this is expected with the current compose topology because the repo pins
+  container names such as `zetherion-ai-bot`, `zetherion-ai-postgres`, and
+  `zetherion-ai-qdrant`, so the live tree and cutover tree cannot be started
+  side by side without collision
 
 Operational rule:
 
-- future work should resume from this state and focus on restoring the Windows
-  `dockerDesktopLinuxEngine` pipe, not on redoing env harvest, cutover staging,
-  or Docker memory/autostart discovery
+- future work should resume from this state and focus on **promotion-aware
+  runtime validation**, not on redoing env harvest or Docker desktop repair
+- pre-promotion checks can be run against the clean candidate path
+- runtime verification that expects containers must run only after the candidate
+  has been promoted into `C:\ZetherionAI` or after the live project has been
+  intentionally stopped and replaced
+
+### Effective Docker capacity note
+
+Although Docker Desktop settings are now on policy, effective Docker memory is
+still below the intended host target because WSL appears to be using its
+default host-memory cap:
+
+- Windows host physical RAM: about `128 GiB`
+- effective Docker server memory: about `62.79 GiB`
+- WSL `free -h` reported about `62 GiB`
+
+This means:
+
+- Docker Desktop configuration drift is fixed
+- the remaining capacity improvement is a **WSL memory policy** issue, not a
+  Docker Desktop settings issue
+- changing that will likely require a controlled WSL/Docker restart and should
+  be treated as a planned optimization step during cutover, not as a rediscovery task
 
 ## Disk and Capacity Findings
 
@@ -407,14 +442,22 @@ contract:
 2. Resume from the prepared cutover state:
    - `C:\ZetherionAI-precutover-20260318T183044Z`
    - `C:\ZetherionAI-cutover`
-3. Restore the Windows-side `dockerDesktopLinuxEngine` pipe and prove the
-   Windows `docker.exe` client can talk to `desktop-linux`.
-4. Start Windows certification by proving:
-   - Docker Desktop Linux engine is up
-   - Docker Desktop resource settings match the host policy
-   - runtime verification passes
-   - owner-CI worker and WSL keepalive remain healthy
-5. Promote the clean candidate only after the authoritative Windows lane family is green.
+3. Keep using the repaired Docker Desktop path:
+   - `\ZetherionDockerAutoStart`
+   - `desktop-linux` reachable from `docker.exe`
+   - Docker settings enforced without BOM drift
+4. Start Windows certification in two stages:
+   - pre-promotion:
+     - Docker Desktop Linux engine up
+     - Docker Desktop resource settings match the host policy
+     - owner-CI worker and WSL keepalive healthy
+     - clean candidate path source-clean and ready
+   - post-promotion:
+     - runtime verification passes from `C:\ZetherionAI`
+     - service health, bot markers, fallback probe, and database checks pass
+5. Promote the clean candidate only when ready to replace the live compose
+   project, because the current compose topology does not support side-by-side
+   runtime startup from both paths.
 
 ## Summary Answer
 

@@ -36,6 +36,14 @@ def test_verify_runtime_uses_non_throwing_probe_helpers() -> None:
     )
     assert "function Invoke-FallbackProbe" in verify_runtime
     assert "base64 -d | docker exec -i zetherion-ai-bot python -" in verify_runtime
+    assert "docker compose config --services" in verify_runtime
+    assert 'runtime_start_hint = ""' in verify_runtime
+    assert 'running_service_count = 0' in verify_runtime
+    assert (
+        "No containers are running for this deployment path. This usually means "
+        "the compose project at this path has not been started yet."
+    ) in verify_runtime
+    assert 'compose_project_not_started_for_target_path' in verify_runtime
 
 
 def test_runtime_watchdog_skips_restarts_for_non_restartable_failures() -> None:

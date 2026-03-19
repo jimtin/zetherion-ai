@@ -392,7 +392,7 @@ The host has now been staged for a safer Windows cutover:
 - a clean candidate checkout was created at:
   - `C:\ZetherionAI-cutover`
 - the clean candidate currently points at:
-  - `f134cfba7c824c995e6350cf0fe32af42f7e610d`
+  - `8cc65f39ce5710ff35ab24e406159009c0fe9e6b`
 - the runtime `.env` was carried forward into the cutover candidate
 
 Docker Desktop stabilization also advanced:
@@ -407,11 +407,21 @@ Docker Desktop stabilization also advanced:
   fixed in the repo-local recovery tooling
 - after rewriting the settings file without BOM, Docker Desktop stopped failing
   on `settings-store.json` parsing
+- the scheduled task `\ZetherionDockerAutoStart` was enabled and is now the
+  preferred launch path for Docker Desktop in the disconnected user session
+- `desktop-linux` is now reachable from `docker.exe`, and the live resilience
+  receipt reports Docker as recoverable again
 
-Current live blocker before authoritative Windows certification:
+Current live blocker before full authoritative Windows certification:
 
-- the Windows-side `dockerDesktopLinuxEngine` named pipe is still not reliably
-  available to the Windows `docker.exe` client
+- the clean cutover candidate is not running as an active compose project yet
+- `docker compose ls` still shows the live runtime project attached to
+  `C:\ZetherionAI`
+- runtime verification against `C:\ZetherionAI-cutover` therefore reports
+  "project not started for target path" rather than a Docker failure
+- this is expected because the compose topology pins container names and
+  therefore cannot run the live path and cutover path side by side
 
-This means the next session should continue from **Windows pipe restoration**,
-not from environment harvest or clean-candidate preparation.
+This means the next session should continue from **promotion-aware runtime
+validation**, not from environment harvest, Docker Desktop repair, or
+clean-candidate preparation.

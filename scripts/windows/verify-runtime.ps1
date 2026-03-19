@@ -28,6 +28,9 @@ $details = [ordered]@{
     postgres_keys = @()
     postgres_probe_error = ""
     fallback_probe_output = ""
+    defined_services = @()
+    running_service_count = 0
+    runtime_start_hint = ""
     optional_services_skipped = @()
     monitored_services = @()
     unhealthy_services = @()
@@ -234,6 +237,13 @@ try {
         if ($services -isnot [System.Array]) {
             $services = @($services)
         }
+        $definedServices = @(
+            docker compose config --services |
+                ForEach-Object { [string]$_ } |
+                Where-Object { $_ -and $_.Trim() -ne "" }
+        )
+        $details.defined_services = $definedServices
+        $details.running_service_count = @($services | Where-Object { $_ }).Count
 
         $optionalServices = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
         $envPath = Join-Path $DeployPath ".env"
@@ -360,7 +370,13 @@ try {
             }
         )
 
-        if ($coreServices.Count -gt 0 -and $badCoreServices.Count -eq 0) {
+        if ($definedServices.Count -gt 0 -and @($services | Where-Object { $_ }).Count -eq 0) {
+            $details.container_health = "No containers are running for this deployment path. This usually means the compose project at this path has not been started yet. If this is a clean cutover candidate, promote it first or stop the live project and bring this path up before running verify-runtime."
+            $details.runtime_start_hint = "compose_project_not_started_for_target_path"
+            $details.core_status = "failed"
+            $details.aux_status = "not_enabled"
+        }
+        elseif ($coreServices.Count -gt 0 -and $badCoreServices.Count -eq 0) {
             $checks.containers_healthy = $true
             $details.container_health = "All monitored core services reported non-failing status."
             $details.core_status = "healthy"
