@@ -361,6 +361,7 @@ def test_default_runtime_disables_ollama_unless_explicitly_enabled() -> None:
             assert 'compose_force_recreate_due_to_bootstrap' in script
             assert 'Keys @("DEV_AGENT_SERVICE_URL")' in script
             assert 'Value "https://zetherion-ai-dev-agent:8787"' in script
+            assert '$currentValue -ne $expectedValue' in script
             assert 'Keys @("QDRANT_USE_TLS")' in script
             assert 'Set-OrAddEnvLine -Lines $lines -Key "QDRANT_USE_TLS" -Value "true"' in script
             assert 'Keys @("POSTGRES_USE_TLS")' in script

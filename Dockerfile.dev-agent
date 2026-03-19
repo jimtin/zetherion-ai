@@ -19,6 +19,6 @@ COPY zetherion-dev-agent/ /app/zetherion-dev-agent/
 RUN pip3 install --no-cache-dir --break-system-packages /app/zetherion-dev-agent
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD ["curl", "-sf", "--cacert", "/app/data/certs/internal/ca.pem", "--cert", "/app/data/certs/internal/client.pem", "--key", "/app/data/certs/internal/client-key.pem", "https://localhost:8787/v1/health"]
+    CMD ["curl", "-sf", "--cacert", "/app/data/certs/internal/ca.pem", "--cert", "/app/data/certs/internal/client.pem", "--key", "/app/data/certs/internal/client-key.pem", "https://zetherion-ai-dev-agent:8787/v1/health"]
 
 CMD ["zetherion-dev-agent", "daemon"]

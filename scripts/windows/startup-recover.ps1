@@ -278,7 +278,8 @@ function Ensure-RequiredRuntimeEnv {
         $pkiInit = Invoke-InternalPkiInitialization -DeployPath $RepositoryPath
         foreach ($entry in (Get-InternalPkiEnvDefaults -DeployPath $RepositoryPath).GetEnumerator()) {
             $currentValue = Get-EnvValueFromFile -Path $rootEnvPath -Keys @([string]$entry.Key)
-            if (-not $currentValue) {
+            $expectedValue = [string]$entry.Value
+            if ((-not $currentValue) -or ($currentValue -ne $expectedValue)) {
                 Set-OrAddEnvLine -Lines $lines -Key ([string]$entry.Key) -Value ([string]$entry.Value)
                 $updatedKeys.Add([string]$entry.Key)
             }

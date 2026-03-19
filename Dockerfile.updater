@@ -32,7 +32,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 
 # Health check via curl to the sidecar's own /health endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["curl", "-sf", "--cacert", "/app/data/certs/internal/ca.pem", "--cert", "/app/data/certs/internal/client.pem", "--key", "/app/data/certs/internal/client-key.pem", "https://localhost:9090/health"]
+    CMD ["curl", "-sf", "--cacert", "/app/data/certs/internal/ca.pem", "--cert", "/app/data/certs/internal/client.pem", "--key", "/app/data/certs/internal/client-key.pem", "https://zetherion-ai-updater:9090/health"]
 
 EXPOSE 9090
 

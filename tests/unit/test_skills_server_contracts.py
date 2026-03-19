@@ -27,12 +27,12 @@ def test_sidecar_healthchecks_use_https_with_client_cert() -> None:
     dev_agent_text = DEV_AGENT_DOCKERFILE_PATH.read_text(encoding="utf-8")
     updater_text = UPDATER_DOCKERFILE_PATH.read_text(encoding="utf-8")
 
-    assert 'https://localhost:8787/v1/health' in dev_agent_text
+    assert 'https://zetherion-ai-dev-agent:8787/v1/health' in dev_agent_text
     assert '--cacert", "/app/data/certs/internal/ca.pem"' in dev_agent_text
     assert '--cert", "/app/data/certs/internal/client.pem"' in dev_agent_text
     assert '--key", "/app/data/certs/internal/client-key.pem"' in dev_agent_text
 
-    assert 'https://localhost:9090/health' in updater_text
+    assert 'https://zetherion-ai-updater:9090/health' in updater_text
     assert '--cacert", "/app/data/certs/internal/ca.pem"' in updater_text
     assert '--cert", "/app/data/certs/internal/client.pem"' in updater_text
     assert '--key", "/app/data/certs/internal/client-key.pem"' in updater_text
