@@ -59,6 +59,57 @@ PY
     return 1
 }
 
+resolve_bootstrap_python() {
+    local candidate
+    for candidate in python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            command -v "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+install_repo_python_dependencies() {
+    local python_bin="$1"
+    "$python_bin" -m pip install --disable-pip-version-check -r "$REPO_DIR/requirements-dev.txt" >/dev/null
+    "$python_bin" -m pip install --disable-pip-version-check -e "$REPO_DIR" >/dev/null
+}
+
+ensure_json_helper_python() {
+    local helper_python=""
+    helper_python="$(json_helper_python || true)"
+    if [[ -n "$helper_python" ]]; then
+        printf '%s\n' "$helper_python"
+        return 0
+    fi
+
+    local bootstrap_python=""
+    bootstrap_python="$(resolve_bootstrap_python || true)"
+    if [[ -z "$bootstrap_python" ]]; then
+        return 1
+    fi
+
+    local venv_root="$REPO_DIR/.venv"
+    local venv_python="$venv_root/Scripts/python.exe"
+    if [[ ! -f "$venv_python" ]]; then
+        "$bootstrap_python" -m venv "$venv_root" >/dev/null
+    fi
+    if [[ ! -f "$venv_python" ]]; then
+        return 1
+    fi
+
+    install_repo_python_dependencies "$venv_python"
+
+    helper_python="$(json_helper_python || true)"
+    if [[ -n "$helper_python" ]]; then
+        printf '%s\n' "$helper_python"
+        return 0
+    fi
+
+    return 1
+}
+
 require_discord_e2e_scope() {
     if [[ -z "${TEST_DISCORD_GUILD_ID:-}" ]]; then
         echo "ERROR: TEST_DISCORD_GUILD_ID is required for isolated Discord E2E runs." >&2
@@ -89,7 +140,7 @@ janitor_discord_e2e_runs() {
     init_discord_e2e_run_manager
     require_discord_e2e_scope
     local helper_python=""
-    helper_python="$(json_helper_python || true)"
+    helper_python="$(ensure_json_helper_python || true)"
     if [[ -z "$helper_python" ]]; then
         return 0
     fi
@@ -105,7 +156,7 @@ start_discord_e2e_run() {
     require_discord_e2e_scope
     janitor_discord_e2e_runs
     local helper_python=""
-    helper_python="$(json_helper_python || true)"
+    helper_python="$(ensure_json_helper_python || true)"
     if [[ -z "$helper_python" ]]; then
         echo "ERROR: A host-visible Python interpreter is required for Discord E2E run management." >&2
         exit 1
@@ -166,7 +217,7 @@ cleanup_discord_e2e_run() {
         return 0
     fi
 
-    helper_python="$(json_helper_python || true)"
+    helper_python="$(ensure_json_helper_python || true)"
     if [[ -z "$helper_python" ]]; then
         DISCORD_E2E_CLEANUP_STATUS="cleanup_unknown"
         export DISCORD_E2E_CLEANUP_STATUS

@@ -22,6 +22,10 @@ def test_discord_e2e_shell_wrappers_support_windows_repo_venvs() -> None:
         encoding="utf-8"
     )
     assert "json_helper_python()" in manager_rendered
+    assert "ensure_json_helper_python()" in manager_rendered
+    assert "resolve_bootstrap_python()" in manager_rendered
+    assert 'requirements-dev.txt' in manager_rendered
+    assert '"$python_bin" -m pip install --disable-pip-version-check -e "$REPO_DIR"' in manager_rendered
     assert 'importlib.util.find_spec("httpx")' in manager_rendered
     assert (
         "A host-visible Python interpreter is required for Discord E2E run management."
