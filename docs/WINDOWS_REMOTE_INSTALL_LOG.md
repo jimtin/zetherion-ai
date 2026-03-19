@@ -392,7 +392,7 @@ The host has now been staged for a safer Windows cutover:
 - a clean candidate checkout was created at:
   - `C:\ZetherionAI-cutover`
 - the clean candidate currently points at:
-  - `8cc65f39ce5710ff35ab24e406159009c0fe9e6b`
+  - `4b57d48b697c3f1c8f394d403138f1b275fceb16`
 - the runtime `.env` was carried forward into the cutover candidate
 
 Docker Desktop stabilization also advanced:
@@ -411,6 +411,12 @@ Docker Desktop stabilization also advanced:
   preferred launch path for Docker Desktop in the disconnected user session
 - `desktop-linux` is now reachable from `docker.exe`, and the live resilience
   receipt reports Docker as recoverable again
+- the shared repair helper now also manages `C:\Users\james\.wslconfig`
+- that file is now on policy:
+  - `memory=96GB`
+  - `swap=0`
+  - `vmIdleTimeout=604800000`
+- the resilience receipt now reports `wsl_host_resources_configured = true`
 
 Current live blocker before full authoritative Windows certification:
 
@@ -428,8 +434,9 @@ clean-candidate preparation.
 
 Additional capacity note:
 
-- `C:\Users\james\.wslconfig` is currently capping WSL at `64GB`
-- that explains why Docker reports about `62.8 GiB` of effective engine memory
-  even though Docker Desktop settings are already at the `96 GiB` target
-- aligning WSL memory/swap policy is the next controlled resource step, and it
-  will require a planned WSL/Docker restart to take full effect
+- `C:\Users\james\.wslconfig` is now configured for the intended `96GB` / `0`
+  swap policy
+- Docker still reports about `62.8 GiB` of effective engine memory because WSL
+  has not yet been restarted onto the new policy
+- applying that higher effective memory remains the next controlled restart step,
+  not a configuration-writing step

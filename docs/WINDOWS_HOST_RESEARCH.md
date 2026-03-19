@@ -268,7 +268,7 @@ past the initial discovery state:
 - a clean cutover candidate now exists at:
   - `C:\ZetherionAI-cutover`
 - the clean candidate is on:
-  - `8cc65f39ce5710ff35ab24e406159009c0fe9e6b`
+  - `4b57d48b697c3f1c8f394d403138f1b275fceb16`
 - the runtime `.env` was carried forward into the clean candidate path
 
 Docker stabilization also progressed materially:
@@ -295,6 +295,7 @@ Docker stabilization also progressed materially:
   - `desktop-linux` reachable from `docker.exe`
   - `ZetherionDockerAutoStart` enabled and runnable
   - readiness receipt reports `docker_desktop_recoverable = true`
+  - readiness receipt reports `wsl_host_resources_configured = true`
 
 Current remaining cutover blocker:
 
@@ -321,8 +322,7 @@ Operational rule:
 ### Effective Docker capacity note
 
 Although Docker Desktop settings are now on policy, effective Docker memory is
-still below the intended host target because WSL appears to be using its
-default host-memory cap:
+still below the intended host target until WSL is restarted:
 
 - Windows host physical RAM: about `128 GiB`
 - effective Docker server memory: about `62.79 GiB`
@@ -333,12 +333,17 @@ This means:
 - Docker Desktop configuration drift is fixed
 - the remaining capacity improvement is a **WSL memory policy** issue, not a
   Docker Desktop settings issue
-- the host currently has `C:\Users\james\.wslconfig` with:
+- the host originally had `C:\Users\james\.wslconfig` capped at:
   - `memory=64GB`
   - `processors=24`
   - `vmIdleTimeout=604800000`
-- changing that will likely require a controlled WSL/Docker restart and should
-  be treated as a planned optimization step during cutover, not as a rediscovery task
+- the shared repair helper has now updated that file to:
+  - `memory=96GB`
+  - `swap=0`
+  - `processors=24`
+  - `vmIdleTimeout=604800000`
+- the new policy is written and verified, but it will not change effective
+  Docker/WSL memory until a controlled WSL/Docker restart occurs
 
 ## Disk and Capacity Findings
 
@@ -454,6 +459,7 @@ contract:
    - pre-promotion:
      - Docker Desktop Linux engine up
      - Docker Desktop resource settings match the host policy
+     - WSL host resource policy written and verified
      - owner-CI worker and WSL keepalive healthy
      - clean candidate path source-clean and ready
    - post-promotion:
