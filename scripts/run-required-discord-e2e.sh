@@ -61,6 +61,15 @@ raise SystemExit(1 if missing else 0)
 PY
 }
 
+python_requires_thread_timeout() {
+    local python_bin="$1"
+    "$python_bin" - <<'PY' >/dev/null 2>&1
+import os
+
+raise SystemExit(0 if os.name == "nt" else 1)
+PY
+}
+
 is_generated_e2e_env_file() {
     local env_file="${1:-}"
     case "$env_file" in
@@ -433,11 +442,9 @@ start_discord_e2e_run
 start_discord_e2e_heartbeat
 
 PYTEST_TIMEOUT_ARGS=(--timeout=180)
-case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*)
-        PYTEST_TIMEOUT_ARGS+=(--timeout-method=thread)
-        ;;
-esac
+if python_requires_thread_timeout "$PYTHON_BIN"; then
+    PYTEST_TIMEOUT_ARGS+=(--timeout-method=thread)
+fi
 
 PYTEST_COVERAGE_ARGS=(--no-cov)
 if [[ "${DISCORD_E2E_ENABLE_COVERAGE:-false}" == "true" ]]; then

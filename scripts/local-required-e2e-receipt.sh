@@ -57,6 +57,15 @@ raise SystemExit(1 if missing else 0)
 PY
 }
 
+python_requires_thread_timeout() {
+    local python_bin="$1"
+    "$python_bin" - <<'PY' >/dev/null 2>&1
+import os
+
+raise SystemExit(0 if os.name == "nt" else 1)
+PY
+}
+
 normalize_bool() {
     local value="${1:-false}"
     value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
@@ -592,11 +601,9 @@ if [[ -n "${SSL_CERT_FILE:-}" ]]; then
 fi
 
 PYTEST_TIMEOUT_ARGS=(--timeout=120)
-case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*)
-        PYTEST_TIMEOUT_ARGS+=(--timeout-method=thread)
-        ;;
-esac
+if python_requires_thread_timeout "$PYTHON_BIN"; then
+    PYTEST_TIMEOUT_ARGS+=(--timeout-method=thread)
+fi
 
 run_suite \
     "docker" \
@@ -613,7 +620,22 @@ run_suite \
 run_suite \
     "discord" \
     "$DISCORD_LOG_PATH" \
-    env DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true "${SSL_CERT_ENV_ARGS[@]}" DISCORD_E2E_RESULT_PATH="$DISCORD_RESULT_PATH" \
+    env \
+    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" \
+    DISCORD_E2E_ENABLED="${DISCORD_E2E_ENABLED:-}" \
+    DISCORD_E2E_ALLOWED_AUTHOR_IDS="${DISCORD_E2E_ALLOWED_AUTHOR_IDS:-}" \
+    DISCORD_E2E_RESULT_PATH="$DISCORD_RESULT_PATH" \
+    DOCKER_MANAGED_EXTERNALLY=true \
+    OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+    GROQ_API_KEY="${GROQ_API_KEY:-}" \
+    TEST_DISCORD_BOT_TOKEN="${TEST_DISCORD_BOT_TOKEN:-}" \
+    TEST_DISCORD_GUILD_ID="${TEST_DISCORD_GUILD_ID:-}" \
+    TEST_DISCORD_E2E_CATEGORY_ID="${TEST_DISCORD_E2E_CATEGORY_ID:-}" \
+    TEST_DISCORD_E2E_CATEGORY_NAME="${TEST_DISCORD_E2E_CATEGORY_NAME:-}" \
+    TEST_DISCORD_TARGET_BOT_ID="${TEST_DISCORD_TARGET_BOT_ID:-}" \
+    DISCORD_TOKEN="${DISCORD_TOKEN:-}" \
+    DISCORD_TOKEN_TEST="${DISCORD_TOKEN_TEST:-}" \
+    "${SSL_CERT_ENV_ARGS[@]}" \
     scripts/run-required-discord-e2e.sh
 
 if [[ "$SUITE_DOCKER_STATUS" == "passed" && "$SUITE_DISCORD_STATUS" == "passed" ]]; then

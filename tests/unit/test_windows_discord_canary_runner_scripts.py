@@ -41,9 +41,10 @@ def test_discord_e2e_shell_wrappers_support_windows_repo_venvs() -> None:
 
 def test_required_discord_wrapper_uses_thread_timeout_on_windows() -> None:
     rendered = (REPO_ROOT / "scripts/run-required-discord-e2e.sh").read_text(encoding="utf-8")
+    assert "python_requires_thread_timeout()" in rendered
+    assert 'if python_requires_thread_timeout "$PYTHON_BIN"; then' in rendered
     assert "--timeout-method=thread" in rendered
     assert "${PYTEST_TIMEOUT_ARGS[@]}" in rendered
-    assert 'case "$(uname -s)" in' in rendered
     assert "pytest_exit_code=$?" in rendered
     assert 'finalize_wrapper "$pytest_exit_code"' in rendered
 

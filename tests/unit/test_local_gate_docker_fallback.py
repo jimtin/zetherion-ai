@@ -187,9 +187,19 @@ def test_e2e_run_manager_uses_host_python_for_manifest_work() -> None:
 def test_local_required_e2e_receipt_uses_thread_timeout_on_windows() -> None:
     rendered = (REPO_ROOT / "scripts/local-required-e2e-receipt.sh").read_text(encoding="utf-8")
     assert "PYTEST_TIMEOUT_ARGS=(--timeout=120)" in rendered
-    assert 'case "$(uname -s)" in' in rendered
+    assert "python_requires_thread_timeout()" in rendered
+    assert 'if python_requires_thread_timeout "$PYTHON_BIN"; then' in rendered
     assert "--timeout-method=thread" in rendered
     assert '"${PYTEST_TIMEOUT_ARGS[@]}"' in rendered
+
+
+def test_local_required_e2e_receipt_passes_discord_scope_to_wrapper() -> None:
+    rendered = (REPO_ROOT / "scripts/local-required-e2e-receipt.sh").read_text(encoding="utf-8")
+    assert 'DISCORD_E2E_ALLOWED_AUTHOR_IDS="${DISCORD_E2E_ALLOWED_AUTHOR_IDS:-}"' in rendered
+    assert 'DISCORD_E2E_ENABLED="${DISCORD_E2E_ENABLED:-}"' in rendered
+    assert 'TEST_DISCORD_BOT_TOKEN="${TEST_DISCORD_BOT_TOKEN:-}"' in rendered
+    assert 'TEST_DISCORD_GUILD_ID="${TEST_DISCORD_GUILD_ID:-}"' in rendered
+    assert 'OPENAI_API_KEY="${OPENAI_API_KEY:-}"' in rendered
 
 
 def test_repo_node_tool_prefers_repo_and_windows_node_paths() -> None:
