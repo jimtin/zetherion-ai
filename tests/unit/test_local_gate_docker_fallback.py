@@ -109,6 +109,7 @@ def test_check_lane_uses_repo_python_helper_for_mkdocs() -> None:
     assert "scripts/repo-python-tool.sh -m mkdocs build --strict" in rendered
     assert "scripts/repo-python-tool.sh -m ruff check src/ tests/ updater_sidecar/" in rendered
     assert "scripts/repo-python-tool.sh -m ruff format --check src/ tests/" in rendered
+    assert "scripts/repo-python-tool.sh -m pytest tests/unit -q --tb=short --no-cov" in rendered
 
 
 def test_repo_python_tool_prefers_repo_virtualenvs_before_python3() -> None:

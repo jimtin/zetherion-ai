@@ -85,7 +85,11 @@ export const LANE_DEFINITIONS = {
     description: "Targeted unit suite for changed files",
     timeoutSeconds: 900,
     heartbeat: true,
-    command: ["python3", "-m", "pytest", "tests/unit", "-q", "--tb=short", "--no-cov"],
+    command: [
+      "bash",
+      "-lc",
+      "scripts/repo-python-tool.sh -m pytest tests/unit -q --tb=short --no-cov",
+    ],
   },
   "z-unit-core": {
     description: "Sharded unit lane for queue, local gate, and release contracts",
