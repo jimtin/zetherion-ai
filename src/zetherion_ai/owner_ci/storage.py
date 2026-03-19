@@ -4426,8 +4426,8 @@ class OwnerCiStorage:
                 principal_id,
                 self._encrypt_text(display_name.strip() or principal_id),
                 principal_type.strip() or "codex",
-                json.dumps(list(allowed_scopes or [])),
-                json.dumps(dict(metadata or {})),
+                json.dumps(list(allowed_scopes or []), default=str),
+                json.dumps(dict(metadata or {}), default=str),
                 active,
             )
         if row is None:
@@ -5367,8 +5367,8 @@ class OwnerCiStorage:
                 self._encrypt_text(route_path) if route_path else None,
                 self._encrypt_text(intent),
                 self._encrypt_text(request_text) if request_text else None,
-                json.dumps(dict(request_payload or {})),
-                json.dumps(dict(normalized_intent or {})),
+                json.dumps(dict(request_payload or {}), default=str),
+                json.dumps(dict(normalized_intent or {}), default=str),
                 related_run_id,
                 related_candidate_id,
                 related_service_request_id,
@@ -5443,7 +5443,7 @@ class OwnerCiStorage:
                 app_id,
                 self._encrypt_text(action),
                 status,
-                json.dumps(dict(payload or {})),
+                json.dumps(dict(payload or {}), default=str),
             )
         if row is None:
             raise RuntimeError("Create agent action returned no row")
@@ -5484,7 +5484,7 @@ class OwnerCiStorage:
                 action_record_id,
                 status,
                 self._encrypt_text(summary),
-                json.dumps(dict(payload or {})),
+                json.dumps(dict(payload or {}), default=str),
             )
         if row is None:
             raise RuntimeError("Create agent outcome returned no row")
