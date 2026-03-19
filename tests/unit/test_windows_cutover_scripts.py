@@ -29,8 +29,11 @@ def test_prepare_runtime_cutover_stages_clean_candidate_and_rescue_archive() -> 
     assert 'Invoke-GitCommand @("checkout", "--detach", "--force", $TargetSha)' in script
     assert "Copy-AllowlistedRuntimeState" in script
     assert "function Normalize-DotenvInlineComments" in script
+    assert 'function Normalize-ScriptLineEndings' in script
     assert "normalized_file_state = @()" in script
+    assert "normalized_script_line_endings = @()" in script
     assert 'Normalize-DotenvInlineComments -Path ([string]$carriedItem.destination)' in script
+    assert "Normalize-ScriptLineEndings -RootPath $CandidatePath" in script
     assert "carried_forward_state = @()" in script
     assert 'status = "prepared"' in script
 

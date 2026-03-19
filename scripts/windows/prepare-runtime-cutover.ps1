@@ -236,6 +236,41 @@ function Normalize-DotenvInlineComments {
     }
 }
 
+function Normalize-ScriptLineEndings {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RootPath,
+        [string[]]$Patterns = @("*.py", "*.sh", "*.mjs")
+    )
+
+    $normalized = New-Object 'System.Collections.Generic.List[object]'
+    $seenPaths = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+    foreach ($pattern in @($Patterns)) {
+        foreach ($file in Get-ChildItem -Path $RootPath -Recurse -File -Filter $pattern) {
+            $fullPath = [string]$file.FullName
+            if (-not $seenPaths.Add($fullPath)) {
+                continue
+            }
+
+            $rawText = [System.IO.File]::ReadAllText($fullPath)
+            if (-not $rawText.Contains("`r`n")) {
+                continue
+            }
+
+            $normalizedText = $rawText.Replace("`r`n", "`n")
+            [System.IO.File]::WriteAllText($fullPath, $normalizedText, $utf8NoBom)
+            $normalized.Add([ordered]@{
+                path = $fullPath
+                pattern = $pattern
+            }) | Out-Null
+        }
+    }
+
+    return @($normalized.ToArray())
+}
+
 function Write-Receipt {
     param(
         [Parameter(Mandatory = $true)]
@@ -265,6 +300,7 @@ $receipt = [ordered]@{
     candidate_inventory = $null
     carried_forward_state = @()
     normalized_file_state = @()
+    normalized_script_line_endings = @()
     rescue_copy_exit_code = $null
     error = ""
 }
@@ -308,6 +344,7 @@ try {
             }
         }
     )
+    $receipt.normalized_script_line_endings = Normalize-ScriptLineEndings -RootPath $CandidatePath
     $receipt.candidate_inventory = Get-RepositoryForensics -RepositoryPath $CandidatePath
     $receipt.status = "prepared"
 }
