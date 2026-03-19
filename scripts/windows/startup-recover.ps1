@@ -350,8 +350,13 @@ try {
         if ($bootstrappedKeys.Count -gt 0) {
             $actionsTaken += "bootstrapped_runtime_env_keys:$($bootstrappedKeys -join ',')"
         }
-        Ensure-ZetherionWslRuntimePaths -DeployPath $DeployPath
-        $actionsTaken += "wsl_runtime_paths_ready"
+        try {
+            Ensure-ZetherionWslRuntimePaths -DeployPath $DeployPath
+            $actionsTaken += "wsl_runtime_paths_ready"
+        }
+        catch {
+            $actionsTaken += "wsl_runtime_paths_warning:$($_.Exception.Message)"
+        }
         $composeArgs = New-Object 'System.Collections.Generic.List[string]'
         $composeArgs.Add("compose")
         foreach ($profile in @(Get-OptionalComposeProfiles -RepositoryPath $DeployPath)) {
