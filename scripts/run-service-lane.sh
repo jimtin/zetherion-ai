@@ -67,6 +67,12 @@ raise SystemExit(0 if sys.version_info >= (${major}, ${minor}) else 1)
 PY
 }
 
+python_supports_module() {
+    local python_bin="$1"
+    local module_name="$2"
+    "$python_bin" -c "import ${module_name}" >/dev/null 2>&1
+}
+
 resolve_control_python_bin() {
     local candidate
     for candidate in \
@@ -96,14 +102,17 @@ resolve_test_runner() {
         "$REPO_DIR/.venv/bin/python" \
         "$REPO_DIR/venv/bin/python" \
         python3.12 python3 python; do
-        if [[ -x "$candidate" ]] && python_supports_minimum_version "$candidate" 3 12; then
+        if [[ -x "$candidate" ]] \
+            && python_supports_minimum_version "$candidate" 3 12 \
+            && python_supports_module "$candidate" pytest; then
             printf '%s\n' "$candidate"
             return 0
         fi
         if command -v "$candidate" >/dev/null 2>&1; then
             local resolved
             resolved="$(command -v "$candidate")"
-            if python_supports_minimum_version "$resolved" 3 12; then
+            if python_supports_minimum_version "$resolved" 3 12 \
+                && python_supports_module "$resolved" pytest; then
                 printf '%s\n' "$resolved"
                 return 0
             fi
@@ -119,7 +128,7 @@ if [[ -z "$CONTROL_PYTHON_BIN" ]]; then
     exit 1
 fi
 
-TEST_RUNNER="${TEST_RUNNER:-${PYTHON_BIN:-$(resolve_test_runner)}}"
+TEST_RUNNER="${TEST_RUNNER:-$(resolve_test_runner)}"
 PYTHON_BIN="$CONTROL_PYTHON_BIN"
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
