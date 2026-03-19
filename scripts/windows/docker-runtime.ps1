@@ -1860,7 +1860,7 @@ function Ensure-ZetherionWslRuntimePaths {
         'mount_line=$(mount | grep " on $drive_root " | head -n 1 || true)',
         'if [ -z "$mount_line" ]; then echo "Unable to resolve WSL mount metadata for $drive_root." >&2; exit 1; fi',
         'case "$mount_line" in *metadata*) ;; *) echo "WSL automount for $drive_root must include the metadata option to support writable runtime bind mounts." >&2; exit 1 ;; esac',
-        "for rel in $relativePathsLiteral; do target=`"`$repo_path/`$rel`"; mkdir -p `"`$target`"; chmod -R a+rwX `"`$target`"; touch `"`$target/.wsl-write-check`"; rm -f `"`$target/.wsl-write-check`"; done"
+        "for rel in $relativePathsLiteral; do target=`"$repo_path/$rel`"; mkdir -p `"$target`"; chmod -R a+rwX `"$target`"; touch `"$target/.wsl-write-check`"; rm -f `"$target/.wsl-write-check`"; done"
     ))
 
     try {
