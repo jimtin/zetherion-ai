@@ -62,8 +62,9 @@ def test_build_repo_and_workspace_readiness_receipts_capture_failed_paths() -> N
     assert workspace.failed_required_paths == ["queue_reliability"]
 
 
-def test_build_repo_and_workspace_readiness_receipts_track_required_categories_and_host_capacity(
-) -> None:
+def test_repo_and_workspace_readiness_receipts_track_required_categories_and_host_capacity() -> (
+    None
+):
     repo_receipt = build_repo_readiness_receipt(
         repo={"repo_id": "zetherion-ai"},
         run={
@@ -178,8 +179,7 @@ def test_normalize_shard_receipt_backfills_missing_expected_artifacts() -> None:
     assert receipt.release_blocking is False
 
 
-def test_normalize_release_and_worker_receipts_cover_blank_keys_and_status_derivation(
-) -> None:
+def test_normalize_release_and_worker_receipts_cover_blank_keys_and_status_derivation() -> None:
     release_receipt = normalize_release_verification_receipt(
         {
             "required_checks": [
@@ -247,8 +247,7 @@ def test_normalize_shard_receipt_merges_debug_artifacts_without_duplicates() -> 
     assert receipt.resource_reservation is None
 
 
-def test_build_repo_readiness_receipt_uses_local_release_and_preserves_failed_local_paths(
-) -> None:
+def test_build_repo_readiness_receipt_uses_local_release_and_preserves_failed_local_paths() -> None:
     local_receipt = RepoReadinessReceipt(
         repo_id="catalyst-group-solutions",
         merge_ready=False,
@@ -323,8 +322,9 @@ def test_build_repo_readiness_receipt_treats_pending_and_disconnected_shards_as_
     assert "deploy not ready" in repo_receipt.summary
 
 
-def test_build_repo_readiness_receipt_uses_local_receipt_to_satisfy_pending_local_mac_shards(
-) -> None:
+def test_build_repo_readiness_receipt_uses_local_receipt_to_satisfy_pending_local_mac_shards() -> (
+    None
+):
     local_receipt = RepoReadinessReceipt(
         repo_id="catalyst-group-solutions",
         merge_ready=True,
@@ -380,8 +380,9 @@ def test_build_repo_readiness_receipt_uses_local_receipt_to_satisfy_pending_loca
     assert repo_receipt.shard_receipts[0].metadata["satisfied_by"] == "local_readiness_receipt"
 
 
-def test_build_repo_readiness_receipt_can_overlay_one_pending_lane_from_multiple_local_shards(
-) -> None:
+def test_build_repo_readiness_receipt_can_overlay_one_pending_lane_from_multiple_local_shards() -> (
+    None
+):
     local_receipt = RepoReadinessReceipt(
         repo_id="catalyst-group-solutions",
         merge_ready=True,
@@ -454,8 +455,7 @@ def test_build_repo_readiness_receipt_can_overlay_one_pending_lane_from_multiple
     ]
 
 
-def test_build_repo_readiness_receipt_uses_local_release_verification_when_run_receipt_missing(
-) -> None:
+def test_build_repo_readiness_receipt_uses_local_release_verification_when_run_missing() -> None:
     local_receipt = RepoReadinessReceipt(
         repo_id="catalyst-group-solutions",
         merge_ready=True,
@@ -522,8 +522,7 @@ def test_private_release_helper_functions_cover_bool_and_status_normalization() 
     assert _check_passed("queued") is None
 
 
-def test_normalize_release_verification_receipt_handles_blank_keys_and_degraded_default_status(
-) -> None:
+def test_normalize_release_verification_receipt_handles_blank_keys_and_degraded_status() -> None:
     receipt = normalize_release_verification_receipt(
         {
             "checks": [
@@ -554,8 +553,7 @@ def test_normalize_release_verification_receipt_handles_blank_keys_and_degraded_
     ).evidence_paths == ["receipt.json"]
 
 
-def test_normalize_release_verification_receipt_defaults_to_healthy_when_all_required_checks_pass(
-) -> None:
+def test_normalize_release_verification_receipt_defaults_to_healthy_when_checks_pass() -> None:
     receipt = normalize_release_verification_receipt(
         {
             "delivery_canary_passed": True,
@@ -607,8 +605,9 @@ def test_normalize_worker_certification_receipt_backfills_required_checks() -> N
     assert check_map["status_publication_succeeded"] == "failed"
 
 
-def test_normalize_worker_certification_receipt_derives_healthy_status_when_all_checks_pass(
-) -> None:
+def test_normalize_worker_certification_receipt_derives_healthy_status_when_all_checks_pass() -> (
+    None
+):
     receipt = normalize_worker_certification_receipt(
         {
             "checks": [

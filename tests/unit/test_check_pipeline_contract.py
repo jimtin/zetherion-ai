@@ -27,6 +27,7 @@ def test_required_status_contexts_include_merge_and_deploy_readiness() -> None:
 
     assert expected.issubset(module.REQUIRED_STATUS_CONTEXTS)
 
+
 def test_workflow_contracts_match_manual_helper_rules() -> None:
     module = _load_module()
 

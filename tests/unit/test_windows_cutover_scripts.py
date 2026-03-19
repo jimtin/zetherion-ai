@@ -12,10 +12,10 @@ def test_prepare_runtime_cutover_stages_clean_candidate_and_rescue_archive() -> 
 
     assert '[string]$DeployPath = "C:\\ZetherionAI"' in script
     assert '[string]$CandidatePath = "C:\\ZetherionAI-cutover"' in script
-    assert '[string]$TargetSha' in script
+    assert "[string]$TargetSha" in script
     assert '[string]$RepositoryUrl = "https://github.com/jimtin/zetherion-ai.git"' in script
     assert '[string[]]$FileStatePaths = @(".env")' in script
-    assert '[string[]]$PersistentDirectories = @()' in script
+    assert "[string[]]$PersistentDirectories = @()" in script
     assert "function Get-RepositoryForensics" in script
     assert "git -c core.safecrlf=false status --short --branch" in script
     assert "git -c core.safecrlf=false diff --stat" in script
@@ -29,10 +29,10 @@ def test_prepare_runtime_cutover_stages_clean_candidate_and_rescue_archive() -> 
     assert 'Invoke-GitCommand @("checkout", "--detach", "--force", $TargetSha)' in script
     assert "Copy-AllowlistedRuntimeState" in script
     assert "function Normalize-DotenvInlineComments" in script
-    assert 'function Normalize-ScriptLineEndings' in script
+    assert "function Normalize-ScriptLineEndings" in script
     assert "normalized_file_state = @()" in script
     assert "normalized_script_line_endings = @()" in script
-    assert 'Normalize-DotenvInlineComments -Path ([string]$carriedItem.destination)' in script
+    assert "Normalize-DotenvInlineComments -Path ([string]$carriedItem.destination)" in script
     assert "Normalize-ScriptLineEndings -RootPath $CandidatePath" in script
     assert "carried_forward_state = @()" in script
     assert 'status = "prepared"' in script
@@ -43,12 +43,12 @@ def test_promote_runtime_cutover_swaps_clean_candidate_into_live_path() -> None:
 
     assert '[string]$DeployPath = "C:\\ZetherionAI"' in script
     assert '[string]$CandidatePath = "C:\\ZetherionAI-cutover"' in script
-    assert 'if (-not $RetiredLivePath) {' in script
+    assert "if (-not $RetiredLivePath) {" in script
     assert '"$DeployPath-prepromotion-$(Get-ZetherionIsoTimestampForPath)"' in script
-    assert 'docker compose down' in script
-    assert 'Move-Item -LiteralPath $DeployPath -Destination $RetiredLivePath' in script
-    assert 'Move-Item -LiteralPath $CandidatePath -Destination $DeployPath' in script
-    assert 'actions = @()' in script
+    assert "docker compose down" in script
+    assert "Move-Item -LiteralPath $DeployPath -Destination $RetiredLivePath" in script
+    assert "Move-Item -LiteralPath $CandidatePath -Destination $DeployPath" in script
+    assert "actions = @()" in script
     assert '"archived_previous_live_tree"' in script
     assert '"promoted_clean_candidate"' in script
     assert 'status = "promoted"' in script

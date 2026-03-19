@@ -364,9 +364,7 @@ class TestGenerateResponse:
         assert result.selection["agent_profile_id"] == "planner"
 
     @pytest.mark.asyncio
-    async def test_invalid_selection_mode_raises_value_error(
-        self, skill: ClientChatSkill
-    ) -> None:
+    async def test_invalid_selection_mode_raises_value_error(self, skill: ClientChatSkill) -> None:
         with pytest.raises(ValueError, match="selection_mode"):
             await skill.generate_response(
                 tenant=_TENANT,

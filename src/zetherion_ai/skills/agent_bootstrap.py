@@ -706,8 +706,7 @@ def _connector_health_report(
     ):
         warnings.append("missing_clerk_metadata")
     if service_kind == "vercel" and not (
-        str(metadata.get("team_id") or "").strip()
-        or str(metadata.get("project_ref") or "").strip()
+        str(metadata.get("team_id") or "").strip() or str(metadata.get("project_ref") or "").strip()
     ):
         warnings.append("missing_vercel_project_metadata")
     status = "healthy"
@@ -1413,9 +1412,7 @@ class AgentBootstrapSkill(Skill):
         }
         if not required_connectors and repo_id:
             required_connectors = set(_default_service_connector_map(repo_id).keys())
-        declared_service_kinds = {
-            str(key).strip() for key in service_map if str(key).strip()
-        }
+        declared_service_kinds = {str(key).strip() for key in service_map if str(key).strip()}
         candidate_service_kinds = sorted(required_connectors | declared_service_kinds)
         connectors = await self._storage.list_external_service_connectors(owner_id)
         connector_index = {
@@ -1439,9 +1436,7 @@ class AgentBootstrapSkill(Skill):
                         gap_type="missing_connector_binding",
                         severity="high",
                         blocking=True,
-                        summary=(
-                            f"`{app_id}` is missing a `{service_kind}` connector binding."
-                        ),
+                        summary=(f"`{app_id}` is missing a `{service_kind}` connector binding."),
                         remediation=(
                             f"Attach a `{service_kind}` connector to the app profile before "
                             "using brokered services or rollout automation."
@@ -1562,9 +1557,7 @@ class AgentBootstrapSkill(Skill):
                         gap_type="missing_allowed_providers",
                         severity="medium",
                         blocking=False,
-                        summary=(
-                            f"`{app_id}` runtime policy does not declare allowed providers."
-                        ),
+                        summary=(f"`{app_id}` runtime policy does not declare allowed providers."),
                         remediation=(
                             "Populate `ai_runtime_policy.allowed_providers` so CGS can validate "
                             "provider selection requests deterministically."
@@ -1672,9 +1665,7 @@ class AgentBootstrapSkill(Skill):
         degraded_count = len(integration_gaps) - sum(
             1 for gap in integration_gaps if bool(gap.get("blocking"))
         )
-        degraded_count += sum(
-            1 for gap in recorded_gaps if not bool(gap.get("blocker"))
-        )
+        degraded_count += sum(1 for gap in recorded_gaps if not bool(gap.get("blocker")))
         if blocker_count > 0:
             status = "blocked"
             summary = (
@@ -1698,10 +1689,7 @@ class AgentBootstrapSkill(Skill):
             summary=summary,
             blocker_count=blocker_count,
             degraded_count=degraded_count,
-            gaps=[
-                IntegrationGap.model_validate(gap)
-                for gap in integration_gaps[:limit]
-            ],
+            gaps=[IntegrationGap.model_validate(gap) for gap in integration_gaps[:limit]],
             recommended_next_steps=[
                 RecommendedNextStep.model_validate(step)
                 for step in self._build_rollout_steps(app_id=app_id, gaps=integration_gaps)
@@ -1941,9 +1929,7 @@ class AgentBootstrapSkill(Skill):
                 commit_sha = str(request.context.get(f"{repo_id}_commit_sha") or "").strip()
                 if not git_ref and not commit_sha:
                     git_ref = str(request.context.get(f"repo_{index}_git_ref") or "").strip()
-                    commit_sha = str(
-                        request.context.get(f"repo_{index}_commit_sha") or ""
-                    ).strip()
+                    commit_sha = str(request.context.get(f"repo_{index}_commit_sha") or "").strip()
                 if git_ref or commit_sha:
                     repos.append(
                         {
@@ -2057,9 +2043,7 @@ class AgentBootstrapSkill(Skill):
         else:
             candidate_repo = dict(metadata.get("candidate_repo_ref") or {})
             repo_id = str(
-                candidate_repo.get("repo_id")
-                or (shard.get("repo_ids") or [None])[0]
-                or ""
+                candidate_repo.get("repo_id") or (shard.get("repo_ids") or [None])[0] or ""
             ).strip()
             if not repo_id:
                 raise ValueError(f"Repo-local shard `{shard_id}` is missing repo_id")
@@ -2204,9 +2188,7 @@ class AgentBootstrapSkill(Skill):
 
         plan = dict(system_run.get("plan") or {})
         raw_shards = [
-            dict(shard)
-            for shard in list(plan.get("shards") or [])
-            if isinstance(shard, dict)
+            dict(shard) for shard in list(plan.get("shards") or []) if isinstance(shard, dict)
         ]
         batches = resolve_system_run_batches(raw_shards)
         await self._storage.update_system_run(
@@ -2237,9 +2219,7 @@ class AgentBootstrapSkill(Skill):
                         "lane_id": str(shard.get("lane_id") or "").strip() or None,
                         "lane_label": str(shard.get("lane_label") or "").strip() or None,
                         "lane_family": str(shard.get("lane_family") or "combined_system"),
-                        "validation_mode": str(
-                            shard.get("validation_mode") or "combined_system"
-                        ),
+                        "validation_mode": str(shard.get("validation_mode") or "combined_system"),
                         "purpose": str(shard.get("purpose") or "").strip(),
                         "blocking": bool(shard.get("blocking", True)),
                         "repo_ids": list(shard.get("repo_ids") or []),

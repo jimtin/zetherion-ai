@@ -32,12 +32,9 @@ from zetherion_ai.skills.ci_controller import CiControllerSkill
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKSPACE_ROOT = REPO_ROOT.parent
 CGS_WORKSPACE_ROOT = Path(
-    os.environ.get("CGS_WORKSPACE_ROOT")
-    or WORKSPACE_ROOT / "catalyst-group-solutions"
+    os.environ.get("CGS_WORKSPACE_ROOT") or WORKSPACE_ROOT / "catalyst-group-solutions"
 )
-DEFAULT_CGS_MANIFEST_PATH = (
-    CGS_WORKSPACE_ROOT / "scripts" / "cgs-ai" / "shard-manifest.json"
-)
+DEFAULT_CGS_MANIFEST_PATH = CGS_WORKSPACE_ROOT / "scripts" / "cgs-ai" / "shard-manifest.json"
 DEFAULT_COMBINED_MANIFEST_PATH = REPO_ROOT / ".ci" / "system_validation_manifest.json"
 DEFAULT_SYSTEM_ID = "cgs-zetherion"
 REPO_MODE_IDS = {
@@ -75,9 +72,7 @@ def _normalize_mode(
     default_validation_mode: str | None = None,
 ) -> SystemValidationProfile:
     mode_repo_ids = [
-        str(repo_id).strip()
-        for repo_id in list(mode.get("repo_ids") or [])
-        if str(repo_id).strip()
+        str(repo_id).strip() for repo_id in list(mode.get("repo_ids") or []) if str(repo_id).strip()
     ]
     shards: list[SystemShard] = []
     for raw_shard in list(mode.get("shards") or []):
@@ -100,8 +95,7 @@ def _normalize_mode(
                     or raw_shard.get("purpose")
                     or ""
                 ),
-                lane_id=str(raw_shard.get("lane_id") or raw_shard.get("shard_id") or "")
-                or None,
+                lane_id=str(raw_shard.get("lane_id") or raw_shard.get("shard_id") or "") or None,
                 lane_label=str(
                     raw_shard.get("lane_label")
                     or raw_shard.get("label")
@@ -232,9 +226,7 @@ def _build_zetherion_mode() -> SystemValidationProfile:
                 metadata={
                     "command": list(shard.get("command") or []),
                     "execution_target": str(shard.get("execution_target") or "local_mac"),
-                    "windows_execution_mode": str(
-                        plan.get("windows_execution_mode") or "command"
-                    ),
+                    "windows_execution_mode": str(plan.get("windows_execution_mode") or "command"),
                 },
             )
         )
@@ -459,8 +451,7 @@ def resolve_system_run_batches(
     if resolved_count != len(shard_map):
         unresolved = sorted(shard_id for shard_id, degree in indegree.items() if degree > 0)
         raise ValueError(
-            "System run plan contains dependency cycles involving: "
-            + ", ".join(unresolved)
+            "System run plan contains dependency cycles involving: " + ", ".join(unresolved)
         )
     return batches
 
@@ -477,9 +468,7 @@ def build_system_run_plan(
         combined_manifest_path=combined_manifest_path,
     )
     profiles = [
-        _normalize_mode(mode)
-        for mode in list(matrix.get("modes") or [])
-        if isinstance(mode, dict)
+        _normalize_mode(mode) for mode in list(matrix.get("modes") or []) if isinstance(mode, dict)
     ]
     profile_by_mode = {profile.mode_id: profile for profile in profiles}
     selected_profiles: list[SystemValidationProfile] = []
@@ -505,9 +494,7 @@ def build_system_run_plan(
                 **dict(shard.metadata or {}),
                 "candidate_repo_ref": repo.model_dump(mode="json"),
             }
-            selected_shards.append(
-                SystemShard.model_validate(shard_payload)
-            )
+            selected_shards.append(SystemShard.model_validate(shard_payload))
 
     combined_profile = profile_by_mode.get("combined_system")
     combined_repo_ids = set(combined_profile.repo_ids if combined_profile else [])
@@ -528,9 +515,7 @@ def build_system_run_plan(
                 **dict(shard.metadata or {}),
                 "candidate_repo_refs": candidate_ref_map,
             }
-            selected_shards.append(
-                SystemShard.model_validate(shard_payload)
-            )
+            selected_shards.append(SystemShard.model_validate(shard_payload))
 
     unique_blocking_categories = list(dict.fromkeys(blocking_categories))
     summary = (
@@ -593,10 +578,7 @@ def build_system_rollout_readiness(
         mode_id
         for repo_id, mode_id in REPO_MODE_IDS.items()
         if repo_id in candidate_repo_ids
-        and (
-            profile_by_mode.get(mode_id) is None
-            or not bool(profile_by_mode[mode_id].available)
-        )
+        and (profile_by_mode.get(mode_id) is None or not bool(profile_by_mode[mode_id].available))
     )
     combined_missing = (
         combined_catalog_profile is None
@@ -656,8 +638,7 @@ def build_system_rollout_readiness(
         "validation profiles are present."
         if blocking
         else (
-            f"Combined-system validation is ready with {len(blocking_shards)} "
-            "blocking shard(s)."
+            f"Combined-system validation is ready with {len(blocking_shards)} " "blocking shard(s)."
         )
     )
     receipt = SystemReadinessReceipt(
@@ -735,9 +716,7 @@ def build_system_coaching(
                 finding_id="system-validation-profile-unavailable",
                 coaching_kind="system_validation",
                 rule_code="missing_system_validation_profile",
-                summary=(
-                    "The combined-system validation profile is unavailable or incomplete."
-                ),
+                summary=("The combined-system validation profile is unavailable or incomplete."),
                 remediation=(
                     "Restore the repo-local and combined-system manifests so the system run "
                     "can compile deterministically."
@@ -825,9 +804,7 @@ def build_system_run_usage_summary(
     normalized_candidates = _candidate_set_from_input(candidate_set)
     execution_payload = dict(execution or {})
     shard_results = [
-        dict(item)
-        for item in list(execution_payload.get("shards") or [])
-        if isinstance(item, dict)
+        dict(item) for item in list(execution_payload.get("shards") or []) if isinstance(item, dict)
     ]
     step_results = [
         dict(step)
@@ -982,8 +959,7 @@ def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(raw_step, dict):
                 continue
             step_id = (
-                str(raw_step.get("step_id") or f"step-{step_index}").strip()
-                or f"step-{step_index}"
+                str(raw_step.get("step_id") or f"step-{step_index}").strip() or f"step-{step_index}"
             )
             step_node_id = _system_step_node_id(normalized.system_run_id, shard_id, step_id)
             nodes.append(
@@ -1028,8 +1004,7 @@ def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
                     ),
                     blocking=blocking,
                     created_at=(
-                        str(shard_result.get("completed_at") or "").strip()
-                        or normalized.updated_at
+                        str(shard_result.get("completed_at") or "").strip() or normalized.updated_at
                     ),
                     metadata={
                         "validation_mode": validation_mode,

@@ -90,9 +90,7 @@ def test_build_run_report_emits_graph_correlation_and_filtered_evidence() -> Non
                             "passed": False,
                             "metrics": {"branches": {"passed": False}},
                         },
-                        "coverage_gaps": {
-                            "gaps": [{"identifier": "foo", "metric": "branches"}]
-                        },
+                        "coverage_gaps": {"gaps": [{"identifier": "foo", "metric": "branches"}]},
                     },
                     "error": {"message": "usage: pytest shard spec invalid"},
                 }
@@ -200,9 +198,7 @@ def test_run_report_helpers_cover_running_correlation_and_blank_fallbacks() -> N
     assert _normalize_time_range({"start": "2026-03-16T09:00:00Z"}) == {
         "start": "2026-03-16T09:00:00Z"
     }
-    assert _normalize_time_range({"end": "2026-03-16T10:00:00Z"}) == {
-        "end": "2026-03-16T10:00:00Z"
-    }
+    assert _normalize_time_range({"end": "2026-03-16T10:00:00Z"}) == {"end": "2026-03-16T10:00:00Z"}
 
     evidence_refs = _submitted_evidence_references(
         shard_id="shard-2",
@@ -260,8 +256,7 @@ def test_run_report_helpers_cover_running_correlation_and_blank_fallbacks() -> N
     assert correlation_context["containers"] == ["worker-2"]
 
 
-def test_build_run_report_skips_blank_shards_and_assigns_default_step_and_evidence_nodes(
-) -> None:
+def test_build_run_report_skips_blank_shards_and_assigns_default_step_and_evidence_nodes() -> None:
     report = build_run_report(
         run={
             "run_id": "run-3",
@@ -334,9 +329,7 @@ def test_build_preflight_and_recurring_coaching_payloads_are_actionable() -> Non
         ],
     )
     assert preflight_payloads[0]["metadata"]["record_kind"] == "agent_coaching"
-    assert (
-        preflight_payloads[0]["metadata"]["recommendations"][0]["agents_md_update"]
-    )
+    assert preflight_payloads[0]["metadata"]["recommendations"][0]["agents_md_update"]
 
     recurring_payloads = build_recurring_diagnostic_coaching_payloads(
         report={

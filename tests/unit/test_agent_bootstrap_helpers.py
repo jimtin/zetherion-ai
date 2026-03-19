@@ -299,9 +299,12 @@ def test_misc_bootstrap_helpers_cover_routing_redaction_and_stable_keys() -> Non
     assert agent_bootstrap._derive_clerk_jwks_url({"issuer": "https://issuer.example.com/"}) == (
         "https://issuer.example.com/.well-known/jwks.json"
     )
-    assert agent_bootstrap._derive_clerk_jwks_url(
-        {"frontend_api_url": "https://frontend.example.com/"}
-    ) == "https://frontend.example.com/.well-known/jwks.json"
+    assert (
+        agent_bootstrap._derive_clerk_jwks_url(
+            {"frontend_api_url": "https://frontend.example.com/"}
+        )
+        == "https://frontend.example.com/.well-known/jwks.json"
+    )
     assert agent_bootstrap._derive_clerk_jwks_url({}) is None
     assert agent_bootstrap._normalize_route_path(" /admin/ai ") == "/admin/ai"
     assert agent_bootstrap._normalize_route_path("") is None

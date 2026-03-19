@@ -1315,17 +1315,15 @@ class SkillsServer:
                                 dispatcher_updated_at_raw
                             )
                             if dispatcher_updated_at.tzinfo is None:
-                                dispatcher_updated_at = dispatcher_updated_at.replace(
-                                    tzinfo=UTC
-                                )
+                                dispatcher_updated_at = dispatcher_updated_at.replace(tzinfo=UTC)
                             dispatcher_age_seconds = (
                                 datetime.now(UTC) - dispatcher_updated_at
                             ).total_seconds()
                         except ValueError:
                             dispatcher_age_seconds = None
-                    dispatcher_status_value = str(
-                        dispatcher_status.get("status") or "unknown"
-                    ).strip() or "unknown"
+                    dispatcher_status_value = (
+                        str(dispatcher_status.get("status") or "unknown").strip() or "unknown"
+                    )
                     dispatcher_summary = str(
                         dispatcher_status.get("summary")
                         or "Announcement dispatcher runtime status is unavailable."
@@ -1366,9 +1364,7 @@ class SkillsServer:
                         and announcement_status == "healthy"
                     ):
                         announcement_status = "degraded"
-                        dispatcher_summary = (
-                            "Announcement dispatcher heartbeat is stale."
-                        )
+                        dispatcher_summary = "Announcement dispatcher heartbeat is stale."
                         announcement_incident_type = "service_evidence_incomplete"
 
                     announcement_domain = self._runtime_domain(
@@ -1380,9 +1376,7 @@ class SkillsServer:
                             "service_status": dispatcher_status_value,
                             "updated_at": dispatcher_status.get("updated_at"),
                             "status_age_seconds": dispatcher_age_seconds,
-                            "release_revision": dispatcher_status.get(
-                                "release_revision"
-                            ),
+                            "release_revision": dispatcher_status.get("release_revision"),
                             "details": normalized_dispatcher_details,
                         },
                         incident_type=announcement_incident_type,
@@ -3302,9 +3296,7 @@ class SkillsServer:
                     else 3000
                 ),
                 required_checks=(
-                    tuple(required_checks)
-                    if required_checks
-                    else ("zetherion/merge-readiness",)
+                    tuple(required_checks) if required_checks else ("zetherion/merge-readiness",)
                 ),
                 forbidden_actions=tuple(forbidden_actions) if forbidden_actions else (),
             )
@@ -5179,9 +5171,7 @@ class SkillsServer:
                     "required_capabilities": _coerce_json_list(
                         claimed_job.get("required_capabilities")
                     ),
-                    "artifact_contract": _coerce_json_object(
-                        claimed_job.get("artifact_contract")
-                    ),
+                    "artifact_contract": _coerce_json_object(claimed_job.get("artifact_contract")),
                     "payload": payload_json,
                 }
             poll_after_seconds = max(
@@ -5274,14 +5264,12 @@ class SkillsServer:
                 raise ValueError("steps must be an array when provided")
             if raw_artifacts is not None and not isinstance(raw_artifacts, list):
                 raise ValueError("artifacts must be an array when provided")
-            if (
-                raw_evidence_references is not None
-                and not isinstance(raw_evidence_references, list)
+            if raw_evidence_references is not None and not isinstance(
+                raw_evidence_references, list
             ):
                 raise ValueError("evidence_references must be an array when provided")
-            if (
-                raw_correlation_context is not None
-                and not isinstance(raw_correlation_context, dict)
+            if raw_correlation_context is not None and not isinstance(
+                raw_correlation_context, dict
             ):
                 raise ValueError("correlation_context must be an object when provided")
             submit_outcome = await self._owner_ci_storage.submit_worker_job_result(

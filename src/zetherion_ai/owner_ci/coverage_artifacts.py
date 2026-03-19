@@ -237,9 +237,7 @@ def build_function_coverage(
             ),
             "priority": "high" if len(target.executable_lines) <= 3 else "medium",
             "summary": (
-                f"Function `{target.qualified_name}` is not covered."
-                if not target.covered
-                else ""
+                f"Function `{target.qualified_name}` is not covered." if not target.covered else ""
             ),
         }
         for target in all_targets

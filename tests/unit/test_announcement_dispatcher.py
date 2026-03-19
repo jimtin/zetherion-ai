@@ -285,9 +285,7 @@ async def test_dispatcher_publishes_runtime_status_on_lifecycle_transitions() ->
     await asyncio.sleep(0)
     await dispatcher.stop()
 
-    statuses = [
-        call.kwargs["status"] for call in status_store.upsert_status.await_args_list
-    ]
+    statuses = [call.kwargs["status"] for call in status_store.upsert_status.await_args_list]
     assert "healthy" in statuses
     assert "stopped" in statuses
     assert all(

@@ -24,11 +24,11 @@ def test_register_resilience_tasks_uses_wsl_compatible_user_principal() -> None:
         "InteractiveToken -RunLevel Highest"
     ) in script
     assert (
-        'Get-RecoveryTaskRecord -TaskName $DockerDesktopTaskName '
+        "Get-RecoveryTaskRecord -TaskName $DockerDesktopTaskName "
         '-ScriptNeedle "Docker Desktop.exe"'
     ) in script
-    assert 'registered_docker_desktop_task:$DockerDesktopTaskName' in script
-    assert 'docker_desktop_task_registered = $false' in script
+    assert "registered_docker_desktop_task:$DockerDesktopTaskName" in script
+    assert "docker_desktop_task_registered = $false" in script
     assert '-WslDistribution `"$WslDistribution`"' in script
     assert 'New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\\NETWORK SERVICE"' not in script
 
@@ -56,19 +56,19 @@ def test_resilience_ready_requires_matching_task_user() -> None:
     assert "function Resolve-TaskUser" in script
     assert readiness_condition in script
     assert (
-        'Test-RecoveryTask -TaskName $DockerDesktopTaskName '
+        "Test-RecoveryTask -TaskName $DockerDesktopTaskName "
         '-ScriptNeedle "Docker Desktop.exe" '
-        '-ExpectedPrincipalUser $taskUser'
+        "-ExpectedPrincipalUser $taskUser"
     ) in script
-    assert '$checks.docker_desktop_launch_task_ready = [bool](' in script
+    assert "$checks.docker_desktop_launch_task_ready = [bool](" in script
     assert "docker_desktop_recoverable = $false" in script
     assert "docker_desktop_resources_configured = $false" in script
     assert "wsl_host_resources_configured = $false" in script
     assert "Get-ZetherionDockerDesktopStatus" in script
-    assert '$checks.docker_desktop_recoverable = [bool](' in script
-    assert '-and [bool]$checks.docker_desktop_launch_task_ready `' in script
-    assert '$checks.docker_desktop_resources_configured = [bool](' in script
-    assert '$checks.wsl_host_resources_configured = [bool](' in script
+    assert "$checks.docker_desktop_recoverable = [bool](" in script
+    assert "-and [bool]$checks.docker_desktop_launch_task_ready `" in script
+    assert "$checks.docker_desktop_resources_configured = [bool](" in script
+    assert "$checks.wsl_host_resources_configured = [bool](" in script
 
 
 def test_bootstrap_resilience_tasks_threads_task_user_through() -> None:
@@ -83,8 +83,7 @@ def test_bootstrap_resilience_tasks_threads_task_user_through() -> None:
 def test_promotions_secrets_default_to_current_user_account() -> None:
     script = SECRETS_PATH.read_text(encoding="utf-8")
     runner_resolution = (
-        "$RunnerServiceAccount = Resolve-RunnerAccount "
-        "-RequestedAccount $RunnerServiceAccount"
+        "$RunnerServiceAccount = Resolve-RunnerAccount " "-RequestedAccount $RunnerServiceAccount"
     )
 
     assert '[string]$RunnerServiceAccount = ""' in script

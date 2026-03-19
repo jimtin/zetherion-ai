@@ -970,6 +970,7 @@ class TestSkillsServerHelpers:
                 raw_body=raw_body,
             )
 
+
 class TestSkillsServerEndpoints:
     """Tests for SkillsServer HTTP endpoints using aiohttp TestClient."""
 
@@ -1065,11 +1066,7 @@ class TestSkillsServerEndpoints:
                 side_effect=lambda service_name: (
                     bot_status
                     if service_name == "discord_bot"
-                    else (
-                        dispatcher_status
-                        if service_name == "announcement_dispatcher"
-                        else None
-                    )
+                    else (dispatcher_status if service_name == "announcement_dispatcher" else None)
                 )
             )
         )
@@ -2456,9 +2453,7 @@ class TestSkillsServerWorkerBridge:
 
         blank_claim_request = MagicMock()
         blank_claim_request.match_info = {"node_id": " "}
-        blank_claim_request.text = AsyncMock(
-            return_value=json.dumps({"tenant_id": "tenant-1"})
-        )
+        blank_claim_request.text = AsyncMock(return_value=json.dumps({"tenant_id": "tenant-1"}))
         blank_claim_resp = await server.handle_worker_claim_job(blank_claim_request)
 
         invalid_claim_request = MagicMock()
@@ -2524,8 +2519,7 @@ class TestSkillsServerLifecycle:
         )
         assert security_events_resp.status == 501
         assert (
-            json.loads(security_events_resp.text)["error"]
-            == "Security event service unavailable"
+            json.loads(security_events_resp.text)["error"] == "Security event service unavailable"
         )
 
         security_dashboard_resp = await unavailable_server.handle_tenant_security_dashboard(
@@ -3801,11 +3795,15 @@ class TestTenantAdminEndpoints:
         tenant_admin_manager.queue_messaging_send.assert_awaited_once()
         assert tenant_admin_manager.ingest_messaging_message.await_count == 2
         assert (
-            tenant_admin_manager.ingest_messaging_message.await_args_list[0].kwargs["observed_at"].tzinfo
+            tenant_admin_manager.ingest_messaging_message.await_args_list[0]
+            .kwargs["observed_at"]
+            .tzinfo
             == UTC
         )
         assert (
-            tenant_admin_manager.ingest_messaging_message.await_args_list[1].kwargs["observed_at"].tzinfo
+            tenant_admin_manager.ingest_messaging_message.await_args_list[1]
+            .kwargs["observed_at"]
+            .tzinfo
             == UTC
         )
         tenant_admin_manager.list_security_events.assert_awaited_once()
@@ -6044,9 +6042,7 @@ async def test_owner_ci_worker_register_and_heartbeat_handlers_cover_success_and
     mock_registry,
 ):
     storage = MagicMock()
-    storage.register_worker_node = AsyncMock(
-        return_value={"node_id": "node-1", "status": "active"}
-    )
+    storage.register_worker_node = AsyncMock(return_value={"node_id": "node-1", "status": "active"})
     storage.rotate_worker_session_credentials = AsyncMock(
         return_value={"session_id": "sess-1", "token": "secret"}
     )
@@ -6079,9 +6075,7 @@ async def test_owner_ci_worker_register_and_heartbeat_handlers_cover_success_and
     invalid_heartbeat_request = MagicMock()
     invalid_heartbeat_request.match_info = {"node_id": "node-1"}
     invalid_heartbeat_request.text = AsyncMock(
-        return_value=json.dumps(
-            {"scope_id": "owner:owner-1", "node_id": "node-2", "metadata": {}}
-        )
+        return_value=json.dumps({"scope_id": "owner:owner-1", "node_id": "node-2", "metadata": {}})
     )
     invalid_heartbeat_request.headers = {}
 
@@ -6102,9 +6096,7 @@ async def test_owner_ci_worker_register_and_heartbeat_handlers_cover_success_and
     invalid_heartbeat = await server.handle_owner_ci_worker_node_heartbeat(
         invalid_heartbeat_request
     )
-    heartbeat_response = await server.handle_owner_ci_worker_node_heartbeat(
-        heartbeat_request
-    )
+    heartbeat_response = await server.handle_owner_ci_worker_node_heartbeat(heartbeat_request)
 
     assert register_response.status == 200
     assert register_payload["session"]["token"] == "secret"
@@ -6120,9 +6112,7 @@ async def test_owner_ci_worker_register_and_heartbeat_cover_rotate_false_and_bod
     mock_registry,
 ):
     storage = MagicMock()
-    storage.register_worker_node = AsyncMock(
-        return_value={"node_id": "node-1", "status": "active"}
-    )
+    storage.register_worker_node = AsyncMock(return_value={"node_id": "node-1", "status": "active"})
     storage.rotate_worker_session_credentials = AsyncMock(
         return_value={"session_id": "sess-1", "token": "secret"}
     )
@@ -6143,16 +6133,12 @@ async def test_owner_ci_worker_register_and_heartbeat_cover_rotate_false_and_bod
     )
     rotate_false_request.headers = {}
 
-    rotate_false_response = await server.handle_owner_ci_worker_register_node(
-        rotate_false_request
-    )
+    rotate_false_response = await server.handle_owner_ci_worker_register_node(rotate_false_request)
     rotate_false_payload = _response_json(rotate_false_response)
 
     blank_heartbeat_request = MagicMock()
     blank_heartbeat_request.match_info = {"node_id": " "}
-    blank_heartbeat_request.text = AsyncMock(
-        return_value=json.dumps({"scope_id": "owner:owner-1"})
-    )
+    blank_heartbeat_request.text = AsyncMock(return_value=json.dumps({"scope_id": "owner:owner-1"}))
     blank_heartbeat_request.headers = {}
 
     text_error_request = MagicMock()
@@ -6542,7 +6528,9 @@ async def test_internal_runtime_health_degrades_release_without_blockers(mock_re
             side_effect=lambda service_name: (
                 bot_status
                 if service_name == "discord_bot"
-                else dispatcher_status if service_name == "announcement_dispatcher" else None
+                else dispatcher_status
+                if service_name == "announcement_dispatcher"
+                else None
             )
         )
     )
@@ -6689,9 +6677,7 @@ async def test_internal_runtime_health_uses_direct_announcement_dispatcher_statu
     fake_store = SimpleNamespace(
         get_status=AsyncMock(
             side_effect=lambda service_name: (
-                dispatcher_status
-                if service_name == "announcement_dispatcher"
-                else None
+                dispatcher_status if service_name == "announcement_dispatcher" else None
             )
         )
     )
@@ -6776,7 +6762,9 @@ async def test_internal_runtime_health_handles_invalid_runtime_timestamps_and_fa
             side_effect=lambda service_name: (
                 bot_status
                 if service_name == "discord_bot"
-                else dispatcher_status if service_name == "announcement_dispatcher" else None
+                else dispatcher_status
+                if service_name == "announcement_dispatcher"
+                else None
             )
         )
     )
@@ -6859,7 +6847,9 @@ async def test_internal_runtime_health_marks_naive_runtime_heartbeats_stale(mock
             side_effect=lambda service_name: (
                 bot_status
                 if service_name == "discord_bot"
-                else dispatcher_status if service_name == "announcement_dispatcher" else None
+                else dispatcher_status
+                if service_name == "announcement_dispatcher"
+                else None
             )
         )
     )
@@ -6950,7 +6940,9 @@ async def test_internal_runtime_health_handles_non_string_runtime_timestamps(
             side_effect=lambda service_name: (
                 bot_status
                 if service_name == "discord_bot"
-                else dispatcher_status if service_name == "announcement_dispatcher" else None
+                else dispatcher_status
+                if service_name == "announcement_dispatcher"
+                else None
             )
         )
     )
@@ -7087,18 +7079,14 @@ async def test_owner_ci_worker_bootstrap_handler_covers_success_and_error_paths(
     missing_scope_request = MagicMock()
     missing_scope_request.text = AsyncMock(return_value=json.dumps({"node_id": "node-1"}))
     missing_scope_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
-    missing_scope_response = await server.handle_owner_ci_worker_bootstrap(
-        missing_scope_request
-    )
+    missing_scope_response = await server.handle_owner_ci_worker_bootstrap(missing_scope_request)
 
     invalid_secret_request = MagicMock()
     invalid_secret_request.text = AsyncMock(
         return_value=json.dumps({"scope_id": "owner:owner-1", "node_id": "node-1"})
     )
     invalid_secret_request.headers = {"X-Worker-Bootstrap-Secret": "wrong"}
-    invalid_secret_response = await server.handle_owner_ci_worker_bootstrap(
-        invalid_secret_request
-    )
+    invalid_secret_response = await server.handle_owner_ci_worker_bootstrap(invalid_secret_request)
 
     invalid_metadata_request = MagicMock()
     invalid_metadata_request.text = AsyncMock(
@@ -7218,9 +7206,7 @@ async def test_owner_ci_worker_bridge_error_paths_cover_registration_heartbeat_c
         )
     )
     bad_register_request.headers = {}
-    bad_register_response = await server.handle_owner_ci_worker_register_node(
-        bad_register_request
-    )
+    bad_register_response = await server.handle_owner_ci_worker_register_node(bad_register_request)
 
     storage.register_worker_node.side_effect = RuntimeError("session expired")
     runtime_register_request = MagicMock()
@@ -7272,9 +7258,7 @@ async def test_owner_ci_worker_bridge_error_paths_cover_registration_heartbeat_c
         return_value=json.dumps({"scope_id": "owner:owner-1", "output": "bad"})
     )
     bad_submit_request.headers = {}
-    bad_submit_response = await server.handle_owner_ci_worker_submit_job_result(
-        bad_submit_request
-    )
+    bad_submit_response = await server.handle_owner_ci_worker_submit_job_result(bad_submit_request)
 
     replay_submit_request = MagicMock()
     replay_submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
@@ -7389,9 +7373,7 @@ async def test_owner_ci_worker_bridge_additional_validation_paths(mock_registry)
 
     blank_claim_request = MagicMock()
     blank_claim_request.match_info = {"node_id": " "}
-    blank_claim_request.text = AsyncMock(
-        return_value=json.dumps({"scope_id": "owner:owner-1"})
-    )
+    blank_claim_request.text = AsyncMock(return_value=json.dumps({"scope_id": "owner:owner-1"}))
     blank_claim_request.headers = {}
     blank_claim_response = await server.handle_owner_ci_worker_claim_job(blank_claim_request)
 
@@ -7431,9 +7413,7 @@ async def test_owner_ci_worker_bridge_additional_validation_paths(mock_registry)
 
     missing_scope_submit_request = MagicMock()
     missing_scope_submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
-    missing_scope_submit_request.text = AsyncMock(
-        return_value=json.dumps({"status": "succeeded"})
-    )
+    missing_scope_submit_request.text = AsyncMock(return_value=json.dumps({"status": "succeeded"}))
     missing_scope_submit_request.headers = {}
     missing_scope_submit_response = await server.handle_owner_ci_worker_submit_job_result(
         missing_scope_submit_request

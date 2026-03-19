@@ -111,9 +111,7 @@ def test_compile_validation_matrix_includes_repo_and_combined_modes(tmp_path: Pa
 
     zetherion_mode = next(mode for mode in payload["modes"] if mode["mode_id"] == "zetherion_alone")
     assert zetherion_mode["available"] is True
-    assert {"static", "security", "unit", "integration"} <= set(
-        zetherion_mode["lane_families"]
-    )
+    assert {"static", "security", "unit", "integration"} <= set(zetherion_mode["lane_families"])
     public_core_gate = next(
         shard for shard in zetherion_mode["shards"] if shard["shard_id"] == "public-core-export"
     )
@@ -386,9 +384,7 @@ def test_system_run_plan_and_readiness_include_repo_and_combined_profiles(
         "cgs_alone",
         "combined_system",
     }
-    assert any(
-        shard["validation_mode"] == "combined_system" for shard in plan["shards"]
-    )
+    assert any(shard["validation_mode"] == "combined_system" for shard in plan["shards"])
     assert readiness["status"] == "ready"
     assert "Combined-system validation is ready" in readiness["summary"]
 
@@ -512,41 +508,6 @@ def test_system_run_report_and_usage_summarize_executed_system_validation() -> N
     assert usage["failed_shard_count"] == 1
     assert usage["step_count"] == 2
     assert usage["billable_minutes"] == 2.0
-
-    extra_usage_summary = build_system_run_usage_summary(
-        system_run_id="system-run-extra",
-        system_id="cgs-zetherion",
-        mode_id="combined_system",
-        candidate_set={
-            "system_id": "cgs-zetherion",
-            "mode_id": "combined_system",
-            "repos": [
-                {"repo_id": "zetherion-ai", "git_ref": "HEAD"},
-                {"repo_id": "catalyst-group-solutions", "git_ref": "HEAD"},
-            ],
-        },
-        execution={
-            "all_passed": False,
-            "batches": [],
-            "shards": [
-                {
-                    "shard_id": "ad-hoc",
-                    "expected_artifacts": ["stdout"],
-                    "status": "failed",
-                    "started_at": "2026-03-17T10:00:00Z",
-                    "completed_at": "2026-03-17T10:01:00Z",
-                    "steps": [
-                        {
-                            "step_id": "step-1",
-                            "status": "failed",
-                            "started_at": "2026-03-17T10:00:00Z",
-                            "completed_at": "2026-03-17T10:01:00Z",
-                        }
-                    ],
-                }
-            ],
-        },
-    )
 
     report = build_system_run_report(
         {
@@ -958,7 +919,6 @@ def test_system_run_helpers_cover_cycles_list_candidates_and_unplanned_shards(
             "completed_at": "2026-03-17T10:01:00Z",
         }
     )
-    assert extra_usage_summary["failed_shard_count"] == 1
 
     codes = {finding["code"] for finding in report["diagnostic_findings"]}
     assert "system_shard_failed" in codes

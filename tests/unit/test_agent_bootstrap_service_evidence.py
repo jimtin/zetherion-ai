@@ -302,8 +302,9 @@ async def test_collect_vercel_and_clerk_evidence_cover_explicit_ids_and_missing_
 
 
 @pytest.mark.asyncio
-async def test_collect_service_evidence_covers_branch_match_fallback_and_sparse_success_paths(
-) -> None:
+async def test_collect_service_evidence_covers_branch_match_fallback_and_sparse_success_paths() -> (
+    None
+):
     github_storage = MagicMock()
     github_storage.upsert_operation_ref = AsyncMock(return_value={"ref_id": "ref-1"})
     github_storage.record_operation_evidence = AsyncMock(
@@ -616,10 +617,7 @@ async def test_collect_github_operation_evidence_uses_pr_head_and_latest_run_fal
 
     assert result["status"] == "active"
     assert result["summary"]["workflow_run"]["id"] == 202
-    ref_kinds = {
-        call.kwargs["ref_kind"]
-        for call in storage.upsert_operation_ref.await_args_list
-    }
+    ref_kinds = {call.kwargs["ref_kind"] for call in storage.upsert_operation_ref.await_args_list}
     assert ref_kinds == {"github_run_id", "branch", "pr_number"}
     storage.record_operation_incident.assert_not_awaited()
     github_client.get_pull_request.assert_awaited_once_with(
@@ -636,8 +634,7 @@ async def test_collect_github_operation_evidence_uses_pr_head_and_latest_run_fal
 
 
 @pytest.mark.asyncio
-async def test_collect_github_operation_evidence_uses_explicit_run_id_and_records_success_logs(
-) -> None:
+async def test_collect_github_operation_evidence_uses_explicit_run_id_and_success_logs() -> None:
     storage = MagicMock()
     storage.upsert_operation_ref = AsyncMock(return_value={"ref_id": "ref-1"})
     storage.record_operation_evidence = AsyncMock(
@@ -684,10 +681,7 @@ async def test_collect_github_operation_evidence_uses_explicit_run_id_and_record
 
     assert result["status"] == "succeeded"
     assert storage.record_operation_evidence.await_count == 3
-    ref_kinds = [
-        call.kwargs["ref_kind"]
-        for call in storage.upsert_operation_ref.await_args_list
-    ]
+    ref_kinds = [call.kwargs["ref_kind"] for call in storage.upsert_operation_ref.await_args_list]
     assert ref_kinds == ["github_run_id"]
     storage.record_operation_incident.assert_not_awaited()
     github_client.get_workflow_run.assert_awaited_once_with(
@@ -699,8 +693,7 @@ async def test_collect_github_operation_evidence_uses_explicit_run_id_and_record
 
 
 @pytest.mark.asyncio
-async def test_collect_github_operation_evidence_stays_active_when_git_sha_has_no_matching_run(
-) -> None:
+async def test_collect_github_operation_evidence_stays_active_when_git_sha_has_no_run() -> None:
     storage = MagicMock()
     storage.upsert_operation_ref = AsyncMock(return_value={"ref_id": "ref-1"})
     storage.record_operation_evidence = AsyncMock(
@@ -739,18 +732,16 @@ async def test_collect_github_operation_evidence_stays_active_when_git_sha_has_n
     assert result["status"] == "active"
     assert result["summary"]["workflow_run"] is None
     github_client.get_workflow_run.assert_not_awaited()
-    ref_kinds = [
-        call.kwargs["ref_kind"]
-        for call in storage.upsert_operation_ref.await_args_list
-    ]
+    ref_kinds = [call.kwargs["ref_kind"] for call in storage.upsert_operation_ref.await_args_list]
     assert ref_kinds == ["git_sha"]
     storage.record_operation_incident.assert_not_awaited()
     github_client.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_collect_github_operation_evidence_stays_active_without_refs_or_workflow_runs(
-) -> None:
+async def test_collect_github_operation_evidence_stays_active_without_refs_or_workflow_runs() -> (
+    None
+):
     storage = MagicMock()
     storage.upsert_operation_ref = AsyncMock(return_value={"ref_id": "ref-1"})
     storage.record_operation_evidence = AsyncMock(

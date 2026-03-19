@@ -5,9 +5,7 @@ from pathlib import Path
 
 
 def _load_coverage_gate_module():
-    module_path = (
-        Path(__file__).resolve().parents[2] / "scripts" / "testing" / "coverage_gate.py"
-    )
+    module_path = Path(__file__).resolve().parents[2] / "scripts" / "testing" / "coverage_gate.py"
     spec = importlib.util.spec_from_file_location("coverage_gate_script", module_path)
     assert spec is not None
     assert spec.loader is not None

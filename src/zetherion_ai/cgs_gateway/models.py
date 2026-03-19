@@ -337,9 +337,7 @@ class TenantAdminAutomergeExecuteRequest(BaseModel):
     merge_method: str = Field(default="squash", min_length=1, max_length=20)
     commit_title: str | None = Field(default=None, max_length=255)
     commit_message: str | None = None
-    required_checks: list[str] = Field(
-        default_factory=lambda: ["zetherion/merge-readiness"]
-    )
+    required_checks: list[str] = Field(default_factory=lambda: ["zetherion/merge-readiness"])
     allowed_paths: list[str] = Field(default_factory=list)
     forbidden_actions: list[str] = Field(default_factory=list)
     requested_actions: list[str] = Field(default_factory=list)

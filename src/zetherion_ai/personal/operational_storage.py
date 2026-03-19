@@ -226,9 +226,7 @@ class OwnerPersonalIntelligenceStorage:
         """List owner operational-state items with optional filters."""
         # self._schema is regex-validated before interpolation into SQL identifiers.
         table = f'"{self._schema}".personal_operational_items'
-        query = (
-            f"SELECT * FROM {table} WHERE user_id = $1"
-        )  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
+        query = f"SELECT * FROM {table} WHERE user_id = $1"  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         params: list[Any] = [user_id]
         idx = 2
 
@@ -342,9 +340,7 @@ class OwnerPersonalIntelligenceStorage:
             raise ValueError("related_resource is required")
 
         table = f'"{self._schema}".personal_review_items'
-        query = (
-            f"SELECT * FROM {table} WHERE user_id = $1 AND related_resource = $2"
-        )  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
+        query = f"SELECT * FROM {table} WHERE user_id = $1 AND related_resource = $2"  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         params: list[Any] = [user_id, resource]
         idx = 3
 
@@ -376,9 +372,7 @@ class OwnerPersonalIntelligenceStorage:
         """List owner review queue items with optional filters."""
         # self._schema is regex-validated before interpolation into SQL identifiers.
         table = f'"{self._schema}".personal_review_items'
-        query = (
-            f"SELECT * FROM {table} WHERE user_id = $1"
-        )  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
+        query = f"SELECT * FROM {table} WHERE user_id = $1"  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         params: list[Any] = [user_id]
         idx = 2
 

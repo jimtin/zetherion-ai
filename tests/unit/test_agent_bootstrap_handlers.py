@@ -456,10 +456,7 @@ async def test_agent_bootstrap_handler_error_paths_cover_missing_inputs_and_deni
     assert missing_service_read_args.success is False
     assert missing_service_read_args.error == "app_id and service_kind are required"
     assert missing_service_request_args.success is False
-    assert (
-        missing_service_request_args.error
-        == "app_id, service_kind, and action_id are required"
-    )
+    assert missing_service_request_args.error == "app_id, service_kind, and action_id are required"
     assert missing_operation_app.success is False
     assert missing_operation_app.error == "app_id is required"
     assert missing_operation_refs.success is False
@@ -485,8 +482,7 @@ async def test_agent_bootstrap_handler_error_paths_cover_missing_inputs_and_deni
 
 
 @pytest.mark.asyncio
-async def test_agent_bootstrap_handle_covers_owner_inference_unknown_intent_and_missing_inputs(
-) -> None:
+async def test_agent_bootstrap_handle_owner_inference_unknown_intent_and_missing_inputs() -> None:
     storage = _storage()
     skill = _skill(storage)
     skill._infer_owner_id = AsyncMock(side_effect=[None, "owner-inferred"])  # type: ignore[method-assign]
@@ -1430,8 +1426,7 @@ async def test_handle_operation_poll_without_inferred_owner_and_docs_get_with_ap
 
 
 @pytest.mark.asyncio
-async def test_docs_and_operation_handlers_cover_query_and_skip_access_guards_without_principal(
-) -> None:
+async def test_docs_and_operation_handlers_query_without_principal_guard_checks() -> None:
     storage = _storage()
     storage.list_agent_docs_manifests.return_value = [
         {

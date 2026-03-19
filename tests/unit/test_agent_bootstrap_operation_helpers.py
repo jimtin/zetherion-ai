@@ -259,8 +259,9 @@ async def test_detect_test_plan_gaps_adds_playwright_and_skips_supported_tooling
 
 
 @pytest.mark.asyncio
-async def test_collect_ci_runtime_operation_evidence_records_summary_logs_bundle_and_incident(
-) -> None:
+async def test_collect_ci_runtime_operation_evidence_records_summary_logs_bundle_and_incident() -> (
+    None
+):
     storage = MagicMock()
     storage.get_run = AsyncMock(
         return_value={
@@ -345,8 +346,7 @@ async def test_collect_ci_runtime_operation_evidence_records_summary_logs_bundle
 
 
 @pytest.mark.asyncio
-async def test_collect_ci_runtime_operation_evidence_records_gap_for_missing_run_and_missing_logs(
-) -> None:
+async def test_collect_ci_runtime_operation_evidence_for_missing_run_and_logs() -> None:
     storage = MagicMock()
     storage.get_run = AsyncMock(
         side_effect=[
@@ -389,8 +389,9 @@ async def test_collect_ci_runtime_operation_evidence_records_gap_for_missing_run
 
 
 @pytest.mark.asyncio
-async def test_collect_ci_runtime_operation_evidence_records_fallback_incident_without_diagnostics(
-) -> None:
+async def test_collect_ci_runtime_operation_evidence_fallback_incident_without_diagnostics() -> (
+    None
+):
     storage = MagicMock()
     storage.get_run = AsyncMock(
         return_value={
@@ -468,8 +469,9 @@ async def test_collect_ci_runtime_operation_evidence_leaves_in_progress_runs_act
 
 
 @pytest.mark.asyncio
-async def test_collect_ci_runtime_operation_evidence_skips_diagnostic_artifacts_when_empty(
-) -> None:
+async def test_collect_ci_runtime_operation_evidence_skips_diagnostic_artifacts_when_empty() -> (
+    None
+):
     storage = MagicMock()
     storage.get_run = AsyncMock(
         return_value={
@@ -527,8 +529,9 @@ async def test_collect_ci_runtime_operation_evidence_skips_diagnostic_artifacts_
 
 
 @pytest.mark.asyncio
-async def test_collect_service_operation_evidence_dispatches_known_services_and_records_unknown_gap(
-) -> None:
+async def test_collect_service_operation_evidence_dispatches_known_services_and_unknown_gap() -> (
+    None
+):
     storage = MagicMock()
     skill = _skill(storage)
     skill._collect_github_operation_evidence = AsyncMock(return_value={"status": "succeeded"})  # type: ignore[method-assign]
@@ -690,8 +693,7 @@ async def test_refresh_operation_handles_service_only_success_without_runtime() 
 
 
 @pytest.mark.asyncio
-async def test_refresh_operation_keeps_active_status_when_supported_adapter_returns_no_payload(
-) -> None:
+async def test_refresh_operation_keeps_active_status_when_adapter_returns_no_payload() -> None:
     storage = MagicMock()
     storage.list_operation_refs = AsyncMock(
         return_value=[
@@ -777,8 +779,7 @@ async def test_refresh_operation_marks_failed_when_any_adapter_fails() -> None:
 
 
 @pytest.mark.asyncio
-async def test_refresh_operation_records_workspace_contract_gap_when_no_runtime_or_service_refs(
-) -> None:
+async def test_refresh_operation_records_workspace_gap_without_runtime_or_service_refs() -> None:
     storage = MagicMock()
     storage.list_operation_refs = AsyncMock(return_value=[])
     storage.update_managed_operation = AsyncMock()

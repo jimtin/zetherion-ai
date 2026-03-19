@@ -299,8 +299,9 @@ async def test_get_reporting_readiness_uses_local_receipt_when_no_run_exists(tmp
 
 
 @pytest.mark.asyncio
-async def test_get_reporting_readiness_builds_owner_ci_run_receipts_and_unknown_repo_entries(
-) -> None:
+async def test_get_reporting_readiness_builds_owner_ci_run_receipts_and_unknown_repo_entries() -> (
+    None
+):
     storage = OwnerCiStorage.__new__(OwnerCiStorage)
     storage.list_repo_profiles = AsyncMock(
         return_value=[
@@ -499,9 +500,7 @@ async def test_get_reporting_readiness_overlays_local_receipt_onto_latest_run(tm
                             ]
                         },
                         "artifact_contract": {"expects": []},
-                        "result": {
-                            "evidence_paths": [".artifacts/local-readiness-receipt.json"]
-                        },
+                        "result": {"evidence_paths": [".artifacts/local-readiness-receipt.json"]},
                     }
                 ],
                 "release_verification": {
@@ -590,26 +589,18 @@ async def test_get_reporting_readiness_can_overlay_aggregate_lane_from_multiple_
                         "shard_id": "c-unit-coverage",
                         "status": "succeeded",
                         "execution_target": "local_mac",
-                        "metadata": {
-                            "covered_required_paths": ["cgs_release_verification"]
-                        },
+                        "metadata": {"covered_required_paths": ["cgs_release_verification"]},
                         "artifact_contract": {"expects": []},
-                        "result": {
-                            "evidence_paths": [".artifacts/test-logs/c-unit-coverage.log"]
-                        },
+                        "result": {"evidence_paths": [".artifacts/test-logs/c-unit-coverage.log"]},
                     },
                     {
                         "lane_id": "c-int-owner-ci",
                         "shard_id": "c-int-owner-ci",
                         "status": "succeeded",
                         "execution_target": "local_mac",
-                        "metadata": {
-                            "covered_required_paths": ["owner_ci_receipts"]
-                        },
+                        "metadata": {"covered_required_paths": ["owner_ci_receipts"]},
                         "artifact_contract": {"expects": []},
-                        "result": {
-                            "evidence_paths": [".artifacts/test-logs/c-int-owner-ci.log"]
-                        },
+                        "result": {"evidence_paths": [".artifacts/test-logs/c-int-owner-ci.log"]},
                     },
                 ],
                 "release_verification": {
@@ -710,9 +701,7 @@ async def test_get_reporting_readiness_uses_embedded_local_receipt_from_latest_r
                     "status": "succeeded",
                     "execution_target": "windows_local",
                     "artifact_contract": {"expects": []},
-                    "metadata": {
-                        "covered_required_paths": ["cgs_release_verification"]
-                    },
+                    "metadata": {"covered_required_paths": ["cgs_release_verification"]},
                     "result": {
                         "local_readiness_receipt": {
                             "repo_id": "catalyst-group-solutions",
@@ -728,9 +717,7 @@ async def test_get_reporting_readiness_uses_embedded_local_receipt_from_latest_r
                                     "status": "succeeded",
                                     "execution_target": "windows_local",
                                     "metadata": {
-                                        "covered_required_paths": [
-                                            "cgs_release_verification"
-                                        ]
+                                        "covered_required_paths": ["cgs_release_verification"]
                                     },
                                     "artifact_contract": {"expects": []},
                                     "result": {

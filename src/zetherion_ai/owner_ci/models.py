@@ -912,13 +912,9 @@ def normalize_worker_certification_receipt(payload: dict[str, Any]) -> WorkerCer
         status=status,
         summary=str(payload.get("summary") or "").strip(),
         execution_backend=(
-            str(payload.get("execution_backend") or "wsl_docker").strip()
-            or "wsl_docker"
+            str(payload.get("execution_backend") or "wsl_docker").strip() or "wsl_docker"
         ),
-        docker_backend=(
-            str(payload.get("docker_backend") or "wsl_docker").strip()
-            or "wsl_docker"
-        ),
+        docker_backend=(str(payload.get("docker_backend") or "wsl_docker").strip() or "wsl_docker"),
         wsl_distribution=str(payload.get("wsl_distribution") or "").strip() or None,
         workspace_root=str(payload.get("workspace_root") or "").strip() or None,
         runtime_root=str(payload.get("runtime_root") or "").strip() or None,
@@ -989,9 +985,7 @@ def normalize_shard_receipt(repo_id: str, shard: dict[str, Any]) -> ShardReceipt
         required_paths=[
             str(path).strip()
             for path in list(
-                metadata.get("covered_required_paths")
-                or metadata.get("required_paths")
-                or []
+                metadata.get("covered_required_paths") or metadata.get("required_paths") or []
             )
             if str(path).strip()
         ],
@@ -1006,9 +1000,7 @@ def normalize_shard_receipt(repo_id: str, shard: dict[str, Any]) -> ShardReceipt
         blocking=bool(metadata.get("blocking", True)),
         required_category=str(metadata.get("required_category") or "").strip() or None,
         resource_reservation=(
-            ResourceReservation.model_validate(
-                dict(metadata.get("resource_reservation") or {})
-            )
+            ResourceReservation.model_validate(dict(metadata.get("resource_reservation") or {}))
             if isinstance(metadata.get("resource_reservation"), dict)
             else None
         ),
@@ -1092,9 +1084,7 @@ def overlay_local_readiness_shards(
         return shard_receipts
 
     local_by_lane = {
-        receipt.lane_id: receipt
-        for receipt in local_receipt.shard_receipts
-        if receipt.lane_id
+        receipt.lane_id: receipt for receipt in local_receipt.shard_receipts if receipt.lane_id
     }
     successful_local_receipts = [
         receipt
@@ -1107,11 +1097,7 @@ def overlay_local_readiness_shards(
         for path in (receipt.required_paths or [receipt.lane_id])
         if path
     }
-    failed_local_paths = {
-        path
-        for path in local_receipt.failed_required_paths
-        if path
-    }
+    failed_local_paths = {path for path in local_receipt.failed_required_paths if path}
 
     overlaid: list[ShardReceipt] = []
     for receipt in shard_receipts:
@@ -1278,12 +1264,7 @@ def build_repo_readiness_receipt(
         }
     )
     missing_evidence = sorted(
-        {
-            path
-            for shard in shard_receipts
-            for path in shard.missing_evidence
-            if path
-        }
+        {path for shard in shard_receipts for path in shard.missing_evidence if path}
         | {path for path in release.missing_evidence if path}
     )
     required_categories = _required_gate_categories(repo, run)
@@ -1347,38 +1328,20 @@ def build_workspace_readiness_receipt(
     """Aggregate repo-level receipts into one workspace-level summary."""
 
     failed_required_paths = sorted(
-        {
-            path
-            for receipt in repo_receipts
-            for path in receipt.failed_required_paths
-            if path
-        }
+        {path for receipt in repo_receipts for path in receipt.failed_required_paths if path}
     )
     missing_evidence = sorted(
-        {
-            path
-            for receipt in repo_receipts
-            for path in receipt.missing_evidence
-            if path
-        }
+        {path for receipt in repo_receipts for path in receipt.missing_evidence if path}
     )
     all_categories = sorted(
-        {
-            category
-            for receipt in repo_receipts
-            for category in receipt.category_complete
-        }
+        {category for receipt in repo_receipts for category in receipt.category_complete}
     )
     category_complete = {
         category: all(receipt.category_complete.get(category, False) for receipt in repo_receipts)
         for category in all_categories
     }
     missing_categories = sorted(
-        {
-            category
-            for receipt in repo_receipts
-            for category in receipt.missing_categories
-        }
+        {category for receipt in repo_receipts for category in receipt.missing_categories}
     )
     merge_ready = all(receipt.merge_ready for receipt in repo_receipts) if repo_receipts else False
     deploy_ready = (

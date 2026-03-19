@@ -122,8 +122,7 @@ async def _build_github_security_summary(
             "blocking": False,
             "reason": "github_token_missing",
             "summary": (
-                "GitHub security alerts could not be checked because "
-                "GITHUB_TOKEN is missing."
+                "GitHub security alerts could not be checked because " "GITHUB_TOKEN is missing."
             ),
             "totals": {
                 "open_dependabot": 0,
@@ -275,8 +274,7 @@ def _active_capacity_by_host(
             plan.get("host_capacity_policy") or metadata.get("host_capacity_policy") or {}
         )
         host_id = (
-            str(host_policy.get("host_id") or "windows-owner-ci").strip()
-            or "windows-owner-ci"
+            str(host_policy.get("host_id") or "windows-owner-ci").strip() or "windows-owner-ci"
         )
         host_entry = hosts.setdefault(
             host_id,
@@ -310,9 +308,14 @@ def _active_capacity_by_host(
             run_has_active_shard = True
             shard_metadata = dict(shard.get("metadata") or {})
             reservation = dict(shard_metadata.get("resource_reservation") or {})
-            resource_class = str(
-                reservation.get("resource_class") or shard_metadata.get("resource_class") or "cpu"
-            ).strip() or "cpu"
+            resource_class = (
+                str(
+                    reservation.get("resource_class")
+                    or shard_metadata.get("resource_class")
+                    or "cpu"
+                ).strip()
+                or "cpu"
+            )
             units = max(1, int(reservation.get("units") or 1))
             host_entry["resource_usage"][resource_class] = (
                 int(host_entry["resource_usage"].get(resource_class) or 0) + units
@@ -364,8 +367,7 @@ def _scheduler_overview(runs: list[dict[str, Any]]) -> SchedulerOverview:
             plan.get("host_capacity_policy") or metadata.get("host_capacity_policy") or {}
         )
         host_id = (
-            str(host_policy.get("host_id") or "windows-owner-ci").strip()
-            or "windows-owner-ci"
+            str(host_policy.get("host_id") or "windows-owner-ci").strip() or "windows-owner-ci"
         )
         host_entry = hosts.setdefault(
             host_id,
@@ -444,9 +446,7 @@ def _scheduler_overview(runs: list[dict[str, Any]]) -> SchedulerOverview:
         current_blockers = _host_blocking_reasons(resource_budget, resource_usage)
         planned_usage = dict(resource_usage)
         active_parallel_groups = set(host_entry.get("busy_parallel_groups") or set())
-        queue_order = _round_robin_candidates_by_repo(
-            dict(host_entry.get("pending_by_repo") or {})
-        )
+        queue_order = _round_robin_candidates_by_repo(dict(host_entry.get("pending_by_repo") or {}))
         admitted_candidates: list[SchedulerCandidate] = []
         blocked_candidates: list[SchedulerCandidate] = []
         for candidate in queue_order:
@@ -587,9 +587,7 @@ def _storage_cleanup_receipt_from_bundle(
             if isinstance(item, dict)
         ],
         warnings=[
-            str(item).strip()
-            for item in list(cleanup.get("warnings") or [])
-            if str(item).strip()
+            str(item).strip() for item in list(cleanup.get("warnings") or []) if str(item).strip()
         ],
         metadata={
             "low_disk_free_bytes": int(
@@ -1396,9 +1394,7 @@ class CiObserverSkill(Skill):
                     ),
                     "active_run_count": len(set(host.get("active_runs") or set())),
                     "active_shard_count": int(host.get("active_shards") or 0),
-                    "runtime_headroom_reserved": bool(
-                        host.get("runtime_headroom_reserved", True)
-                    ),
+                    "runtime_headroom_reserved": bool(host.get("runtime_headroom_reserved", True)),
                     "repo_ids": sorted(
                         str(repo_id).strip()
                         for repo_id in set(host.get("repo_ids") or set())
@@ -1424,8 +1420,7 @@ class CiObserverSkill(Skill):
                                 int(host.get("active_run_count") or 0) for host in host_catalog
                             ),
                             "active_shard_count": sum(
-                                int(host.get("active_shard_count") or 0)
-                                for host in host_catalog
+                                int(host.get("active_shard_count") or 0) for host in host_catalog
                             ),
                         },
                     }

@@ -237,9 +237,7 @@ async def test_read_stripe_service_view_covers_supported_views_and_error_transla
     stripe_client.list_products = AsyncMock(
         side_effect=[[{"id": "prod_1"}], [{"id": "prod_1"}], StripeAPIError("boom")]
     )
-    stripe_client.list_subscriptions = AsyncMock(
-        return_value=[{"id": "sub_1"}]
-    )
+    stripe_client.list_subscriptions = AsyncMock(return_value=[{"id": "sub_1"}])
     stripe_client.list_invoices = AsyncMock(return_value=[{"id": "inv_1"}])
     stripe_client.list_prices = AsyncMock(return_value=[{"id": "price_1"}])
     stripe_client.list_customers = AsyncMock(return_value=[{"id": "cus_1"}])
@@ -316,8 +314,7 @@ async def test_read_stripe_service_view_covers_supported_views_and_error_transla
 
 
 @pytest.mark.asyncio
-async def test_read_service_view_dispatches_to_provider_handlers_and_records_unsupported_view_gaps(
-) -> None:
+async def test_read_service_view_dispatches_provider_handlers_and_unsupported_view_gaps() -> None:
     storage = MagicMock()
     storage.record_agent_audit_event = AsyncMock(return_value={"audit_id": "audit-1"})
 
@@ -448,8 +445,7 @@ async def test_read_service_view_helpers_cover_validation_errors() -> None:
 
 
 @pytest.mark.asyncio
-async def test_read_service_view_execute_service_action_and_execute_stripe_actions_cover_dispatch(
-) -> None:
+async def test_read_service_view_service_and_stripe_actions_cover_dispatch() -> None:
     storage = MagicMock()
     storage.get_external_service_connector_with_secret = AsyncMock(
         return_value={

@@ -1240,10 +1240,13 @@ async def test_email_oauth_and_provider_guard_branches(
         )
         is None
     )
-    assert manager.get_secret_cached(
-        "11111111-1111-1111-1111-111111111111",
-        "email.google.oauth_client_id",
-    ) is None
+    assert (
+        manager.get_secret_cached(
+            "11111111-1111-1111-1111-111111111111",
+            "email.google.oauth_client_id",
+        )
+        is None
+    )
 
     manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
         return_value={
@@ -1464,8 +1467,7 @@ async def test_email_oauth_exchange_reuses_existing_refresh_token(
 
     assert exchanged["account_id"] == "acc-1"
     assert (
-        manager._upsert_email_account.await_args.kwargs["refresh_token"]
-        == "refresh-from-existing"
+        manager._upsert_email_account.await_args.kwargs["refresh_token"] == "refresh-from-existing"
     )
 
 
@@ -3572,16 +3574,22 @@ async def test_security_and_messaging_helper_branch_variants(
     assert TenantAdminManager._coerce_retention_days("not-a-number", default=14) == 14
     assert TenantAdminManager._coerce_retention_days(0, default=14) == 1
     assert TenantAdminManager._coerce_retention_days(9999, default=14) == 365
-    assert manager._resolve_messaging_retention_days(
-        tenant_id="11111111-1111-1111-1111-111111111111",
-        policy_days="45",  # type: ignore[arg-type]
-    ) == 45
+    assert (
+        manager._resolve_messaging_retention_days(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            policy_days="45",  # type: ignore[arg-type]
+        )
+        == 45
+    )
     manager._settings_cache[
         ("11111111-1111-1111-1111-111111111111", "security", "messaging_retention_days")
     ] = "18"
-    assert manager._resolve_messaging_retention_days(
-        tenant_id="11111111-1111-1111-1111-111111111111",
-    ) == 18
+    assert (
+        manager._resolve_messaging_retention_days(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+        )
+        == 18
+    )
 
     with pytest.raises(ValueError, match="Missing chat_id"):
         await manager.put_messaging_chat_policy(
@@ -5933,9 +5941,10 @@ def test_worker_delegation_helper_methods() -> None:
         "provider": "email",
         "chat_id": "acct-1",
     }
-    assert TenantAdminManager._redact_worker_messaging_payload(
-        ["hello", {"body": "secret"}]
-    ) == ["hello", {"body": "[REDACTED]"}]
+    assert TenantAdminManager._redact_worker_messaging_payload(["hello", {"body": "secret"}]) == [
+        "hello",
+        {"body": "[REDACTED]"},
+    ]
     assert TenantAdminManager._worker_delegation_scope_matches(
         "repo:/workspace/repo", "repo:/workspace/repo"
     )
@@ -6426,8 +6435,9 @@ async def test_claim_worker_dispatch_job_skips_invalid_scopes_without_denied_rea
 
 
 @pytest.mark.asyncio
-async def test_claim_worker_dispatch_job_returns_none_for_missing_or_ineligible_node_record(
-) -> None:
+async def test_claim_worker_dispatch_job_returns_none_for_missing_or_ineligible_node_record() -> (
+    None
+):
     conn = _FakeConn()
     manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
     manager._worker_node_meets_dispatch_requirements = AsyncMock(side_effect=[False])  # type: ignore[method-assign]

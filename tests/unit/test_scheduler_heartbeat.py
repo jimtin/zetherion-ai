@@ -160,11 +160,14 @@ class TestHeartbeatScheduler:
 
     def test_within_quiet_window_daytime_false(self) -> None:
         """_within_quiet_window should reject times outside daytime windows."""
-        assert HeartbeatScheduler._within_quiet_window(
-            time(18, 0),
-            time(9, 0),
-            time(17, 0),
-        ) is False
+        assert (
+            HeartbeatScheduler._within_quiet_window(
+                time(18, 0),
+                time(9, 0),
+                time(17, 0),
+            )
+            is False
+        )
 
     def test_is_quiet_hours_daytime(self) -> None:
         """_is_quiet_hours should return False during daytime."""

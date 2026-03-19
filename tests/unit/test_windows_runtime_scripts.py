@@ -31,19 +31,18 @@ def test_verify_runtime_uses_non_throwing_probe_helpers() -> None:
     verify_runtime = VERIFY_RUNTIME_PATH.read_text(encoding="utf-8")
 
     assert (
-        "Invoke-ZetherionWslDockerResult compose logs zetherion-ai-bot --tail 400"
-        in verify_runtime
+        "Invoke-ZetherionWslDockerResult compose logs zetherion-ai-bot --tail 400" in verify_runtime
     )
     assert "function Invoke-FallbackProbe" in verify_runtime
     assert "base64 -d | docker exec -i zetherion-ai-bot python -" in verify_runtime
     assert "docker compose config --services" in verify_runtime
     assert 'runtime_start_hint = ""' in verify_runtime
-    assert 'running_service_count = 0' in verify_runtime
+    assert "running_service_count = 0" in verify_runtime
     assert (
         "No containers are running for this deployment path. This usually means "
         "the compose project at this path has not been started yet."
     ) in verify_runtime
-    assert 'compose_project_not_started_for_target_path' in verify_runtime
+    assert "compose_project_not_started_for_target_path" in verify_runtime
 
 
 def test_runtime_watchdog_skips_restarts_for_non_restartable_failures() -> None:
@@ -55,8 +54,7 @@ def test_runtime_watchdog_skips_restarts_for_non_restartable_failures() -> None:
         "-RepairSettings -DisableAutoPause"
     ) in runtime_watchdog
     assert (
-        'throw "Docker Desktop recovery did not restore the '
-        'desktop-linux engine."'
+        'throw "Docker Desktop recovery did not restore the ' 'desktop-linux engine."'
     ) in runtime_watchdog
     assert "docker_recovery = $dockerRecovery" in runtime_watchdog
     assert "restart_skipped_nonrestartable_failure" in runtime_watchdog
@@ -119,59 +117,53 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "function Wait-ZetherionDockerDesktopEngine" in docker_runtime
     assert "function Ensure-ZetherionWslDockerService" in docker_runtime
     assert "function Repair-ZetherionDockerDesktopRuntime" in docker_runtime
-    assert '$script:ZetherionRequiredDockerMemoryMiB = 98304' in docker_runtime
-    assert '$script:ZetherionRequiredDockerSwapMiB = 0' in docker_runtime
-    assert '$script:ZetherionRequiredWslMemoryMiB = 98304' in docker_runtime
-    assert '$script:ZetherionRequiredWslSwapMiB = 0' in docker_runtime
+    assert "$script:ZetherionRequiredDockerMemoryMiB = 98304" in docker_runtime
+    assert "$script:ZetherionRequiredDockerSwapMiB = 0" in docker_runtime
+    assert "$script:ZetherionRequiredWslMemoryMiB = 98304" in docker_runtime
+    assert "$script:ZetherionRequiredWslSwapMiB = 0" in docker_runtime
     assert '$script:ZetherionDockerDesktopContextName = "desktop-linux"' in docker_runtime
     assert '$script:ZetherionDockerDesktopServiceName = "com.docker.service"' in docker_runtime
     assert (
-        '$script:ZetherionDockerDesktopStartupTaskName = '
-        '"ZetherionDockerAutoStart"'
+        "$script:ZetherionDockerDesktopStartupTaskName = " '"ZetherionDockerAutoStart"'
     ) in docker_runtime
     assert (
-        'Set-ZetherionObjectPropertyValue -Object $settings '
-        '-Name "autoStart" -Value $true'
+        "Set-ZetherionObjectPropertyValue -Object $settings " '-Name "autoStart" -Value $true'
     ) in docker_runtime
     assert (
-        'Set-ZetherionObjectPropertyValue -Object $settings '
-        '-Name "memoryMiB" -Value $MemoryMiB'
+        "Set-ZetherionObjectPropertyValue -Object $settings " '-Name "memoryMiB" -Value $MemoryMiB'
     ) in docker_runtime
     assert (
-        'Set-ZetherionObjectPropertyValue -Object $settings '
-        '-Name "swapMiB" -Value $SwapMiB'
+        "Set-ZetherionObjectPropertyValue -Object $settings " '-Name "swapMiB" -Value $SwapMiB'
     ) in docker_runtime
     assert "New-Object System.Text.UTF8Encoding($false)" in docker_runtime
     assert (
-        "return ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB "
-        '-and $bytes[2] -eq 0xBF)'
+        "return ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB " "-and $bytes[2] -eq 0xBF)"
     ) in docker_runtime
     assert "$requiresEncodingRewrite = Test-ZetherionUtf8Bom -Path $current.path" in docker_runtime
     assert (
-        "Set-ZetherionUtf8NoBomContent -Path $current.path "
-        "-Content $settingsJson"
+        "Set-ZetherionUtf8NoBomContent -Path $current.path " "-Content $settingsJson"
     ) in docker_runtime
     assert 'return "$([int]($ValueMiB / 1024))GB"' in docker_runtime
-    assert 'memory=$memoryLiteral' in docker_runtime
-    assert 'swap=$swapLiteral' in docker_runtime
-    assert 'updated_wsl_host_config:$($wslChangedKeys -join ' in docker_runtime
+    assert "memory=$memoryLiteral" in docker_runtime
+    assert "swap=$swapLiteral" in docker_runtime
+    assert "updated_wsl_host_config:$($wslChangedKeys -join " in docker_runtime
     assert "encoding_rewritten = [bool]$requiresEncodingRewrite" in docker_runtime
     assert (
-        'action_matches = [bool](Test-ZetherionScheduledTaskActionContains '
+        "action_matches = [bool](Test-ZetherionScheduledTaskActionContains "
         '-Task $task -Needle "Docker Desktop.exe")'
     ) in docker_runtime
-    assert 'Start-ScheduledTask -TaskName $taskStatus.task_name -ErrorAction Stop' in docker_runtime
+    assert "Start-ScheduledTask -TaskName $taskStatus.task_name -ErrorAction Stop" in docker_runtime
     assert 'method = "scheduled_task"' in docker_runtime
-    assert 'started_docker_desktop_process:$($startResult.method)' in docker_runtime
-    assert '& $dockerCli.Source --context $contextName info *> $null' in docker_runtime
-    assert 'wsl_resources_configured = [bool](' in docker_runtime
+    assert "started_docker_desktop_process:$($startResult.method)" in docker_runtime
+    assert "& $dockerCli.Source --context $contextName info *> $null" in docker_runtime
+    assert "wsl_resources_configured = [bool](" in docker_runtime
 
 
 def test_docker_runtime_supports_native_windows_backend() -> None:
     docker_runtime = DOCKER_RUNTIME_PATH.read_text(encoding="utf-8")
 
-    assert '$script:ZetherionExecutionBackend' in docker_runtime
-    assert '$script:ZetherionWslDistribution' in docker_runtime
+    assert "$script:ZetherionExecutionBackend" in docker_runtime
+    assert "$script:ZetherionWslDistribution" in docker_runtime
     assert "function Get-ZetherionNativeDockerRuntimeStatus" in docker_runtime
     assert 'backend = "native_windows_docker"' in docker_runtime
     assert 'backend = "wsl_docker"' in docker_runtime
@@ -186,33 +178,33 @@ def test_install_ci_worker_writes_backend_contract_and_blocks_live_runtime_path(
 
     assert '[ValidateSet("native_windows_docker", "wsl_docker")]' in install_script
     assert '[string]$ExecutionBackend = "wsl_docker"' in install_script
-    assert '[int64]$RecommendedWslVmIdleTimeoutMs = 604800000' in install_script
+    assert "[int64]$RecommendedWslVmIdleTimeoutMs = 604800000" in install_script
     assert "Get-ZetherionWslHostConfig" in install_script
     assert "Set-ZetherionWslHostVmIdleTimeout" in install_script
     assert "function Register-WslKeepaliveTask" in install_script
-    assert 'Start-ScheduledTask -TaskName $WslKeepaliveTaskName' in install_script
-    assert 'wsl_keepalive_task_name = $WslKeepaliveTaskName' in install_script
+    assert "Start-ScheduledTask -TaskName $WslKeepaliveTaskName" in install_script
+    assert "wsl_keepalive_task_name = $WslKeepaliveTaskName" in install_script
     assert "recommended_vm_idle_timeout_ms" in install_script
     assert "restart_required = [bool]$wslConfigChanged" in install_script
-    assert 'worker_execution_backend = ' in install_script
-    assert 'worker_workspace_root = ' in install_script
-    assert 'worker_runtime_root = ' in install_script
-    assert 'worker_docker_backend = ' in install_script
-    assert 'worker_wsl_distribution = ' in install_script
+    assert "worker_execution_backend = " in install_script
+    assert "worker_workspace_root = " in install_script
+    assert "worker_runtime_root = " in install_script
+    assert "worker_docker_backend = " in install_script
+    assert "worker_wsl_distribution = " in install_script
     assert "Ensure-ZetherionWslDockerHeadlessConfig" in install_script
     assert "wsl_docker_config = if ($wslDockerConfig)" in install_script
     assert "WSL Docker config still depends on a desktop credential helper." in install_script
     assert '$env:ZETHERION_WSL_DISTRIBUTION = "' in install_script
     assert "WorkspaceRoot must not point to C:\\ZetherionAI" in install_script
-    assert 'cleanup_enabled = true' in install_script
-    assert 'worker_cleanup_enabled = true' in install_script
-    assert 'worker_cleanup_low_disk_free_bytes = 21474836480' in install_script
-    assert 'worker_cleanup_target_free_bytes = 42949672960' in install_script
-    assert 'worker_cleanup_artifact_retention_hours = 24' in install_script
-    assert 'worker_cleanup_log_retention_days = 7' in install_script
+    assert "cleanup_enabled = true" in install_script
+    assert "worker_cleanup_enabled = true" in install_script
+    assert "worker_cleanup_low_disk_free_bytes = 21474836480" in install_script
+    assert "worker_cleanup_target_free_bytes = 42949672960" in install_script
+    assert "worker_cleanup_artifact_retention_hours = 24" in install_script
+    assert "worker_cleanup_log_retention_days = 7" in install_script
     assert '$mutexName = "Global\\ZetherionOwnerCiWorker"' in install_script
-    assert 'Owner-CI worker already running; exiting duplicate launcher.' in install_script
-    assert '$hasHandle = $mutex.WaitOne(0, $false)' in install_script
+    assert "Owner-CI worker already running; exiting duplicate launcher." in install_script
+    assert "$hasHandle = $mutex.WaitOne(0, $false)" in install_script
     assert (
         'if ($ExecutionBackend -eq "wsl_docker" -and -not ($AllowedCommands -contains "wsl"))'
         in install_script
@@ -228,38 +220,37 @@ def test_verify_ci_worker_connectivity_emits_worker_certification_receipt() -> N
     assert '"worker_docker_backend": cfg.worker_docker_backend' in verify_connectivity
     assert '"worker_wsl_distribution": cfg.worker_wsl_distribution' in verify_connectivity
     assert "$code = @'" in verify_connectivity
-    assert '$output = $code | & $pythonExe -' in verify_connectivity
+    assert "$output = $code | & $pythonExe -" in verify_connectivity
     assert '$dns.PSObject.Properties.Name -contains "IPAddress"' in verify_connectivity
     assert 'receipt_kind = "WorkerCertificationReceipt"' in verify_connectivity
-    assert 'execution_backend = $executionBackend' in verify_connectivity
-    assert 'docker_backend = $dockerBackend' in verify_connectivity
-    assert 'wsl_distribution = $wslDistribution' in verify_connectivity
+    assert "execution_backend = $executionBackend" in verify_connectivity
+    assert "docker_backend = $dockerBackend" in verify_connectivity
+    assert "wsl_distribution = $wslDistribution" in verify_connectivity
     assert 'key = "wsl_keepalive_task_running"' in verify_connectivity
-    assert 'Get-ScheduledTaskSummary' in verify_connectivity
-    assert 'wsl_keepalive_task = $wslKeepaliveTask' in verify_connectivity
+    assert "Get-ScheduledTaskSummary" in verify_connectivity
+    assert "wsl_keepalive_task = $wslKeepaliveTask" in verify_connectivity
     assert (
-        'last_task_result = if ($info) { [int]$info.LastTaskResult } '
-        'else { $null }'
+        "last_task_result = if ($info) { [int]$info.LastTaskResult } " "else { $null }"
     ) in verify_connectivity
-    assert '$wslKeepaliveHealthy = [bool](' in verify_connectivity
+    assert "$wslKeepaliveHealthy = [bool](" in verify_connectivity
     assert 'key = "wsl_idle_timeout_configured"' in verify_connectivity
     assert 'key = "wsl_docker_config_ready"' in verify_connectivity
-    assert 'wsl_host_config = if ($wslHostConfig)' in verify_connectivity
-    assert 'wsl_docker_config = if ($wslDockerConfig)' in verify_connectivity
+    assert "wsl_host_config = if ($wslHostConfig)" in verify_connectivity
+    assert "wsl_docker_config = if ($wslDockerConfig)" in verify_connectivity
     assert "Ensure-ZetherionWslDockerHeadlessConfig" in verify_connectivity
     assert "Get-ZetherionWslHostConfig" in verify_connectivity
     assert "function Resolve-WorkspaceEvidencePath" in verify_connectivity
     assert "function ConvertFrom-ZetherionJson" in verify_connectivity
     assert "function Get-LatestWorkspaceReadiness" in verify_connectivity
     assert '$payload.PSObject.Properties.Name -contains "shard_receipts"' in verify_connectivity
-    assert '$shardReceipts = @($payload.shard_receipts)' in verify_connectivity
+    assert "$shardReceipts = @($payload.shard_receipts)" in verify_connectivity
     assert (
-        '$workspaceReadiness = Get-LatestWorkspaceReadiness -WorkspaceRoot $workspaceRoot'
+        "$workspaceReadiness = Get-LatestWorkspaceReadiness -WorkspaceRoot $workspaceRoot"
         in verify_connectivity
     )
     assert "ConvertFrom-ZetherionJson" in verify_connectivity
-    assert 'path = [string]$workspaceReadiness.path' in verify_connectivity
-    assert 'cleanup_statuses = @($workspaceReadiness.cleanup_statuses)' in verify_connectivity
+    assert "path = [string]$workspaceReadiness.path" in verify_connectivity
+    assert "cleanup_statuses = @($workspaceReadiness.cleanup_statuses)" in verify_connectivity
     assert 'key = "ci_test_run_succeeded"' in verify_connectivity
     assert 'key = "status_publication_succeeded"' in verify_connectivity
 
@@ -268,7 +259,7 @@ def test_wsl_keepalive_script_starts_docker_and_holds_wsl_open() -> None:
     keepalive_script = WSL_KEEPALIVE_PATH.read_text(encoding="utf-8")
 
     assert '[string]$WslDistribution = "Ubuntu"' in keepalive_script
-    assert '$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution' in keepalive_script
+    assert "$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution" in keepalive_script
     assert (
         'Invoke-ZetherionWslCommand -Command "systemctl start docker >/dev/null '
         '2>&1 || true"' in keepalive_script
@@ -279,13 +270,12 @@ def test_wsl_keepalive_script_starts_docker_and_holds_wsl_open() -> None:
 def test_disk_cleanup_script_writes_receipt_and_uses_shared_cleanup_helper() -> None:
     cleanup_script = DISK_CLEANUP_PATH.read_text(encoding="utf-8")
     expected_output_path = (
-        '[string]$OutputPath = '
-        '"C:\\ZetherionCI\\artifacts\\disk-cleanup-receipt.json"'
+        "[string]$OutputPath = " '"C:\\ZetherionCI\\artifacts\\disk-cleanup-receipt.json"'
     )
 
     assert '[string]$CiRoot = "C:\\ZetherionCI"' in cleanup_script
     assert expected_output_path in cleanup_script
-    assert ". (Join-Path $PSScriptRoot \"docker-runtime.ps1\")" in cleanup_script
+    assert '. (Join-Path $PSScriptRoot "docker-runtime.ps1")' in cleanup_script
     assert "Invoke-ZetherionDiskCleanup" in cleanup_script
     assert "Write-CleanupResult" in cleanup_script
 
@@ -296,8 +286,8 @@ def test_deploy_runner_triggers_disk_cleanup_after_rebuild() -> None:
     )
 
     assert '[string]$CleanupReceiptPath = "deploy-cleanup-receipt.json"' in deploy_runner
-    assert "Invoke-ZetherionDiskCleanup -CiRoot \"C:\\ZetherionCI\" -Aggressive" in deploy_runner
-    assert '$result.cleanup_status = [string]$cleanupReceipt.status' in deploy_runner
+    assert 'Invoke-ZetherionDiskCleanup -CiRoot "C:\\ZetherionCI" -Aggressive' in deploy_runner
+    assert "$result.cleanup_status = [string]$cleanupReceipt.status" in deploy_runner
     assert '$result.cleanup_status = "cleanup_failed"' in deploy_runner
 
 
@@ -317,7 +307,7 @@ def test_default_runtime_disables_ollama_unless_explicitly_enabled() -> None:
         assert 'Set-OrAddEnvLine -Lines $lines -Key "ROUTER_BACKEND" -Value "gemini"' in script
         assert 'Set-OrAddEnvLine -Lines $lines -Key "EMBEDDINGS_BACKEND" -Value "openai"' in script
         assert '$profiles.Add("ollama")' in script
-        assert '--remove-orphans' in script
+        assert "--remove-orphans" in script
 
 
 def test_default_compose_marks_ollama_services_as_optional() -> None:
@@ -325,8 +315,7 @@ def test_default_compose_marks_ollama_services_as_optional() -> None:
 
     assert "container_name: zetherion-ai-ollama\n    profiles:\n      - ollama" in compose_text
     assert (
-        "container_name: zetherion-ai-ollama-router\n    profiles:\n      - ollama"
-        in compose_text
+        "container_name: zetherion-ai-ollama-router\n    profiles:\n      - ollama" in compose_text
     )
 
 
@@ -335,8 +324,8 @@ def test_verify_windows_host_treats_ollama_as_optional_runtime() -> None:
 
     assert '. (Join-Path $PSScriptRoot "windows\\docker-runtime.ps1")' in verify_windows_host
     assert '[string]$WslDistribution = "Ubuntu"' in verify_windows_host
-    assert '$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution' in verify_windows_host
-    assert 'Get-ZetherionDockerDesktopStatus' in verify_windows_host
+    assert "$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution" in verify_windows_host
+    assert "Get-ZetherionDockerDesktopStatus" in verify_windows_host
     assert 'Add-Check -Name "docker_resources"' in verify_windows_host
     assert 'Add-Check -Name "wsl_host_resources"' in verify_windows_host
     assert 'Add-Check -Name "docker_service"' in verify_windows_host
@@ -347,8 +336,7 @@ def test_verify_windows_host_treats_ollama_as_optional_runtime() -> None:
     assert '$auxiliaryContainers += "zetherion-ai-ollama-router"' in verify_windows_host
     assert (
         'Add-Check -Name "ollama_models" -Status "pass" -Message '
-        '"Ollama runtime is disabled by default"'
-        in verify_windows_host
+        '"Ollama runtime is disabled by default"' in verify_windows_host
     )
 
 
@@ -357,7 +345,7 @@ def test_register_resilience_tasks_registers_disk_cleanup_task() -> None:
     register_script = register_script_path.read_text(encoding="utf-8")
 
     assert '[string]$CleanupTaskName = "ZetherionDiskCleanup"' in register_script
-    assert '[int]$CleanupIntervalMinutes = 180' in register_script
+    assert "[int]$CleanupIntervalMinutes = 180" in register_script
     assert "disk-cleanup.ps1" in register_script
     assert "registered_cleanup_task:$CleanupTaskName" in register_script
     assert "cleanup_task_registered" in register_script
@@ -373,4 +361,4 @@ def test_startup_recover_uses_shared_docker_desktop_repair_flow() -> None:
         "-RepairSettings -DisableAutoPause"
     ) in startup_recover
     assert '$ActionsTaken.Value += "docker_settings_repaired"' in startup_recover
-    assert 'return [bool]$repair.success' in startup_recover
+    assert "return [bool]$repair.success" in startup_recover

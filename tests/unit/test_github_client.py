@@ -1457,8 +1457,10 @@ class TestGitHubClientAdditionalCoverage:
                 target_url="https://cgs.example.com/runs/1",
             )
             assert status["id"] == 1
-            assert mock_request.await_args_list[11].kwargs["json_body"]["target_url"].startswith(
-                "https://cgs.example.com/"
+            assert (
+                mock_request.await_args_list[11]
+                .kwargs["json_body"]["target_url"]
+                .startswith("https://cgs.example.com/")
             )
 
             assert await client.list_labels("owner", "repo") == []

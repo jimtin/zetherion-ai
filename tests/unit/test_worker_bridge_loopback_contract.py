@@ -12,8 +12,8 @@ TRAEFIK_ROUTES_PATH = REPO_ROOT / "config" / "traefik" / "dynamic" / "updater-ro
 def test_traefik_publishes_owner_ci_loopback_entrypoint() -> None:
     rendered = DOCKER_COMPOSE_PATH.read_text(encoding="utf-8")
 
-    assert 'container_name: zetherion-ai-traefik' in rendered
-    assert '--entrypoints.skills.address=:8080' in rendered
+    assert "container_name: zetherion-ai-traefik" in rendered
+    assert "--entrypoints.skills.address=:8080" in rendered
     assert '"127.0.0.1:${OWNER_CI_LOOPBACK_PORT:-18443}:8443"' in rendered
     assert '"127.0.0.1:${TRAEFIK_DASHBOARD_PORT:-18080}:8080"' in rendered
 

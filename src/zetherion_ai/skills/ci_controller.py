@@ -188,9 +188,7 @@ def _passed_preflight_check(value: Any) -> bool:
 
 def _expected_ruff_version(repo: dict[str, Any]) -> str | None:
     allowed_paths = [
-        str(item).strip()
-        for item in list(repo.get("allowed_paths") or [])
-        if str(item).strip()
+        str(item).strip() for item in list(repo.get("allowed_paths") or []) if str(item).strip()
     ]
     for root in allowed_paths:
         requirements_path = Path(root) / "requirements-dev.txt"
@@ -231,8 +229,7 @@ def _collect_preflight_violations(
             {
                 "rule_code": "missing_preflight_attestation",
                 "summary": (
-                    "Certification was rejected because no preflight attestation "
-                    "was provided."
+                    "Certification was rejected because no preflight attestation " "was provided."
                 ),
                 "remediation": (
                     "Run the mandatory static and security checks first, then include a "
@@ -393,8 +390,7 @@ def _resource_reservation_for_shard(repo_id: str, shard: dict[str, Any]) -> dict
         "units": 1,
         "parallel_group": str(metadata.get("parallel_group") or "").strip() or None,
         "workspace_root": (
-            str(metadata.get("workspace_root") or shard.get("workspace_root") or "").strip()
-            or None
+            str(metadata.get("workspace_root") or shard.get("workspace_root") or "").strip() or None
         ),
         "metadata": {
             "execution_target": str(shard.get("execution_target") or "").strip() or None,
@@ -459,9 +455,7 @@ def _host_capacity_policy_for(
 def _reservation_from_shard(repo_id: str, shard: dict[str, Any]) -> ResourceReservation:
     metadata = dict(shard.get("metadata") or {})
     if isinstance(metadata.get("resource_reservation"), dict):
-        return ResourceReservation.model_validate(
-            dict(metadata.get("resource_reservation") or {})
-        )
+        return ResourceReservation.model_validate(dict(metadata.get("resource_reservation") or {}))
     return ResourceReservation.model_validate(_resource_reservation_for_shard(repo_id, shard))
 
 
@@ -790,12 +784,15 @@ class CiControllerSkill(Skill):
             principal_id = str(request.context.get("principal_id") or "").strip() or None
             session_id = str(request.context.get("session_id") or "").strip() or None
             app_id = str(request.context.get("app_id") or "").strip() or None
-            commit_sha = str(
-                request.context.get("git_sha")
-                or metadata.get("git_sha")
-                or metadata.get("head_sha")
-                or ""
-            ).strip() or None
+            commit_sha = (
+                str(
+                    request.context.get("git_sha")
+                    or metadata.get("git_sha")
+                    or metadata.get("head_sha")
+                    or ""
+                ).strip()
+                or None
+            )
             stored_feedback: list[dict[str, Any]] = []
             for payload in build_preflight_coaching_payloads(
                 principal_id=principal_id,
@@ -1229,15 +1226,18 @@ class CiControllerSkill(Skill):
             )
         release_receipt = dict((run.get("metadata") or {}).get("release_verification") or {})
         local_repo_readiness, _ = await self._storage.get_local_repo_readiness(repo)
-        merge_receipt, deploy_receipt, repo_readiness, workspace_readiness = (
-            await self._build_readiness_receipts(
+        (
+            merge_receipt,
+            deploy_receipt,
+            repo_readiness,
+            workspace_readiness,
+        ) = await self._build_readiness_receipts(
             repo=repo,
             run=run,
             review=review,
             release_receipt=release_receipt,
             requested_by=owner_id,
             local_receipt=local_repo_readiness,
-            )
         )
         require_release_receipt = bool(
             (repo.get("promotion_policy") or {}).get("require_release_receipt")
@@ -1334,15 +1334,13 @@ class CiControllerSkill(Skill):
             merge_description = "Merge readiness is blocked by reviewer findings."
         elif repo_readiness.missing_categories:
             merge_state = "failure"
-            merge_description = (
-                "Required gate categories are incomplete: "
-                + ", ".join(repo_readiness.missing_categories[:3])
+            merge_description = "Required gate categories are incomplete: " + ", ".join(
+                repo_readiness.missing_categories[:3]
             )
         elif repo_readiness.failed_required_paths:
             merge_state = "failure"
-            merge_description = (
-                "Required local shards failed: "
-                + ", ".join(repo_readiness.failed_required_paths[:3])
+            merge_description = "Required local shards failed: " + ", ".join(
+                repo_readiness.failed_required_paths[:3]
             )
         elif any(
             str(shard.get("status") or "").strip().lower() in _DISCONNECTED_STATUSES
@@ -1352,9 +1350,8 @@ class CiControllerSkill(Skill):
             merge_description = "Worker receipts are still syncing to Zetherion."
         elif repo_readiness.missing_evidence:
             merge_state = "pending"
-            merge_description = (
-                "Readiness evidence is incomplete: "
-                + ", ".join(repo_readiness.missing_evidence[:3])
+            merge_description = "Readiness evidence is incomplete: " + ", ".join(
+                repo_readiness.missing_evidence[:3]
             )
         merge_receipt = {
             "context": merge_context,
@@ -1365,9 +1362,9 @@ class CiControllerSkill(Skill):
             "review_verdict": review.get("verdict"),
         }
 
-        normalized_release = normalize_release_verification_receipt(
-            release_receipt
-        ).model_dump(mode="json")
+        normalized_release = normalize_release_verification_receipt(release_receipt).model_dump(
+            mode="json"
+        )
         deploy_state = "pending"
         deploy_description = "Release verification receipt is still pending."
         release_status = str(normalized_release.get("status") or "").strip().lower()
@@ -1377,14 +1374,16 @@ class CiControllerSkill(Skill):
                 "Deploy readiness is blocked by incomplete gate categories: "
                 + ", ".join(repo_readiness.missing_categories[:3])
             )
-        elif release_status in {"healthy", "success"} and int(
-            normalized_release.get("blocker_count") or 0
-        ) == 0:
+        elif (
+            release_status in {"healthy", "success"}
+            and int(normalized_release.get("blocker_count") or 0) == 0
+        ):
             deploy_state = "success"
             deploy_description = "Deploy readiness receipt is green."
-        elif release_status in {"deployed_but_unhealthy", "blocked", "failed"} or int(
-            normalized_release.get("blocker_count") or 0
-        ) > 0:
+        elif (
+            release_status in {"deployed_but_unhealthy", "blocked", "failed"}
+            or int(normalized_release.get("blocker_count") or 0) > 0
+        ):
             deploy_state = "failure"
             deploy_description = (
                 str(normalized_release.get("summary") or "").strip()
@@ -1503,9 +1502,7 @@ class CiControllerSkill(Skill):
 
         shards: list[dict[str, Any]] = []
         static_gate_ids = [str(lane.get("lane_id") or "") for lane in mandatory_static_gates]
-        security_gate_ids = [
-            str(lane.get("lane_id") or "") for lane in mandatory_security_gates
-        ]
+        security_gate_ids = [str(lane.get("lane_id") or "") for lane in mandatory_security_gates]
         static_gate_id_set = {lane_id for lane_id in static_gate_ids if lane_id}
         security_gate_id_set = {lane_id for lane_id in security_gate_ids if lane_id}
         windows_execution_mode = str(repo.get("windows_execution_mode") or "command").strip()
@@ -1586,8 +1583,7 @@ class CiControllerSkill(Skill):
             shard["metadata"]["blocking"] = True
             shard["blocking"] = True
             shard["expected_artifacts"] = list(
-                dict(shard.get("artifact_contract") or {}).get("expects")
-                or ["stdout", "stderr"]
+                dict(shard.get("artifact_contract") or {}).get("expects") or ["stdout", "stderr"]
             )
             if required_category is not None:
                 shard["metadata"]["required_category"] = required_category

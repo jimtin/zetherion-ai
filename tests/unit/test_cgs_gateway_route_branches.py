@@ -679,7 +679,7 @@ async def test_runtime_document_routes_cover_upstream_error_and_binary_failure_p
     )
     public_client.request_raw = AsyncMock(
         side_effect=[
-            (404, b'{\"detail\":\"missing\"}', {"Content-Type": "application/json"}),
+            (404, b'{"detail":"missing"}', {"Content-Type": "application/json"}),
             (500, b"plain failure", {"Content-Type": "text/plain"}),
         ]
     )

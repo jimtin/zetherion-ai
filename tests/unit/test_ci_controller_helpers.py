@@ -86,8 +86,9 @@ def test_lane_and_repo_helpers_cover_coercion_contexts_and_sha_inference() -> No
     ]
 
 
-def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certification_payload(
-) -> None:
+def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certification_payload() -> (
+    None
+):
     skill = ci_controller.CiControllerSkill(storage=MagicMock())
     repo = {
         "repo_id": "zetherion-ai",
@@ -237,9 +238,10 @@ def test_ci_controller_preflight_and_readiness_helpers_cover_missing_files_and_f
 
     monkeypatch.setattr(Path, "read_text", flaky_read_text)
 
-    assert ci_controller._expected_ruff_version(
-        {"allowed_paths": [str(bad_root), str(good_root)]}
-    ) == "0.8.4"
+    assert (
+        ci_controller._expected_ruff_version({"allowed_paths": [str(bad_root), str(good_root)]})
+        == "0.8.4"
+    )
 
     violations = ci_controller._collect_preflight_violations(
         repo={"allowed_paths": [str(good_root)]},
@@ -268,34 +270,37 @@ def test_ci_controller_preflight_and_readiness_helpers_cover_missing_files_and_f
 @pytest.mark.asyncio
 async def test_build_readiness_receipts_fail_on_missing_categories_and_degraded_release() -> None:
     skill = ci_controller.CiControllerSkill(storage=MagicMock())
-    merge_receipt, deploy_receipt, repo_readiness, workspace_readiness = (
-        await skill._build_readiness_receipts(
-            repo={
-                "repo_id": "zetherion-ai",
-                "promotion_policy": {"require_release_receipt": True},
-            },
-            run={
-                "repo_id": "zetherion-ai",
-                "metadata": {"mode": "certification", "git_sha": "a" * 40},
-                "plan": {"required_gate_categories": ["static", "security"]},
-                "shards": [
-                    {
-                        "lane_id": "ruff-check",
-                        "status": "succeeded",
-                        "metadata": {
-                            "gate_family": "static",
-                            "blocking": True,
-                        },
-                        "result": {},
-                        "error": {},
-                        "artifact_contract": {},
-                    }
-                ],
-            },
-            review={"merge_blocked": False},
-            release_receipt={"status": "degraded", "summary": "Waiting on final verify."},
-            requested_by="owner-1",
-        )
+    (
+        merge_receipt,
+        deploy_receipt,
+        repo_readiness,
+        workspace_readiness,
+    ) = await skill._build_readiness_receipts(
+        repo={
+            "repo_id": "zetherion-ai",
+            "promotion_policy": {"require_release_receipt": True},
+        },
+        run={
+            "repo_id": "zetherion-ai",
+            "metadata": {"mode": "certification", "git_sha": "a" * 40},
+            "plan": {"required_gate_categories": ["static", "security"]},
+            "shards": [
+                {
+                    "lane_id": "ruff-check",
+                    "status": "succeeded",
+                    "metadata": {
+                        "gate_family": "static",
+                        "blocking": True,
+                    },
+                    "result": {},
+                    "error": {},
+                    "artifact_contract": {},
+                }
+            ],
+        },
+        review={"merge_blocked": False},
+        release_receipt={"status": "degraded", "summary": "Waiting on final verify."},
+        requested_by="owner-1",
     )
 
     assert merge_receipt["state"] == "failure"
@@ -339,8 +344,7 @@ def test_default_cgs_windows_lanes_use_real_images_and_persistent_volume_mounts(
     integration_spec = integration_lane["payload"]["container_spec"]
     assert integration_spec["image"] == "node:22-bookworm"
     assert any(
-        mount["source"] == "cgs-node-tool-node_modules"
-        for mount in integration_spec["mounts"]
+        mount["source"] == "cgs-node-tool-node_modules" for mount in integration_spec["mounts"]
     )
     assert any(
         mount["source"] == "cgs-node-tool-yarn_cache" for mount in integration_spec["mounts"]

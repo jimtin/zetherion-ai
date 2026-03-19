@@ -1997,8 +1997,7 @@ class TestDevWatcherDmWizard:
             ) as start_wizard,
         ):
             assert (
-                await bot._maybe_handle_dev_watcher_dm(mock_dm_message, "dev watcher help")
-                is True
+                await bot._maybe_handle_dev_watcher_dm(mock_dm_message, "dev watcher help") is True
             )
 
         status_handler.assert_not_awaited()
@@ -2645,8 +2644,9 @@ class TestDevWatcherWizardDetails:
         ):
             await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
 
-        assert "could not create Discord assets" in (
-            mock_dm_message.channel.send.await_args_list[-1].args[0]
+        assert (
+            "could not create Discord assets"
+            in (mock_dm_message.channel.send.await_args_list[-1].args[0])
         )
 
     @pytest.mark.asyncio
@@ -2690,8 +2690,9 @@ class TestDevWatcherWizardDetails:
         ):
             await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
 
-        assert "during bootstrap: bad bootstrap" in (
-            mock_dm_message.channel.send.await_args_list[-1].args[0]
+        assert (
+            "during bootstrap: bad bootstrap"
+            in (mock_dm_message.channel.send.await_args_list[-1].args[0])
         )
 
         mock_dm_message.channel.send.reset_mock()
@@ -2717,8 +2718,9 @@ class TestDevWatcherWizardDetails:
         ):
             await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
 
-        assert "did not return an API token" in (
-            mock_dm_message.channel.send.await_args_list[-1].args[0]
+        assert (
+            "did not return an API token"
+            in (mock_dm_message.channel.send.await_args_list[-1].args[0])
         )
 
         mock_dm_message.channel.send.reset_mock()
@@ -2750,8 +2752,9 @@ class TestDevWatcherWizardDetails:
         ):
             await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
 
-        assert "while saving runtime settings/secrets: persist failed" in (
-            mock_dm_message.channel.send.await_args_list[-1].args[0]
+        assert (
+            "while saving runtime settings/secrets: persist failed"
+            in (mock_dm_message.channel.send.await_args_list[-1].args[0])
         )
 
     @pytest.mark.asyncio
@@ -3085,9 +3088,7 @@ class TestBotRuntimeHelpers:
         handle_allowlist.assert_awaited_once_with(mock_interaction, "admin")
         handle_audit.assert_awaited_once_with(mock_interaction, 7)
         handle_config_list.assert_awaited_once_with(mock_interaction, "models")
-        handle_config_set.assert_awaited_once_with(
-            mock_interaction, "models", "provider", "groq"
-        )
+        handle_config_set.assert_awaited_once_with(mock_interaction, "models", "provider", "groq")
         handle_config_reset.assert_awaited_once_with(mock_interaction, "models", "provider")
 
     def test_parse_clock_time(self):
@@ -4046,16 +4047,16 @@ class TestBotRuntimeHelpers:
             discord_e2e_channel_prefix="zeth-e2e",
         )
 
-        with patch("zetherion_ai.discord.bot.get_settings", return_value=settings), patch(
-            "zetherion_ai.discord.bot.discord.TextChannel", _FakeTextChannel
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.discord.TextChannel", _FakeTextChannel),
         ):
             assert (
                 bot._discord_e2e_lease_for_message(_message(topic=active_lease.to_topic()))
                 == active_lease
             )
             assert (
-                bot._discord_e2e_lease_for_message(_message(topic=expired_lease.to_topic()))
-                is None
+                bot._discord_e2e_lease_for_message(_message(topic=expired_lease.to_topic())) is None
             )
             assert (
                 bot._discord_e2e_lease_for_message(
@@ -4088,8 +4089,7 @@ class TestBotRuntimeHelpers:
                 channel_prefix="zeth-e2e",
             )
             assert (
-                bot._discord_e2e_lease_for_message(_message(topic=wrong_target.to_topic()))
-                is None
+                bot._discord_e2e_lease_for_message(_message(topic=wrong_target.to_topic())) is None
             )
 
             wrong_author = DiscordE2ELease(
@@ -4104,8 +4104,7 @@ class TestBotRuntimeHelpers:
                 channel_prefix="zeth-e2e",
             )
             assert (
-                bot._discord_e2e_lease_for_message(_message(topic=wrong_author.to_topic()))
-                is None
+                bot._discord_e2e_lease_for_message(_message(topic=wrong_author.to_topic())) is None
             )
 
             wrong_guild = DiscordE2ELease(
@@ -4120,8 +4119,7 @@ class TestBotRuntimeHelpers:
                 channel_prefix="zeth-e2e",
             )
             assert (
-                bot._discord_e2e_lease_for_message(_message(topic=wrong_guild.to_topic()))
-                is None
+                bot._discord_e2e_lease_for_message(_message(topic=wrong_guild.to_topic())) is None
             )
 
             no_guild_message = _message(topic=active_lease.to_topic())
@@ -4207,8 +4205,9 @@ class TestBotRuntimeHelpers:
             ),
         )
 
-        with patch("zetherion_ai.discord.bot.get_settings", return_value=settings), patch(
-            "zetherion_ai.discord.bot.discord.TextChannel", _FakeTextChannel
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch("zetherion_ai.discord.bot.discord.TextChannel", _FakeTextChannel),
         ):
             assert bot._discord_e2e_lease_for_message(message) is None
 

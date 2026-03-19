@@ -18,9 +18,7 @@ def _storage() -> MagicMock:
     storage.upsert_repo_profile = AsyncMock(return_value={"repo_id": "zetherion-ai"})
     storage.list_repo_profiles = AsyncMock(return_value=[])
     storage.get_repo_profile = AsyncMock(return_value=None)
-    storage.create_plan_snapshot = AsyncMock(
-        return_value={"plan_id": "plan-1", "version": 1}
-    )
+    storage.create_plan_snapshot = AsyncMock(return_value={"plan_id": "plan-1", "version": 1})
     storage.get_plan_snapshot = AsyncMock(return_value=None)
     storage.list_plan_versions = AsyncMock(return_value=[])
     storage.create_compiled_plan = AsyncMock(return_value={"compiled_plan_id": "compiled-1"})
@@ -207,8 +205,7 @@ async def test_ci_controller_build_readiness_receipts_cover_failure_and_pending_
 
 
 @pytest.mark.asyncio
-async def test_ci_controller_build_readiness_receipts_pending_when_worker_receipts_sync(
-) -> None:
+async def test_ci_controller_build_readiness_receipts_pending_when_worker_receipts_sync() -> None:
     skill = CiControllerSkill(storage=MagicMock())
     repo = {
         "repo_id": "zetherion-ai",
@@ -438,6 +435,4 @@ async def test_ci_observer_success_paths_cover_reporting_branches() -> None:
 
     assert failures.success is True
     assert failures.message == "Loaded project failure report."
-    assert failures.data == {
-        "report": {"failures": [{"repo_id": "zetherion-ai", "count": 1}]}
-    }
+    assert failures.data == {"report": {"failures": [{"repo_id": "zetherion-ai", "count": 1}]}}

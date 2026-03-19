@@ -199,9 +199,7 @@ def build_coverage_diagnostics(
         "recommended_next_actions": list(finding["recommended_next_actions"]),
         "diagnostic_artifacts": artifacts,
         "artifact_paths": [
-            path
-            for path in finding["artifact_paths"]
-            if isinstance(path, str) and path.strip()
+            path for path in finding["artifact_paths"] if isinstance(path, str) and path.strip()
         ],
     }
     return summary, [finding]
@@ -705,9 +703,9 @@ def build_operation_diagnosis(
         recommended_next_actions = _operation_recommended_actions(diagnostic_findings)
 
     if diagnostic_summary is None and (diagnostic_findings or incidents):
-        blocking = any(
-            bool(finding.get("blocking")) for finding in diagnostic_findings
-        ) or any(bool(incident.get("blocking")) for incident in incidents)
+        blocking = any(bool(finding.get("blocking")) for finding in diagnostic_findings) or any(
+            bool(incident.get("blocking")) for incident in incidents
+        )
         diagnostic_summary = {
             "generated_at": _utc_now_iso(),
             "repo_id": str(operation.get("repo_id") or "").strip() or None,
@@ -733,9 +731,7 @@ def build_operation_diagnosis(
         diagnostic_artifacts = list(diagnostic_summary.get("diagnostic_artifacts") or [])
 
     blocking = bool(
-        dict(diagnostic_summary or {}).get("blocking")
-        if diagnostic_summary is not None
-        else False
+        dict(diagnostic_summary or {}).get("blocking") if diagnostic_summary is not None else False
     ) or any(bool(incident.get("blocking")) for incident in incidents)
     evidence_types_present = sorted(
         {

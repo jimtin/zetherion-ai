@@ -803,9 +803,7 @@ def test_owner_ci_storage_helper_branches_cover_json_filtering_and_local_receipt
     assert _stable_feedback_key([" Owner-1 ", "Run-1", None]) == _stable_feedback_key(
         ["owner-1", "run-1", ""]
     )
-    assert _pending_repo_readiness("repo-1", "pending").missing_evidence == [
-        "owner_ci_run_missing"
-    ]
+    assert _pending_repo_readiness("repo-1", "pending").missing_evidence == ["owner_ci_run_missing"]
     assert _validate_schema_identifier("owner_personal") == "owner_personal"
     with pytest.raises(ValueError, match="Invalid PostgreSQL schema name"):
         _validate_schema_identifier("owner-personal")

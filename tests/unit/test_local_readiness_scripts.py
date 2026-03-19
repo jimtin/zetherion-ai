@@ -135,9 +135,7 @@ def test_write_local_readiness_receipt_synthesizes_shards_from_execution_log(
     assert payload["release_verification"]["runtime_status_persistence"] is True
 
 
-def test_write_workspace_readiness_receipt_aggregates_repo_receipts(
-    tmp_path, monkeypatch
-) -> None:
+def test_write_workspace_readiness_receipt_aggregates_repo_receipts(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     repo_a = tmp_path / "repo-a.json"
     repo_b = tmp_path / "repo-b.json"

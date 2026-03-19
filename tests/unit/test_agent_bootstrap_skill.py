@@ -306,10 +306,7 @@ async def test_agent_app_adoption_handlers_return_gaps_readiness_and_coaching() 
 
     assert coaching.success is True
     assert coaching.data["coaching"][0]["scope"] == "app"
-    assert (
-        "AGENTS.md"
-        in coaching.data["coaching"][0]["recommendations"][0]["title"]
-    )
+    assert "AGENTS.md" in coaching.data["coaching"][0]["recommendations"][0]["title"]
     assert gaps.success is True
     gap_types = {gap["gap_type"] for gap in gaps.data["integration_gaps"]}
     assert "missing_connector_record" in gap_types
@@ -974,20 +971,22 @@ async def test_system_validation_handlers_return_matrix_plan_readiness_and_coach
     )
 
     assert matrix.success is True
-    assert {
-        mode["mode_id"] for mode in matrix.data["validation_matrix"]["modes"]
-    } >= {"zetherion_alone", "cgs_alone", "combined_system"}
+    assert {mode["mode_id"] for mode in matrix.data["validation_matrix"]["modes"]} >= {
+        "zetherion_alone",
+        "cgs_alone",
+        "combined_system",
+    }
     assert plan.success is True
-    assert {
-        profile["mode_id"] for profile in plan.data["system_run_plan"]["profiles"]
-    } >= {"zetherion_alone", "cgs_alone", "combined_system"}
+    assert {profile["mode_id"] for profile in plan.data["system_run_plan"]["profiles"]} >= {
+        "zetherion_alone",
+        "cgs_alone",
+        "combined_system",
+    }
     assert readiness.success is True
     assert readiness.data["rollout_readiness"]["status"] == "ready"
     assert coaching.success is True
     assert coaching.data["coaching"][0]["scope"] == "system_run"
-    assert (
-        "Combined-system validation" in coaching.data["coaching"][0]["summary"]
-    )
+    assert "Combined-system validation" in coaching.data["coaching"][0]["summary"]
 
 
 @pytest.mark.asyncio
@@ -1368,12 +1367,12 @@ async def test_app_coaching_and_rollout_helpers_cover_degraded_and_recorded_only
     ]
     storage.list_agent_coaching_feedback = AsyncMock(
         return_value=[
-        {
-            "feedback_id": "feedback-1",
-            "scope": "app",
-            "summary": "Existing app coaching",
-            "blocking": False,
-        }
+            {
+                "feedback_id": "feedback-1",
+                "scope": "app",
+                "summary": "Existing app coaching",
+                "blocking": False,
+            }
         ]
     )
     skill = AgentBootstrapSkill(storage=storage)

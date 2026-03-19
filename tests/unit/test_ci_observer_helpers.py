@@ -54,12 +54,14 @@ def _storage() -> MagicMock:
 
 
 def test_ci_observer_helper_paths_cover_owner_and_resource_defaults() -> None:
-    assert _normalize_owner_id(
-        SkillRequest(user_id="user-1", context={"owner_id": "owner-1"})
-    ) == "owner-1"
-    assert _normalize_owner_id(
-        SkillRequest(user_id="user-1", context={"operator_id": "operator-1"})
-    ) == "operator-1"
+    assert (
+        _normalize_owner_id(SkillRequest(user_id="user-1", context={"owner_id": "owner-1"}))
+        == "owner-1"
+    )
+    assert (
+        _normalize_owner_id(SkillRequest(user_id="user-1", context={"operator_id": "operator-1"}))
+        == "operator-1"
+    )
     assert _normalize_owner_id(SkillRequest(user_id="")) == "owner"
 
     explicit = _resource_reservation_for_shard(
@@ -311,9 +313,7 @@ async def test_ci_observer_readiness_reports_github_security_as_unavailable_with
     github_security = response.data["readiness"]["github_security"]
     assert github_security["status"] == "unavailable"
     assert github_security["reason"] == "github_token_missing"
-    assert (
-        response.data["readiness"]["repo_readiness"][0]["github_security"] is None
-    )
+    assert response.data["readiness"]["repo_readiness"][0]["github_security"] is None
 
 
 @pytest.mark.asyncio
@@ -344,9 +344,7 @@ async def test_ci_observer_readiness_includes_github_security_alert_summary(
                 {"security_vulnerability": {"severity": "high", "package": {"ecosystem": "pip"}}}
             ]
 
-        async def list_code_scanning_alerts(
-            self, owner: str, repo: str
-        ) -> list[dict[str, object]]:
+        async def list_code_scanning_alerts(self, owner: str, repo: str) -> list[dict[str, object]]:
             assert (owner, repo) == ("jimtin", "zetherion-ai")
             return [{"rule": {"security_severity_level": "medium"}, "tool": {"name": "CodeQL"}}]
 
@@ -447,9 +445,7 @@ async def test_build_github_security_summary_handles_api_errors_and_invalid_repo
         async def list_dependabot_alerts(self, owner: str, repo: str) -> list[dict[str, object]]:
             raise GitHubAPIError("dependabot unavailable", status_code=503)
 
-        async def list_code_scanning_alerts(
-            self, owner: str, repo: str
-        ) -> list[dict[str, object]]:
+        async def list_code_scanning_alerts(self, owner: str, repo: str) -> list[dict[str, object]]:
             assert (owner, repo) == ("jimtin", "zetherion-ai")
             return [
                 {
@@ -692,8 +688,9 @@ async def test_ci_observer_storage_and_vercel_report_helpers_cover_alerting_path
 
 
 @pytest.mark.asyncio
-async def test_ci_observer_storage_report_covers_healthy_inventory_without_cleanup_receipts(
-) -> None:
+async def test_ci_observer_storage_report_covers_healthy_inventory_without_cleanup_receipts() -> (
+    None
+):
     storage = _storage()
     storage.list_repo_profiles.return_value = [{"repo_id": "repo-a", "display_name": "Repo A"}]
     storage.list_runs.return_value = [

@@ -903,6 +903,7 @@ async def test_list_accessible_apps_and_require_app_access_follow_app_and_repo_g
             "active": False,
         },
     ]
+
     async def _get_app_profile(owner_id: str, app_id: str) -> dict[str, Any] | None:
         if app_id == "zetherion-ai":
             return {"app_id": "zetherion-ai", "profile": {}}
@@ -949,8 +950,7 @@ async def test_list_accessible_apps_and_require_app_access_follow_app_and_repo_g
 
 
 @pytest.mark.asyncio
-async def test_resolve_repo_profile_and_find_or_create_operation_cover_builtin_and_create_paths(
-) -> None:
+async def test_resolve_repo_profile_and_find_or_create_operation_builtin_and_create_paths() -> None:
     storage = _storage()
     storage.get_repo_profile.side_effect = [None, None]
     storage.find_managed_operation_by_ref.side_effect = [
@@ -1052,8 +1052,9 @@ async def test_workspace_bundle_payload_prefers_github_archive_and_falls_back_on
 
 
 @pytest.mark.asyncio
-async def test_read_service_view_and_execute_service_action_record_gap_on_validation_errors(
-) -> None:
+async def test_read_service_view_and_execute_service_action_record_gap_on_validation_errors() -> (
+    None
+):
     storage = _storage()
     storage.record_agent_audit_event = AsyncMock(return_value={"audit_id": "audit-1"})
     storage.create_agent_service_request = AsyncMock(return_value={"request_id": "req-1"})

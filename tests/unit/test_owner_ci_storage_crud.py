@@ -1321,15 +1321,18 @@ async def test_run_report_and_projection_accessors_cover_missing_and_node_filter
         "evidence": [{"evidence_ref_id": "evidence-node"}],
     }
 
-    with patch.object(
-        storage_module,
-        "build_run_report",
-        return_value=base_report,
-    ) as build_report, patch.object(
-        storage_module,
-        "_filter_run_report_for_node",
-        return_value=filtered_report,
-    ) as filter_report:
+    with (
+        patch.object(
+            storage_module,
+            "build_run_report",
+            return_value=base_report,
+        ) as build_report,
+        patch.object(
+            storage_module,
+            "_filter_run_report_for_node",
+            return_value=filtered_report,
+        ) as filter_report,
+    ):
         report = await report_storage.get_run_report(
             "owner-1",
             "run-1",
@@ -1390,17 +1393,12 @@ async def test_run_report_and_projection_accessors_cover_missing_and_node_filter
         ]
     )
 
-    assert await projection_storage.get_run_graph("owner-1", "run-1") == {
-        "nodes": ["run-node"]
-    }
+    assert await projection_storage.get_run_graph("owner-1", "run-1") == {"nodes": ["run-node"]}
     assert await projection_storage.get_run_graph("owner-1", "missing-run") is None
     assert await projection_storage.get_run_correlation_context("owner-1", "run-1") == {
         "trace_ids": ["trace-1"]
     }
-    assert (
-        await projection_storage.get_run_correlation_context("owner-1", "missing-run")
-        is None
-    )
+    assert await projection_storage.get_run_correlation_context("owner-1", "missing-run") is None
     assert await projection_storage.get_run_diagnostics(
         "owner-1",
         "run-1",
@@ -1652,10 +1650,7 @@ async def test_agent_bootstrap_docs_principal_connector_and_app_methods_round_tr
     assert pack["version"] == "v1"
     assert current_pack is not None and current_pack["current"] is True
     assert versioned_pack is not None
-    assert (
-        versioned_pack["pack"]["workspace_manifest"]["repo_id"]
-        == "catalyst-group-solutions"
-    )
+    assert versioned_pack["pack"]["workspace_manifest"]["repo_id"] == "catalyst-group-solutions"
     assert any("DELETE FROM" in call[0] for call in conn.execute_calls)
 
 
@@ -2243,8 +2238,7 @@ async def test_storage_filter_and_missing_record_paths_cover_blank_optional_inpu
 
 
 @pytest.mark.asyncio
-async def test_storage_missing_row_errors_cover_service_request_capability_and_operation_creation(
-) -> None:
+async def test_storage_missing_row_errors_cover_service_request_capability_and_operation() -> None:
     missing_request_storage = _storage(_FakeConn(fetchrow_results=[None]))
     with pytest.raises(RuntimeError, match="Create agent service request returned no row"):
         await missing_request_storage.create_agent_service_request(
@@ -2696,8 +2690,9 @@ async def test_claim_worker_job_skips_claim_race_when_update_returns_none() -> N
 
 
 @pytest.mark.asyncio
-async def test_store_worker_observability_and_recompute_run_status_cover_state_transitions(
-) -> None:
+async def test_store_worker_observability_and_recompute_run_status_cover_state_transitions() -> (
+    None
+):
     conn = _FakeConn(
         fetchrow_results=[
             _run_row(status="review_pending"),
@@ -2812,15 +2807,11 @@ async def test_store_worker_observability_and_recompute_run_status_cover_state_t
         await storage._recompute_run_status("owner-1", "run-1")  # noqa: SLF001
 
     summary_insert = next(
-        call
-        for call in conn.execute_calls
-        if "owner_ci_project_usage_summaries" in call[0]
+        call for call in conn.execute_calls if "owner_ci_project_usage_summaries" in call[0]
     )
     summary_payload = json.loads(str(summary_insert[1][3]))
     updated_statuses = [
-        str(call[1][2])
-        for call in conn.execute_calls
-        if call[0].lstrip().startswith("UPDATE")
+        str(call[1][2]) for call in conn.execute_calls if call[0].lstrip().startswith("UPDATE")
     ]
 
     assert any("worker.result.accepted" in str(call[1]) for call in conn.execute_calls)
@@ -2837,8 +2828,7 @@ async def test_store_worker_observability_and_recompute_run_status_cover_state_t
 
 
 @pytest.mark.asyncio
-async def test_store_worker_observability_covers_existing_log_chunks_and_non_dict_samples(
-) -> None:
+async def test_store_worker_observability_covers_existing_log_chunks_and_non_dict_samples() -> None:
     conn = _FakeConn()
     storage = _storage(conn)
 
@@ -2873,19 +2863,11 @@ async def test_store_worker_observability_covers_existing_log_chunks_and_non_dic
         error_json={},
     )
 
-    log_inserts = [
-        call for call in conn.execute_calls if "owner_ci_log_chunks" in call[0]
-    ]
-    sample_inserts = [
-        call for call in conn.execute_calls if "owner_ci_resource_samples" in call[0]
-    ]
-    bundle_insert = next(
-        call for call in conn.execute_calls if "owner_ci_debug_bundles" in call[0]
-    )
+    log_inserts = [call for call in conn.execute_calls if "owner_ci_log_chunks" in call[0]]
+    sample_inserts = [call for call in conn.execute_calls if "owner_ci_resource_samples" in call[0]]
+    bundle_insert = next(call for call in conn.execute_calls if "owner_ci_debug_bundles" in call[0])
     summary_insert = next(
-        call
-        for call in conn.execute_calls
-        if "owner_ci_project_usage_summaries" in call[0]
+        call for call in conn.execute_calls if "owner_ci_project_usage_summaries" in call[0]
     )
 
     assert len(log_inserts) == 1
@@ -2898,8 +2880,7 @@ async def test_store_worker_observability_covers_existing_log_chunks_and_non_dic
 
 
 @pytest.mark.asyncio
-async def test_recompute_run_status_covers_missing_run_repo_profile_and_local_receipt_fallbacks(
-) -> None:
+async def test_recompute_run_status_covers_missing_run_repo_profile_and_local_receipts() -> None:
     missing_run_conn = _FakeConn(fetchrow_results=[None])
     missing_run_storage = _storage(missing_run_conn)
 
@@ -2936,19 +2917,23 @@ async def test_recompute_run_status_covers_missing_run_repo_profile_and_local_re
         ],
     )
     shard_receipt_storage = _storage(shard_receipt_conn)
-    with patch.object(
-        storage_module,
-        "_load_local_repo_readiness_from_shards",
-        return_value=({"source": "shards"}, {"source": "shards"}),
-    ) as from_shards, patch.object(
-        storage_module,
-        "_load_local_repo_readiness",
-        return_value=({"source": "filesystem"}, {"source": "filesystem"}),
-    ) as from_fs, patch.object(
-        storage_module,
-        "overlay_local_readiness_shards",
-        side_effect=lambda shards, receipt: shards,
-    ) as overlay:
+    with (
+        patch.object(
+            storage_module,
+            "_load_local_repo_readiness_from_shards",
+            return_value=({"source": "shards"}, {"source": "shards"}),
+        ) as from_shards,
+        patch.object(
+            storage_module,
+            "_load_local_repo_readiness",
+            return_value=({"source": "filesystem"}, {"source": "filesystem"}),
+        ) as from_fs,
+        patch.object(
+            storage_module,
+            "overlay_local_readiness_shards",
+            side_effect=lambda shards, receipt: shards,
+        ) as overlay,
+    ):
         await shard_receipt_storage._recompute_run_status("owner-1", "run-1")  # noqa: SLF001
 
     from_shards.assert_called_once()
@@ -2969,19 +2954,23 @@ async def test_recompute_run_status_covers_missing_run_repo_profile_and_local_re
         ],
     )
     filesystem_receipt_storage = _storage(filesystem_receipt_conn)
-    with patch.object(
-        storage_module,
-        "_load_local_repo_readiness_from_shards",
-        return_value=(None, None),
-    ) as from_shards_none, patch.object(
-        storage_module,
-        "_load_local_repo_readiness",
-        return_value=({"source": "filesystem"}, {"source": "filesystem"}),
-    ) as from_fs_only, patch.object(
-        storage_module,
-        "overlay_local_readiness_shards",
-        side_effect=lambda shards, receipt: shards,
-    ) as overlay_filesystem:
+    with (
+        patch.object(
+            storage_module,
+            "_load_local_repo_readiness_from_shards",
+            return_value=(None, None),
+        ) as from_shards_none,
+        patch.object(
+            storage_module,
+            "_load_local_repo_readiness",
+            return_value=({"source": "filesystem"}, {"source": "filesystem"}),
+        ) as from_fs_only,
+        patch.object(
+            storage_module,
+            "overlay_local_readiness_shards",
+            side_effect=lambda shards, receipt: shards,
+        ) as overlay_filesystem,
+    ):
         await filesystem_receipt_storage._recompute_run_status("owner-1", "run-1")  # noqa: SLF001
 
     from_shards_none.assert_called_once()
@@ -3017,9 +3006,7 @@ async def test_recompute_run_status_accepts_string_backed_review_receipts() -> N
     await storage._recompute_run_status("owner-1", "run-1")  # noqa: SLF001
 
     status_update = next(
-        call
-        for call in conn.execute_calls
-        if call[0].lstrip().startswith("UPDATE")
+        call for call in conn.execute_calls if call[0].lstrip().startswith("UPDATE")
     )
     assert status_update[1][2] == "ready_to_merge"
 
@@ -3204,8 +3191,9 @@ async def test_claim_worker_job_returns_none_when_node_lacks_required_capabiliti
 
 
 @pytest.mark.asyncio
-async def test_claim_worker_job_skips_blocked_parallel_group_and_claims_next_admissible_job(
-) -> None:
+async def test_claim_worker_job_skips_blocked_parallel_group_and_claims_next_admissible_job() -> (
+    None
+):
     blocked_job = {
         **_worker_job_row(),
         "job_id": "job-blocked",

@@ -10,7 +10,7 @@ def test_forensic_receipt_script_captures_expected_windows_state() -> None:
     script = FORENSIC_PATH.read_text(encoding="utf-8")
 
     assert '[string]$WslDistribution = "Ubuntu"' in script
-    assert '$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution' in script
+    assert "$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution" in script
     assert "Get-GitForensics" in script
     assert "Get-WslFacts" in script
     assert "Get-WslHostConfigFacts" in script

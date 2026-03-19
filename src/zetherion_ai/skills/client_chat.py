@@ -147,9 +147,7 @@ def _resolve_model_selection(
 ) -> dict[str, Any]:
     normalized_mode = str(selection_mode or _DEFAULT_SELECTION_MODE).strip().lower()
     if normalized_mode not in _ALLOWED_SELECTION_MODES:
-        raise ValueError(
-            f"selection_mode must be one of {sorted(_ALLOWED_SELECTION_MODES)}"
-        )
+        raise ValueError(f"selection_mode must be one of {sorted(_ALLOWED_SELECTION_MODES)}")
 
     forced_provider = _normalize_provider_override(provider)
     forced_model = str(model or "").strip() or None
@@ -173,9 +171,7 @@ def _resolve_model_selection(
         raise ValueError("provider or model is required when selection_mode is prefer or lock")
 
     allow_forced_fallback = (
-        bool(fallback_allowed)
-        if fallback_allowed is not None
-        else normalized_mode == "prefer"
+        bool(fallback_allowed) if fallback_allowed is not None else normalized_mode == "prefer"
     )
     if normalized_mode == "lock":
         allow_forced_fallback = False

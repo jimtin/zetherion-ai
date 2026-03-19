@@ -440,10 +440,7 @@ async def test_docker_runner_uses_wsl_executor_and_translated_mounts(
         in run_call["args"]
     )
     assert "E2E_RUNTIME_HOST=host.docker.internal" in run_call["args"]
-    assert (
-        f"ZETHERION_ENV_FILE={runtime_env_file}"
-        in run_call["args"]
-    )
+    assert f"ZETHERION_ENV_FILE={runtime_env_file}" in run_call["args"]
     assert f"{runtime_env_file}:{runtime_env_file}:ro" in run_call["args"]
     assert (
         "/mnt/c/ZetherionCI/workspaces/catalyst-group-solutions:/mnt/c/ZetherionCI/workspaces/catalyst-group-solutions"
@@ -1171,8 +1168,7 @@ async def test_docker_runner_rebuilds_stale_tool_image_when_context_hash_changes
         for command in captured_commands
     )
     assert any(
-        "docker build" in " ".join(command)
-        and "zetherion.tool_context_hash=" in " ".join(command)
+        "docker build" in " ".join(command) and "zetherion.tool_context_hash=" in " ".join(command)
         for command in captured_commands
     )
     image_prepare_actions = result.output.get("image_prepare_actions") or []
@@ -1301,6 +1297,7 @@ async def test_docker_runner_truncates_large_output_instead_of_failing_guardrail
         docker_backend="wsl_docker",
         wsl_distribution="Ubuntu",
     )
+
     async def _fake_ensure_container_image(
         *,
         image: str,

@@ -365,8 +365,7 @@ def test_build_run_diagnostics_classifies_shard_contract_and_runtime_failures() 
     assert "runtime_dependency_missing" in codes
 
 
-def test_build_run_diagnostics_classifies_required_paths_capacity_release_and_provider_failures(
-) -> None:
+def test_build_run_diagnostics_classifies_required_paths_capacity_release_and_provider() -> None:
     diagnostic_summary, findings = build_run_diagnostics(
         run={
             "run_id": "run-2",
@@ -429,8 +428,9 @@ def test_build_run_diagnostics_classifies_required_paths_capacity_release_and_pr
     } <= codes
 
 
-def test_build_operation_diagnosis_uses_coverage_artifacts_when_findings_or_artifacts_missing(
-) -> None:
+def test_build_operation_diagnosis_uses_coverage_artifacts_when_findings_or_artifacts_missing() -> (
+    None
+):
     coverage_summary_payload = {
         "passed": False,
         "metrics": {"branches": {"passed": False, "actual": 88.0}},
@@ -494,8 +494,7 @@ def test_build_operation_diagnosis_uses_coverage_artifacts_when_findings_or_arti
     ]
 
 
-def test_build_operation_diagnosis_dedupes_string_actions_and_ignores_non_dict_payloads(
-) -> None:
+def test_build_operation_diagnosis_dedupes_string_actions_and_ignores_non_dict_payloads() -> None:
     diagnosis = build_operation_diagnosis(
         operation={
             "operation_id": "op-actions",

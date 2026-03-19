@@ -69,21 +69,28 @@ def _storage() -> MagicMock:
 
 
 def test_normalize_owner_id_prefers_context_then_user_then_default() -> None:
-    assert _normalize_owner_id(
-        SkillRequest(
-            user_id="user-1",
-            context={"owner_id": "owner-1", "operator_id": "op-1", "actor_sub": "actor-1"},
+    assert (
+        _normalize_owner_id(
+            SkillRequest(
+                user_id="user-1",
+                context={"owner_id": "owner-1", "operator_id": "op-1", "actor_sub": "actor-1"},
+            )
         )
-    ) == "owner-1"
-    assert _normalize_owner_id(
-        SkillRequest(
-            user_id="user-1",
-            context={"operator_id": "op-1", "actor_sub": "actor-1"},
+        == "owner-1"
+    )
+    assert (
+        _normalize_owner_id(
+            SkillRequest(
+                user_id="user-1",
+                context={"operator_id": "op-1", "actor_sub": "actor-1"},
+            )
         )
-    ) == "op-1"
-    assert _normalize_owner_id(
-        SkillRequest(user_id="user-1", context={"actor_sub": "actor-1"})
-    ) == "actor-1"
+        == "op-1"
+    )
+    assert (
+        _normalize_owner_id(SkillRequest(user_id="user-1", context={"actor_sub": "actor-1"}))
+        == "actor-1"
+    )
     assert _normalize_owner_id(SkillRequest(user_id="user-1")) == "user-1"
     assert _normalize_owner_id(SkillRequest(user_id="")) == "owner"
 
@@ -245,9 +252,9 @@ async def test_ci_controller_rejects_certification_when_gitleaks_is_missing() ->
 
     assert response.success is True
     assert response.data["preflight"]["accepted"] is False
-    assert {
-        violation["rule_code"] for violation in response.data["preflight"]["violations"]
-    } == {"missing_preflight_check"}
+    assert {violation["rule_code"] for violation in response.data["preflight"]["violations"]} == {
+        "missing_preflight_check"
+    }
     assert "gitleaks" in response.data["preflight"]["violations"][0]["summary"]
     assert response.data["coaching"][0]["recommendations"][0]["agents_md_update"]
     storage.create_run.assert_not_awaited()
@@ -287,9 +294,9 @@ async def test_ci_controller_rejects_certification_when_ruff_version_is_wrong() 
 
     assert response.success is True
     assert response.data["preflight"]["accepted"] is False
-    assert {
-        violation["rule_code"] for violation in response.data["preflight"]["violations"]
-    } == {"tool_version_mismatch"}
+    assert {violation["rule_code"] for violation in response.data["preflight"]["violations"]} == {
+        "tool_version_mismatch"
+    }
     assert "0.8.4" in response.data["preflight"]["violations"][0]["summary"]
     assert response.data["coaching"][0]["recommendations"][0]["agents_md_update"]
     storage.create_run.assert_not_awaited()
@@ -1131,9 +1138,7 @@ async def test_ci_observer_returns_workspace_readiness() -> None:
     }
     skill = CiObserverSkill(storage=storage)
 
-    response = await skill.handle(
-        SkillRequest(intent="ci_reporting_readiness", user_id="owner-1")
-    )
+    response = await skill.handle(SkillRequest(intent="ci_reporting_readiness", user_id="owner-1"))
 
     assert response.success is True
     assert response.data["readiness"]["workspace_readiness"]["merge_ready"] is True
@@ -1289,9 +1294,7 @@ async def test_ci_observer_builds_owner_capacity_report() -> None:
     }
     skill = CiObserverSkill(storage=storage)
 
-    response = await skill.handle(
-        SkillRequest(intent="ci_reporting_capacity", user_id="owner-1")
-    )
+    response = await skill.handle(SkillRequest(intent="ci_reporting_capacity", user_id="owner-1"))
 
     assert response.success is True
     capacity = response.data["capacity"]
@@ -1370,9 +1373,7 @@ async def test_ci_observer_builds_scheduler_overview() -> None:
     ]
     skill = CiObserverSkill(storage=storage)
 
-    response = await skill.handle(
-        SkillRequest(intent="ci_reporting_scheduler", user_id="owner-1")
-    )
+    response = await skill.handle(SkillRequest(intent="ci_reporting_scheduler", user_id="owner-1"))
 
     assert response.success is True
     scheduler = response.data["scheduler"]
@@ -1388,9 +1389,7 @@ async def test_ci_observer_builds_scheduler_overview() -> None:
         "queued-unit",
         "queued-lint",
     ]
-    assert [candidate["shard_id"] for candidate in host["blocked_candidates"]] == [
-        "queued-public"
-    ]
+    assert [candidate["shard_id"] for candidate in host["blocked_candidates"]] == ["queued-public"]
     assert host["blocked_candidates"][0]["blocking_reasons"] == [
         "service budget exhausted (1/1)",
         "parallel group `db` already active",

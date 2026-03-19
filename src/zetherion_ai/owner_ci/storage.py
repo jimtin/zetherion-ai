@@ -211,13 +211,10 @@ def _normalize_local_repo_readiness_payload(
             if str(path).strip()
         ],
         shard_receipts=[
-            normalize_shard_receipt(repo_id, shard_payload)
-            for shard_payload in shard_payloads
+            normalize_shard_receipt(repo_id, shard_payload) for shard_payload in shard_payloads
         ],
         release_verification=(
-            normalize_release_verification_receipt(release_payload)
-            if release_payload
-            else None
+            normalize_release_verification_receipt(release_payload) if release_payload else None
         ),
         summary=str(payload.get("summary") or "local readiness receipt loaded").strip(),
     )
@@ -1107,18 +1104,14 @@ def _job_storage_blocking_reason(
     target_free_bytes = int(storage_policy.get("target_free_bytes") or 0)
     if low_disk_free_bytes and disk_free_bytes < low_disk_free_bytes:
         return (
-            "disk headroom below blocking watermark "
-            f"({disk_free_bytes}/{low_disk_free_bytes})"
+            "disk headroom below blocking watermark " f"({disk_free_bytes}/{low_disk_free_bytes})"
         )
     if (
         target_free_bytes
         and disk_free_bytes < target_free_bytes
         and reservation.resource_class.strip() in {"service", "serial"}
     ):
-        return (
-            "disk headroom below heavy-shard target "
-            f"({disk_free_bytes}/{target_free_bytes})"
-        )
+        return "disk headroom below heavy-shard target " f"({disk_free_bytes}/{target_free_bytes})"
     return None
 
 
@@ -3831,10 +3824,7 @@ class OwnerCiStorage:
                 repo_id,
                 max(1, limit),
             )
-        items = [
-            self._coerce_json_object(row["summary_json"], "summary_json")
-            for row in rows
-        ]
+        items = [self._coerce_json_object(row["summary_json"], "summary_json") for row in rows]
         return {
             "repo_id": repo_id,
             "items": items,
@@ -6696,10 +6686,7 @@ class OwnerCiStorage:
             repo_profile = (
                 self._repo_profile_from_row(dict(repo_row)) if repo_row is not None else None
             )
-            shard_payloads = [
-                self._shard_from_row(dict(row))
-                for row in shard_rows
-            ]
+            shard_payloads = [self._shard_from_row(dict(row)) for row in shard_rows]
             local_receipt = None
             if repo_profile is not None:
                 local_receipt, _ = _load_local_repo_readiness_from_shards(

@@ -205,9 +205,7 @@ def build_correlation_context(run: dict[str, Any]) -> dict[str, Any]:
         ).strip()
         or None,
         environment=(
-            str(
-                metadata.get("environment") or metadata.get("target_environment") or ""
-            ).strip()
+            str(metadata.get("environment") or metadata.get("target_environment") or "").strip()
             or None
         ),
         trace_ids=_dedupe_strings(trace_ids),
@@ -247,18 +245,13 @@ def build_agent_coaching_feedback(gaps: list[dict[str, Any]]) -> list[dict[str, 
                 else None
             ),
             summary=str(
-                metadata.get("summary")
-                or gap.get("suggested_fix")
-                or gap.get("gap_type")
-                or ""
+                metadata.get("summary") or gap.get("suggested_fix") or gap.get("gap_type") or ""
             ),
             findings=[
                 AgentCoachingFinding(
                     finding_id=str(item.get("finding_id") or f"{gap.get('gap_id')}:finding"),
                     coaching_kind=str(
-                        item.get("coaching_kind")
-                        or metadata.get("coaching_kind")
-                        or "diagnostic"
+                        item.get("coaching_kind") or metadata.get("coaching_kind") or "diagnostic"
                     ),
                     rule_code=str(
                         item.get("rule_code")
@@ -271,11 +264,7 @@ def build_agent_coaching_feedback(gaps: list[dict[str, Any]]) -> list[dict[str, 
                     blocking=bool(item.get("blocking", gap.get("blocker", False))),
                     recurrence_count=max(
                         1,
-                        int(
-                            item.get("recurrence_count")
-                            or gap.get("occurrence_count")
-                            or 1
-                        ),
+                        int(item.get("recurrence_count") or gap.get("occurrence_count") or 1),
                     ),
                     confidence=(
                         float(item.get("confidence"))
@@ -470,9 +459,12 @@ def build_recurring_diagnostic_coaching_payloads(
         recurrence_count = int(historical_occurrences.get(rule_code) or 0) + 1
         if recurrence_count < 2:
             continue
-        summary = str(
-            finding.get("root_cause_summary") or finding.get("summary") or "Recurring CI issue"
-        ).strip() or "Recurring CI issue"
+        summary = (
+            str(
+                finding.get("root_cause_summary") or finding.get("summary") or "Recurring CI issue"
+            ).strip()
+            or "Recurring CI issue"
+        )
         remediation = str(
             finding.get("recommended_fix")
             or "Add a preventative instruction to AGENTS.md before rerunning certification."
@@ -596,8 +588,7 @@ def build_run_report(
             node_id=shard_node_id,
             kind="shard",
             label=(
-                str(shard.get("lane_label") or shard.get("lane_id") or shard_id).strip()
-                or shard_id
+                str(shard.get("lane_label") or shard.get("lane_id") or shard_id).strip() or shard_id
             ),
             parent_id=run_node_id,
             dependency_ids=[
@@ -692,9 +683,7 @@ def build_run_report(
             code=str(finding.get("code") or finding.get("type") or "diagnostic").strip()
             or "diagnostic",
             summary=str(
-                finding.get("summary")
-                or finding.get("root_cause_summary")
-                or "Diagnostic finding"
+                finding.get("summary") or finding.get("root_cause_summary") or "Diagnostic finding"
             ).strip()
             or "Diagnostic finding",
             blocking=bool(finding.get("blocking", False)),

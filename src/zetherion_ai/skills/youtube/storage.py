@@ -318,9 +318,7 @@ class YouTubeStorage:
         if not sets:
             return await self.get_channel(channel_id)
         sets.append("updated_at = now()")
-        sql = (
-            f"UPDATE youtube_channels SET {', '.join(sets)} WHERE id = $1 RETURNING *"
-        )  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
+        sql = f"UPDATE youtube_channels SET {', '.join(sets)} WHERE id = $1 RETURNING *"  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         async with self._db.acquire() as conn:
             # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
             row = await conn.fetchrow(sql, channel_id, *args)
@@ -801,9 +799,7 @@ class YouTubeStorage:
                 i += 1
         if not sets:
             return await self.get_assumption(assumption_id)
-        sql = (
-            f"UPDATE youtube_assumptions SET {', '.join(sets)} WHERE id = $1 RETURNING *"
-        )  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
+        sql = f"UPDATE youtube_assumptions SET {', '.join(sets)} WHERE id = $1 RETURNING *"  # nosec B608 # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
         async with self._db.acquire() as conn:
             # nosemgrep: python.lang.security.audit.sqli.asyncpg-sqli.asyncpg-sqli
             row = await conn.fetchrow(sql, assumption_id, *args)
