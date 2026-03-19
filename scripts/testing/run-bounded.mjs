@@ -240,11 +240,19 @@ function localVenvPythonCandidates() {
 }
 
 function pythonExecutableSupportsPytest(executable, env = process.env) {
-  const result = spawnSync(executable, ["-c", "import pytest"], {
-    cwd: process.cwd(),
-    env,
-    encoding: "utf-8",
-  });
+  const isWindowsCmdWrapper =
+    process.platform === "win32" && /\.(cmd|bat)$/i.test(String(executable ?? "").trim());
+  const result = isWindowsCmdWrapper
+    ? spawnSync("cmd.exe", ["/d", "/s", "/c", executable, "-c", "import pytest"], {
+        cwd: process.cwd(),
+        env,
+        encoding: "utf-8",
+      })
+    : spawnSync(executable, ["-c", "import pytest"], {
+        cwd: process.cwd(),
+        env,
+        encoding: "utf-8",
+      });
   return result.status === 0;
 }
 
