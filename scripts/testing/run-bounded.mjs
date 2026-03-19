@@ -264,7 +264,9 @@ function isHeartbeatWrapper(command, args) {
   if (args.length === 0) {
     return false;
   }
-  const wrapperPath = String(args[0] ?? "").trim();
+  const wrapperPath = String(args[0] ?? "")
+    .trim()
+    .replaceAll("\\", "/");
   return wrapperPath.endsWith("scripts/testing/run-with-heartbeat.mjs");
 }
 
