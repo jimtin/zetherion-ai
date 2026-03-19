@@ -591,13 +591,20 @@ if [[ -n "${SSL_CERT_FILE:-}" ]]; then
     SSL_CERT_ENV_ARGS=(SSL_CERT_FILE="$SSL_CERT_FILE")
 fi
 
+PYTEST_TIMEOUT_ARGS=(--timeout=120)
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        PYTEST_TIMEOUT_ARGS+=(--timeout-method=thread)
+        ;;
+esac
+
 run_suite \
     "docker" \
     "$DOCKER_LOG_PATH" \
     env DOCKER_MANAGED_EXTERNALLY=true "${SSL_CERT_ENV_ARGS[@]}" \
     "$PYTHON_BIN" -m pytest tests/integration/test_e2e.py \
     -m "integration and not optional_e2e" \
-    --timeout=120 \
+    "${PYTEST_TIMEOUT_ARGS[@]}" \
     -v \
     --tb=short \
     -s \

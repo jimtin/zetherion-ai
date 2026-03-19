@@ -184,6 +184,14 @@ def test_e2e_run_manager_uses_host_python_for_manifest_work() -> None:
     assert 'manifest_arg="$(normalize_host_python_path "$E2E_RUN_MANIFEST_PATH" "$helper_python")"' in rendered
 
 
+def test_local_required_e2e_receipt_uses_thread_timeout_on_windows() -> None:
+    rendered = (REPO_ROOT / "scripts/local-required-e2e-receipt.sh").read_text(encoding="utf-8")
+    assert "PYTEST_TIMEOUT_ARGS=(--timeout=120)" in rendered
+    assert 'case "$(uname -s)" in' in rendered
+    assert "--timeout-method=thread" in rendered
+    assert '"${PYTEST_TIMEOUT_ARGS[@]}"' in rendered
+
+
 def test_repo_node_tool_prefers_repo_and_windows_node_paths() -> None:
     rendered = (REPO_ROOT / "scripts/repo-node-tool.sh").read_text(encoding="utf-8")
     assert '"$REPO_DIR/node_modules/.bin/node"' in rendered

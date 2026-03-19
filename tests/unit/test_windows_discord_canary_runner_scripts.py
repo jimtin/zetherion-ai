@@ -48,6 +48,12 @@ def test_required_discord_wrapper_uses_thread_timeout_on_windows() -> None:
     assert 'finalize_wrapper "$pytest_exit_code"' in rendered
 
 
+def test_required_discord_wrapper_keeps_loaded_env_values() -> None:
+    rendered = (REPO_ROOT / "scripts/run-required-discord-e2e.sh").read_text(encoding="utf-8")
+    assert "printf 'export %s=%q\\n'" in rendered
+    assert "printf 'unset %s\\n'" not in rendered
+
+
 def test_discord_e2e_shell_wrappers_avoid_bash4_only_assoc_arrays() -> None:
     for relative_path in (
         "scripts/run-required-discord-e2e.sh",

@@ -122,8 +122,6 @@ load_repo_env() {
     for key in "${preserved_keys[@]}"; do
         if [[ -n "${!key+x}" ]]; then
             printf 'export %s=%q\n' "$key" "${!key}" >>"$restore_file"
-        else
-            printf 'unset %s\n' "$key" >>"$restore_file"
         fi
     done
 
