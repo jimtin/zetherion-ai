@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+DOCKER_PYTHON_WRAPPER="$SCRIPT_DIR/docker-python-tool.sh"
 
 resolve_repo_python() {
     local candidate
@@ -14,14 +15,33 @@ resolve_repo_python() {
         fi
     done
 
-    if command -v python3 >/dev/null 2>&1; then
-        printf '%s\n' "python3"
-        return 0
+    command -v python3 >/dev/null 2>&1 && printf '%s\n' "python3"
+}
+
+python_supports_module() {
+    local python_bin="${1:-}"
+    local module_name="${2:-}"
+    [ -n "$python_bin" ] || return 1
+    [ -n "$module_name" ] || return 1
+    "$python_bin" -c "import ${module_name}" >/dev/null 2>&1
+}
+
+invoke_with_docker_fallback() {
+    if [ -x "$DOCKER_PYTHON_WRAPPER" ]; then
+        exec "$DOCKER_PYTHON_WRAPPER" "$@"
     fi
 
-    echo "ERROR: Unable to locate a repo Python interpreter (.venv/bin/python, venv/bin/python, or python3)." >&2
+    echo "ERROR: Unable to satisfy Python command locally and docker fallback is unavailable." >&2
     return 1
 }
 
 PYTHON_BIN="$(resolve_repo_python)"
+if [ -z "$PYTHON_BIN" ]; then
+    invoke_with_docker_fallback "$@"
+fi
+
+if [ "${1:-}" = "-m" ] && [ "${2:-}" = "mkdocs" ] && ! python_supports_module "$PYTHON_BIN" "mkdocs"; then
+    invoke_with_docker_fallback "$@"
+fi
+
 exec "$PYTHON_BIN" "$@"

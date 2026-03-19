@@ -115,6 +115,10 @@ def test_repo_python_tool_prefers_repo_virtualenvs_before_python3() -> None:
     assert '"$REPO_DIR/.venv/bin/python"' in rendered
     assert '"$REPO_DIR/venv/bin/python"' in rendered
     assert 'command -v python3' in rendered
+    assert 'DOCKER_PYTHON_WRAPPER="$SCRIPT_DIR/docker-python-tool.sh"' in rendered
+    assert 'python_supports_module' in rendered
+    assert 'exec "$DOCKER_PYTHON_WRAPPER" "$@"' in rendered
+    assert '[ "${1:-}" = "-m" ] && [ "${2:-}" = "mkdocs" ]' in rendered
     assert 'exec "$PYTHON_BIN" "$@"' in rendered
 
 
