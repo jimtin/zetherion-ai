@@ -97,6 +97,30 @@ def test_row_to_status_handles_invalid_json_and_naive_datetimes() -> None:
     assert _encode_details(None) == "{}"
 
 
+def test_row_to_status_handles_non_mapping_details_and_missing_datetime() -> None:
+    row = {
+        "service_name": "skills_api",
+        "status": "starting",
+        "summary": "Booting services.",
+        "details": ["unexpected", "list"],
+        "release_revision": "rev-2",
+        "instance_id": "api-1",
+        "updated_at": "not-a-datetime",
+    }
+
+    status = _row_to_status(row)
+
+    assert status == {
+        "service_name": "skills_api",
+        "status": "starting",
+        "summary": "Booting services.",
+        "details": {},
+        "release_revision": "rev-2",
+        "instance_id": "api-1",
+        "updated_at": None,
+    }
+
+
 @pytest.mark.asyncio
 async def test_list_statuses_filters_none_rows_and_preserves_dict_details() -> None:
     pool, conn = _make_pool()

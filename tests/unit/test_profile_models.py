@@ -283,6 +283,16 @@ class TestProfileUpdate:
             desc = update._describe_change()
             assert "test" in desc
 
+    def test_describe_change_falls_back_for_unknown_action(self):
+        """Unknown actions should still produce a safe generic description."""
+        update = ProfileUpdate(
+            profile="user",
+            field_name="test",
+            action="custom",  # type: ignore[arg-type]
+        )
+
+        assert update._describe_change() == "update your test"
+
     def test_to_dict_and_from_dict(self):
         """Test serialization roundtrip."""
         update = ProfileUpdate(
