@@ -140,6 +140,7 @@ start_e2e_run() {
         --service-slot "$E2E_SERVICE_SLOT" \
         --shell | tr -d '\r')"
     eval "$exports"
+    E2E_STACK_ROOT="$(normalize_path_for_current_shell "$E2E_STACK_ROOT" "$helper_python")"
     COMPOSE_FILE="$(normalize_path_for_current_shell "$COMPOSE_FILE" "$helper_python")"
     E2E_RUN_MANIFEST_PATH="$(normalize_path_for_current_shell "$E2E_RUN_MANIFEST_PATH" "$helper_python")"
     E2E_RUN_ENV_PATH="$(normalize_path_for_current_shell "$E2E_RUN_ENV_PATH" "$helper_python")"
