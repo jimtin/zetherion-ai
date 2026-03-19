@@ -392,7 +392,17 @@ try {
         $composeArgs.Add("-d")
         $composeArgs.Add("--build")
         $composeArgs.Add("--remove-orphans")
-        & docker @composeArgs
+        $composeResult = Invoke-ZetherionNativeDockerResult @composeArgs
+        foreach ($entry in @($composeResult.Output)) {
+            Write-Output $entry
+        }
+        if ($composeResult.ExitCode -ne 0) {
+            $message = $composeResult.Text
+            if (-not $message) {
+                $message = "Docker compose startup failed with exit code $($composeResult.ExitCode)."
+            }
+            throw $message
+        }
     }
     finally {
         Pop-Location

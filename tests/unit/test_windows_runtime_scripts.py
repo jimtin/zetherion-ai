@@ -411,3 +411,5 @@ def test_startup_recover_uses_shared_docker_desktop_repair_flow() -> None:
     ) in startup_recover
     assert '$ActionsTaken.Value += "docker_settings_repaired"' in startup_recover
     assert "return [bool]$repair.success" in startup_recover
+    assert "Invoke-ZetherionNativeDockerResult @composeArgs" in startup_recover
+    assert '$message = "Docker compose startup failed with exit code $($composeResult.ExitCode)."' in startup_recover
