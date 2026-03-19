@@ -223,6 +223,11 @@ resolve_python_bin() {
 }
 
 ensure_python_ca_bundle() {
+    if [[ "${PYTHON_BIN:-}" == *"/docker-python-tool.sh" ]]; then
+        unset SSL_CERT_FILE
+        return 0
+    fi
+
     local provided_bundle="${SSL_CERT_FILE:-}"
     if [[ -n "$provided_bundle" && ! -r "$provided_bundle" ]] && command -v cygpath >/dev/null 2>&1; then
         local normalized_provided_bundle
