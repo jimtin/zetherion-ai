@@ -38,7 +38,7 @@ function Invoke-GitCommand {
         [string[]]$Arguments
     )
 
-    & git -c core.safecrlf=false @Arguments
+    & git -c core.safecrlf=false -c core.autocrlf=false @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
     }
@@ -285,6 +285,7 @@ try {
     }
 
     Invoke-GitCommand @("clone", "--no-checkout", $RepositoryUrl, $CandidatePath)
+    Invoke-GitCommand @("-C", $CandidatePath, "config", "core.autocrlf", "false")
     Push-Location $CandidatePath
     try {
         Invoke-GitCommand @("fetch", "--prune", "--force", "origin")

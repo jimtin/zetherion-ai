@@ -20,9 +20,11 @@ def test_prepare_runtime_cutover_stages_clean_candidate_and_rescue_archive() -> 
     assert "git -c core.safecrlf=false status --short --branch" in script
     assert "git -c core.safecrlf=false diff --stat" in script
     assert "git -c core.safecrlf=false ls-files --others --exclude-standard" in script
+    assert "& git -c core.safecrlf=false -c core.autocrlf=false @Arguments" in script
     assert "Get-FileHash -LiteralPath $fullPath -Algorithm SHA256" in script
     assert "& robocopy $Source $Destination /E /COPY:DAT" in script
     assert 'Invoke-GitCommand @("clone", "--no-checkout", $RepositoryUrl, $CandidatePath)' in script
+    assert 'Invoke-GitCommand @("-C", $CandidatePath, "config", "core.autocrlf", "false")' in script
     assert 'Invoke-GitCommand @("fetch", "--depth=1", "--force", "origin", $TargetSha)' in script
     assert 'Invoke-GitCommand @("checkout", "--detach", "--force", $TargetSha)' in script
     assert "Copy-AllowlistedRuntimeState" in script
