@@ -23,6 +23,31 @@ init_discord_e2e_run_manager() {
         DISCORD_E2E_CLEANUP_STATUS DISCORD_E2E_TARGET_LEASE_STATUS DISCORD_E2E_HEARTBEAT_PID
 }
 
+json_helper_python() {
+    local candidate
+    for candidate in \
+        "$REPO_DIR/.venv/bin/python" \
+        "$REPO_DIR/venv/bin/python" \
+        "$REPO_DIR/.venv/Scripts/python.exe" \
+        "$REPO_DIR/venv/Scripts/python.exe"; do
+        if [[ -x "$candidate" || -f "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    for candidate in python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            command -v "$candidate"
+            return 0
+        fi
+    done
+    if [[ -n "${PYTHON_BIN:-}" && "$PYTHON_BIN" != *"/docker-python-tool.sh" ]]; then
+        printf '%s\n' "$PYTHON_BIN"
+        return 0
+    fi
+    return 1
+}
+
 require_discord_e2e_scope() {
     if [[ -z "${TEST_DISCORD_GUILD_ID:-}" ]]; then
         echo "ERROR: TEST_DISCORD_GUILD_ID is required for isolated Discord E2E runs." >&2
@@ -52,17 +77,28 @@ _discord_e2e_scope_args() {
 janitor_discord_e2e_runs() {
     init_discord_e2e_run_manager
     require_discord_e2e_scope
+    local helper_python=""
+    helper_python="$(json_helper_python || true)"
+    if [[ -z "$helper_python" ]]; then
+        return 0
+    fi
     local -a args=("scripts/discord_e2e_run_manager.py" janitor)
     while IFS= read -r -d '' arg; do
         args+=("$arg")
     done < <(_discord_e2e_scope_args)
-    "$PYTHON_BIN" "${args[@]}" >/dev/null || true
+    "$helper_python" "${args[@]}" >/dev/null || true
 }
 
 start_discord_e2e_run() {
     init_discord_e2e_run_manager
     require_discord_e2e_scope
     janitor_discord_e2e_runs
+    local helper_python=""
+    helper_python="$(json_helper_python || true)"
+    if [[ -z "$helper_python" ]]; then
+        echo "ERROR: A host-visible Python interpreter is required for Discord E2E run management." >&2
+        exit 1
+    fi
 
     local -a args=("scripts/discord_e2e_run_manager.py" start)
     while IFS= read -r -d '' arg; do
@@ -73,7 +109,7 @@ start_discord_e2e_run() {
     args+=(--shell)
 
     local exports
-    exports="$($PYTHON_BIN "${args[@]}")"
+    exports="$($helper_python "${args[@]}")"
     eval "$exports"
     export DISCORD_E2E_RUN_ID DISCORD_E2E_RUN_MANIFEST_PATH DISCORD_E2E_CLEANUP_LEDGER_PATH \
         DISCORD_E2E_HEARTBEAT_PATH DISCORD_E2E_CHANNEL_ID DISCORD_E2E_CHANNEL_NAME \
@@ -110,6 +146,7 @@ stop_discord_e2e_heartbeat() {
 cleanup_discord_e2e_run() {
     init_discord_e2e_run_manager
     local reason="${1:-explicit_cleanup}"
+    local helper_python=""
     stop_discord_e2e_heartbeat
 
     if [[ -z "${DISCORD_E2E_RUN_MANIFEST_PATH:-}" || ! -f "$DISCORD_E2E_RUN_MANIFEST_PATH" ]]; then
@@ -118,11 +155,18 @@ cleanup_discord_e2e_run() {
         return 0
     fi
 
-    "$PYTHON_BIN" scripts/discord_e2e_run_manager.py cleanup \
+    helper_python="$(json_helper_python || true)"
+    if [[ -z "$helper_python" ]]; then
+        DISCORD_E2E_CLEANUP_STATUS="cleanup_unknown"
+        export DISCORD_E2E_CLEANUP_STATUS
+        return 0
+    fi
+
+    "$helper_python" scripts/discord_e2e_run_manager.py cleanup \
         --manifest "$DISCORD_E2E_RUN_MANIFEST_PATH" \
         --reason "$reason" >/dev/null || true
 
-    DISCORD_E2E_CLEANUP_STATUS="$($PYTHON_BIN - "$DISCORD_E2E_RUN_MANIFEST_PATH" <<'PY'
+    DISCORD_E2E_CLEANUP_STATUS="$($helper_python - "$DISCORD_E2E_RUN_MANIFEST_PATH" <<'PY'
 import json
 import sys
 from pathlib import Path

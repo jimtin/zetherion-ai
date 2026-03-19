@@ -21,6 +21,12 @@ def test_discord_e2e_shell_wrappers_support_windows_repo_venvs() -> None:
     manager_rendered = (REPO_ROOT / "scripts/discord_e2e_run_manager.sh").read_text(
         encoding="utf-8"
     )
+    assert "json_helper_python()" in manager_rendered
+    assert (
+        "A host-visible Python interpreter is required for Discord E2E run management."
+        in manager_rendered
+    )
+    assert '"$PYTHON_BIN" != *"/docker-python-tool.sh"' in manager_rendered
     assert "start_discord_e2e_heartbeat" in manager_rendered
     assert "stop_discord_e2e_heartbeat" in manager_rendered
 
