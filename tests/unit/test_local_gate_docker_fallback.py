@@ -105,6 +105,19 @@ def test_fullstack_critical_lane_uses_heartbeat_wrapper() -> None:
     assert 'heartbeat: true' in rendered
 
 
+def test_check_lane_uses_repo_python_helper_for_mkdocs() -> None:
+    rendered = (REPO_ROOT / "scripts/testing/lanes.mjs").read_text(encoding="utf-8")
+    assert 'scripts/repo-python-tool.sh -m mkdocs build --strict' in rendered
+
+
+def test_repo_python_tool_prefers_repo_virtualenvs_before_python3() -> None:
+    rendered = (REPO_ROOT / "scripts/repo-python-tool.sh").read_text(encoding="utf-8")
+    assert '"$REPO_DIR/.venv/bin/python"' in rendered
+    assert '"$REPO_DIR/venv/bin/python"' in rendered
+    assert 'command -v python3' in rendered
+    assert 'exec "$PYTHON_BIN" "$@"' in rendered
+
+
 def test_e2e_runtime_uses_host_override(monkeypatch) -> None:
     monkeypatch.setenv("E2E_RUNTIME_HOST", "host.docker.internal")
     e2e_runtime._runtime = None
