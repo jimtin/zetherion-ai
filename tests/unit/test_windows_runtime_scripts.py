@@ -350,6 +350,8 @@ def test_default_runtime_disables_ollama_unless_explicitly_enabled() -> None:
         assert 'Set-OrAddEnvLine -Lines $lines -Key "ROUTER_BACKEND" -Value "gemini"' in script
         assert 'Set-OrAddEnvLine -Lines $lines -Key "EMBEDDINGS_BACKEND" -Value "openai"' in script
         assert '$profiles.Add("ollama")' in script
+        if script is startup_recover:
+            assert '--build' in script
         assert "--remove-orphans" in script
 
 

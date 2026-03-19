@@ -390,6 +390,7 @@ try {
         }
         $composeArgs.Add("up")
         $composeArgs.Add("-d")
+        $composeArgs.Add("--build")
         $composeArgs.Add("--remove-orphans")
         & docker @composeArgs
     }
