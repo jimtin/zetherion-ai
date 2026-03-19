@@ -610,6 +610,11 @@ if [[ -n "${SSL_CERT_FILE:-}" ]]; then
     SSL_CERT_ENV_ARGS=(SSL_CERT_FILE="$SSL_CERT_FILE")
 fi
 
+DOCKER_SUITE_RUNNER="$PYTHON_BIN"
+if [[ -x "$DOCKER_PYTHON_WRAPPER" ]]; then
+    DOCKER_SUITE_RUNNER="$DOCKER_PYTHON_WRAPPER"
+fi
+
 PYTEST_TIMEOUT_ARGS=(--timeout=120)
 if python_requires_thread_timeout "$PYTHON_BIN"; then
     PYTEST_TIMEOUT_ARGS+=(--timeout-method=thread)
@@ -619,7 +624,7 @@ run_suite \
     "docker" \
     "$DOCKER_LOG_PATH" \
     env DOCKER_MANAGED_EXTERNALLY=true "${SSL_CERT_ENV_ARGS[@]}" \
-    "$PYTHON_BIN" -m pytest tests/integration/test_e2e.py \
+    "$DOCKER_SUITE_RUNNER" -m pytest tests/integration/test_e2e.py \
     -m "integration and not optional_e2e" \
     "${PYTEST_TIMEOUT_ARGS[@]}" \
     -v \

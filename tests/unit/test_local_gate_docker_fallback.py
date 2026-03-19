@@ -186,6 +186,9 @@ def test_e2e_run_manager_uses_host_python_for_manifest_work() -> None:
 
 def test_local_required_e2e_receipt_uses_thread_timeout_on_windows() -> None:
     rendered = (REPO_ROOT / "scripts/local-required-e2e-receipt.sh").read_text(encoding="utf-8")
+    assert 'DOCKER_SUITE_RUNNER="$PYTHON_BIN"' in rendered
+    assert 'if [[ -x "$DOCKER_PYTHON_WRAPPER" ]]; then' in rendered
+    assert 'DOCKER_SUITE_RUNNER="$DOCKER_PYTHON_WRAPPER"' in rendered
     assert "PYTEST_TIMEOUT_ARGS=(--timeout=120)" in rendered
     assert "python_requires_thread_timeout()" in rendered
     assert 'if python_requires_thread_timeout "$PYTHON_BIN"; then' in rendered
