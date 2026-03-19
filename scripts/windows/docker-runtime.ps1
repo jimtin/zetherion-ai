@@ -1851,33 +1851,17 @@ function Ensure-ZetherionWslRuntimePaths {
     }
 
     $relativePathsLiteral = $escapedRelativePaths -join " "
-    $command = @'
-set -euo pipefail
-repo_path=__REPO_PATH__
-drive_root=__DRIVE_ROOT__
-mount_line=$(mount | grep " on $drive_root " | head -n 1 || true)
-if [ -z "$mount_line" ]; then
-  echo "Unable to resolve WSL mount metadata for $drive_root." >&2
-  exit 1
-fi
-case "$mount_line" in
-  *metadata*) ;;
-  *)
-    echo "WSL automount for $drive_root must include the metadata option to support writable runtime bind mounts." >&2
-    exit 1
-    ;;
-esac
-for rel in __RELATIVE_PATHS__; do
-  target="$repo_path/$rel"
-  mkdir -p "$target"
-  chmod -R a+rwX "$target"
-  touch "$target/.wsl-write-check"
-  rm -f "$target/.wsl-write-check"
-done
-'@
-    $command = $command.Replace("__REPO_PATH__", (ConvertTo-ZetherionBashLiteral -Value $repoWslPath))
-    $command = $command.Replace("__DRIVE_ROOT__", (ConvertTo-ZetherionBashLiteral -Value $driveRoot))
-    $command = $command.Replace("__RELATIVE_PATHS__", $relativePathsLiteral)
+    $repoLiteral = ConvertTo-ZetherionBashLiteral -Value $repoWslPath
+    $driveLiteral = ConvertTo-ZetherionBashLiteral -Value $driveRoot
+    $command = [string]::Join("; ", @(
+        "set -euo pipefail",
+        "repo_path=$repoLiteral",
+        "drive_root=$driveLiteral",
+        'mount_line=$(mount | grep " on $drive_root " | head -n 1 || true)',
+        'if [ -z "$mount_line" ]; then echo "Unable to resolve WSL mount metadata for $drive_root." >&2; exit 1; fi',
+        'case "$mount_line" in *metadata*) ;; *) echo "WSL automount for $drive_root must include the metadata option to support writable runtime bind mounts." >&2; exit 1 ;; esac',
+        "for rel in $relativePathsLiteral; do target=`"`$repo_path/`$rel`"; mkdir -p `"`$target`"; chmod -R a+rwX `"`$target`"; touch `"`$target/.wsl-write-check`"; rm -f `"`$target/.wsl-write-check`"; done"
+    ))
 
     try {
         Invoke-ZetherionWslCommand -User "root" -Command $command | Out-Null
