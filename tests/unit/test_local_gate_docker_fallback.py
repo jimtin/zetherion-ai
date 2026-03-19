@@ -109,6 +109,7 @@ def test_check_lane_uses_repo_python_helper_for_mkdocs() -> None:
     assert "scripts/repo-python-tool.sh -m mkdocs build --strict" in rendered
     assert "scripts/repo-python-tool.sh -m ruff check src/ tests/ updater_sidecar/" in rendered
     assert "scripts/repo-python-tool.sh -m ruff format --check src/ tests/" in rendered
+    assert "scripts/repo-node-tool.sh --test scripts/testing/run-bounded.test.mjs" in rendered
     assert (
         "scripts/docker-python-tool.sh -m pytest tests/ -m 'not integration and not discord_e2e'"
         in rendered
@@ -134,6 +135,15 @@ def test_repo_python_tool_prefers_repo_virtualenvs_before_python3() -> None:
     assert 'MODULE_NAME="${2:-}"' in rendered
     assert 'python_supports_module "$PYTHON_BIN" "$MODULE_NAME"' in rendered
     assert 'exec "$PYTHON_BIN" "$@"' in rendered
+
+
+def test_repo_node_tool_prefers_repo_and_windows_node_paths() -> None:
+    rendered = (REPO_ROOT / "scripts/repo-node-tool.sh").read_text(encoding="utf-8")
+    assert '"$REPO_DIR/node_modules/.bin/node"' in rendered
+    assert '"/c/Program Files/nodejs/node.exe"' in rendered
+    assert '"/mnt/c/Program Files/nodejs/node.exe"' in rendered
+    assert "command -v node" in rendered
+    assert 'exec "$NODE_BIN" "$@"' in rendered
 
 
 def test_e2e_runtime_uses_host_override(monkeypatch) -> None:

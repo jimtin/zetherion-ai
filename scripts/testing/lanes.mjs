@@ -256,7 +256,7 @@ export const LANE_DEFINITIONS = {
       "bash",
       "-lc",
       [
-        "node --test scripts/testing/run-bounded.test.mjs",
+        "scripts/repo-node-tool.sh --test scripts/testing/run-bounded.test.mjs",
         "rm -f .coverage .coverage.* .coverage-*",
         "mkdir -p .artifacts/coverage/unit-full",
         "scripts/docker-python-tool.sh -m pytest tests/ -m 'not integration and not discord_e2e' --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=0 -q --tb=short",
