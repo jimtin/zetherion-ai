@@ -286,6 +286,15 @@ function Ensure-RequiredRuntimeEnv {
         if ($pkiInit.generated) {
             $updatedKeys.Add("INTERNAL_PKI_GENERATED")
         }
+
+        $devAgentServiceUrl = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("DEV_AGENT_SERVICE_URL")
+        if ((-not $devAgentServiceUrl) -or ($devAgentServiceUrl -eq "http://zetherion-ai-dev-agent:8787")) {
+            Set-OrAddEnvLine `
+                -Lines $lines `
+                -Key "DEV_AGENT_SERVICE_URL" `
+                -Value "https://zetherion-ai-dev-agent:8787"
+            $updatedKeys.Add("DEV_AGENT_SERVICE_URL")
+        }
     }
 
     $ollamaEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ENABLE_OLLAMA_RUNTIME"))

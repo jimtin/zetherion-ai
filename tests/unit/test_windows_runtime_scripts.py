@@ -352,6 +352,8 @@ def test_default_runtime_disables_ollama_unless_explicitly_enabled() -> None:
         assert '$profiles.Add("ollama")' in script
         if script is startup_recover:
             assert '--build' in script
+            assert 'Keys @("DEV_AGENT_SERVICE_URL")' in script
+            assert 'Value "https://zetherion-ai-dev-agent:8787"' in script
         assert "--remove-orphans" in script
 
 
