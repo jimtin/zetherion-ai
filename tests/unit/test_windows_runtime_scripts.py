@@ -224,15 +224,25 @@ def test_windows_runtime_scripts_thread_internal_pki_contract() -> None:
     internal_pki = (REPO_ROOT / "scripts" / "windows" / "internal-pki.ps1").read_text(
         encoding="utf-8"
     )
+    initialize_internal_pki = (
+        REPO_ROOT / "scripts" / "windows" / "initialize-internal-pki.ps1"
+    ).read_text(encoding="utf-8")
+    runtime_secrets = (REPO_ROOT / "scripts" / "windows" / "runtime-secrets.ps1").read_text(
+        encoding="utf-8"
+    )
 
     for script in (deploy_runner, startup_recover, rollback_script):
         assert 'Join-Path $PSScriptRoot "internal-pki.ps1"' in script
         assert "Invoke-InternalPkiInitialization -DeployPath $RepositoryPath" in script
         assert "Get-InternalPkiEnvDefaults -DeployPath $RepositoryPath" in script
 
+    assert "function ConvertTo-ZetherionWslPathForHost" in initialize_internal_pki
+    assert 'wsl.exe wslpath -a -u $normalized' in initialize_internal_pki
     assert 'QDRANT_CERT_PATH' in internal_pki
     assert 'UPDATER_TLS_CERT_PATH' in internal_pki
     assert 'DEV_AGENT_API_TLS_CERT_PATH' in internal_pki
+    assert "function Initialize-ZetherionDpapiTypes" in runtime_secrets
+    assert 'Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue' in runtime_secrets
     assert 'Join-Path $PSScriptRoot "windows\\internal-pki.ps1"' in verify_host
     assert 'Add-Check -Name "internal_pki"' in verify_host
 

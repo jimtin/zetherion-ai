@@ -24,6 +24,32 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Initialize-ZetherionDpapiTypes {
+    if ($script:ZetherionDpapiTypesReady) {
+        return
+    }
+
+    try {
+        [void][System.Security.Cryptography.DataProtectionScope]::LocalMachine
+        [void][System.Security.Cryptography.ProtectedData]
+        $script:ZetherionDpapiTypesReady = $true
+        return
+    }
+    catch {
+        Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+    }
+
+    try {
+        [void][System.Security.Cryptography.DataProtectionScope]::LocalMachine
+        [void][System.Security.Cryptography.ProtectedData]
+        $script:ZetherionDpapiTypesReady = $true
+        return
+    }
+    catch {
+        throw "DPAPI types are unavailable in this PowerShell session."
+    }
+}
+
 function Ensure-ParentDir {
     param([string]$Path)
     $parent = Split-Path -Parent $Path
@@ -82,6 +108,7 @@ function Decode-PromotionsSecrets {
     }
 
     try {
+        Initialize-ZetherionDpapiTypes
         $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
             $cipherBytes,
             $null,

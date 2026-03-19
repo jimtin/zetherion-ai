@@ -8,6 +8,22 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function ConvertTo-ZetherionWslPathForHost {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsPath
+    )
+
+    $fullPath = [System.IO.Path]::GetFullPath($WindowsPath)
+    $normalized = $fullPath -replace "\\", "/"
+    $translated = (& wsl.exe wslpath -a -u $normalized | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $translated) {
+        throw "Failed to translate Windows path for WSL execution: $WindowsPath"
+    }
+
+    return $translated
+}
+
 if (-not $ScriptPath) {
     $ScriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) "generate-internal-pki.sh"
 }
@@ -18,15 +34,8 @@ if (-not (Test-Path $ScriptPath)) {
 
 $certRoot = Join-Path $DeployPath "data\certs"
 
-$wslScriptPath = & wsl.exe wslpath -a $ScriptPath
-if ($LASTEXITCODE -ne 0 -or -not $wslScriptPath) {
-    throw "Failed to translate PKI generator path for WSL execution."
-}
-
-$wslCertRoot = & wsl.exe wslpath -a $certRoot
-if ($LASTEXITCODE -ne 0 -or -not $wslCertRoot) {
-    throw "Failed to translate certificate output path for WSL execution."
-}
+$wslScriptPath = ConvertTo-ZetherionWslPathForHost -WindowsPath $ScriptPath
+$wslCertRoot = ConvertTo-ZetherionWslPathForHost -WindowsPath $certRoot
 
 & wsl.exe bash $wslScriptPath $wslCertRoot
 if ($LASTEXITCODE -ne 0) {

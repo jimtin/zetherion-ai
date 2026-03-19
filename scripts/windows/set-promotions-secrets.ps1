@@ -44,6 +44,32 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Initialize-ZetherionDpapiTypes {
+    if ($script:ZetherionDpapiTypesReady) {
+        return
+    }
+
+    try {
+        [void][System.Security.Cryptography.DataProtectionScope]::LocalMachine
+        [void][System.Security.Cryptography.ProtectedData]
+        $script:ZetherionDpapiTypesReady = $true
+        return
+    }
+    catch {
+        Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+    }
+
+    try {
+        [void][System.Security.Cryptography.DataProtectionScope]::LocalMachine
+        [void][System.Security.Cryptography.ProtectedData]
+        $script:ZetherionDpapiTypesReady = $true
+        return
+    }
+    catch {
+        throw "DPAPI types are unavailable in this PowerShell session."
+    }
+}
+
 if ($BlogModelPrimary -ne "gpt-5.2") {
     throw "BlogModelPrimary must be 'gpt-5.2'."
 }
@@ -85,6 +111,7 @@ function Ensure-ParentDir {
 function New-SecureBlob {
     param([string]$JsonText)
 
+    Initialize-ZetherionDpapiTypes
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($JsonText)
     return [System.Security.Cryptography.ProtectedData]::Protect(
         $bytes,

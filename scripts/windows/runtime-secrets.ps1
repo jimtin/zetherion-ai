@@ -7,6 +7,32 @@ function Ensure-SecretParentDir {
     }
 }
 
+function Initialize-ZetherionDpapiTypes {
+    if ($script:ZetherionDpapiTypesReady) {
+        return
+    }
+
+    try {
+        [void][System.Security.Cryptography.DataProtectionScope]::LocalMachine
+        [void][System.Security.Cryptography.ProtectedData]
+        $script:ZetherionDpapiTypesReady = $true
+        return
+    }
+    catch {
+        Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+    }
+
+    try {
+        [void][System.Security.Cryptography.DataProtectionScope]::LocalMachine
+        [void][System.Security.Cryptography.ProtectedData]
+        $script:ZetherionDpapiTypesReady = $true
+        return
+    }
+    catch {
+        throw "DPAPI types are unavailable in this PowerShell session."
+    }
+}
+
 function Resolve-RuntimeSecretBundlePath {
     param(
         [string]$DeployPath = "C:\ZetherionAI",
@@ -112,6 +138,7 @@ function Set-SecretBundleAcl {
 function Protect-MachineSecretPayload {
     param([string]$JsonText)
 
+    Initialize-ZetherionDpapiTypes
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($JsonText)
     return [System.Security.Cryptography.ProtectedData]::Protect(
         $bytes,
@@ -123,6 +150,7 @@ function Protect-MachineSecretPayload {
 function Unprotect-MachineSecretPayload {
     param([byte[]]$CipherBytes)
 
+    Initialize-ZetherionDpapiTypes
     return [System.Security.Cryptography.ProtectedData]::Unprotect(
         $CipherBytes,
         $null,
