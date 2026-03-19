@@ -25,23 +25,35 @@ init_discord_e2e_run_manager() {
 
 json_helper_python() {
     local candidate
+    local supports_httpx
+    supports_httpx() {
+        "$1" - <<'PY' >/dev/null 2>&1
+import importlib.util
+
+raise SystemExit(0 if importlib.util.find_spec("httpx") is not None else 1)
+PY
+    }
+
     for candidate in \
         "$REPO_DIR/.venv/bin/python" \
         "$REPO_DIR/venv/bin/python" \
         "$REPO_DIR/.venv/Scripts/python.exe" \
         "$REPO_DIR/venv/Scripts/python.exe"; do
-        if [[ -x "$candidate" || -f "$candidate" ]]; then
+        if [[ -x "$candidate" || -f "$candidate" ]] && supports_httpx "$candidate"; then
             printf '%s\n' "$candidate"
             return 0
         fi
     done
     for candidate in python3 python; do
-        if command -v "$candidate" >/dev/null 2>&1; then
+        if command -v "$candidate" >/dev/null 2>&1 \
+            && supports_httpx "$(command -v "$candidate")"; then
             command -v "$candidate"
             return 0
         fi
     done
-    if [[ -n "${PYTHON_BIN:-}" && "$PYTHON_BIN" != *"/docker-python-tool.sh" ]]; then
+    if [[ -n "${PYTHON_BIN:-}" \
+        && "$PYTHON_BIN" != *"/docker-python-tool.sh" \
+        && supports_httpx "$PYTHON_BIN" ]]; then
         printf '%s\n' "$PYTHON_BIN"
         return 0
     fi
