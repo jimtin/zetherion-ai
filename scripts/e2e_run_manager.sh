@@ -18,13 +18,23 @@ init_e2e_run_manager() {
 
 json_helper_python() {
     local candidate
+    for candidate in \
+        "$REPO_DIR/.venv/bin/python" \
+        "$REPO_DIR/venv/bin/python" \
+        "$REPO_DIR/.venv/Scripts/python.exe" \
+        "$REPO_DIR/venv/Scripts/python.exe"; do
+        if [[ -x "$candidate" || -f "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
     for candidate in python3 python; do
         if command -v "$candidate" >/dev/null 2>&1; then
             command -v "$candidate"
             return 0
         fi
     done
-    if [[ -n "${PYTHON_BIN:-}" ]]; then
+    if [[ -n "${PYTHON_BIN:-}" && "$PYTHON_BIN" != *"/docker-python-tool.sh" ]]; then
         printf '%s\n' "$PYTHON_BIN"
         return 0
     fi
@@ -33,10 +43,17 @@ json_helper_python() {
 
 start_e2e_run() {
     init_e2e_run_manager
-    "$PYTHON_BIN" scripts/e2e_run_manager.py janitor --runs-root "$E2E_RUNS_ROOT" >/dev/null || true
+    local helper_python=""
+    helper_python="$(json_helper_python || true)"
+    if [[ -z "$helper_python" ]]; then
+        echo "ERROR: A host-visible Python interpreter is required for E2E run management." >&2
+        exit 1
+    fi
+
+    "$helper_python" scripts/e2e_run_manager.py janitor --runs-root "$E2E_RUNS_ROOT" >/dev/null || true
 
     local exports
-    exports="$($PYTHON_BIN scripts/e2e_run_manager.py start \
+    exports="$($helper_python scripts/e2e_run_manager.py start \
         --runs-root "$E2E_RUNS_ROOT" \
         --compose-file "$COMPOSE_FILE" \
         --project-prefix "$E2E_PROJECT_PREFIX" \
@@ -60,16 +77,16 @@ cleanup_e2e_run() {
         return 0
     fi
 
-    "$PYTHON_BIN" scripts/e2e_run_manager.py cleanup \
-        --manifest "$E2E_RUN_MANIFEST_PATH" \
-        --reason "$reason" >/dev/null || true
-
     helper_python="$(json_helper_python || true)"
     if [[ -z "$helper_python" ]]; then
         E2E_DOCKER_CLEANUP_STATUS="cleanup_unknown"
         export E2E_DOCKER_CLEANUP_STATUS
         return 0
     fi
+
+    "$helper_python" scripts/e2e_run_manager.py cleanup \
+        --manifest "$E2E_RUN_MANIFEST_PATH" \
+        --reason "$reason" >/dev/null || true
 
     E2E_DOCKER_CLEANUP_STATUS="$("$helper_python" - "$E2E_RUN_MANIFEST_PATH" <<'PY'
 import json

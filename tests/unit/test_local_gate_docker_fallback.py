@@ -152,6 +152,14 @@ def test_run_service_lane_uses_module_aware_test_runner_resolution() -> None:
     assert 'ZETHERION_HEADLESS_DISCORD="${ZETHERION_HEADLESS_DISCORD:-true}"' in rendered
 
 
+def test_e2e_run_manager_uses_host_python_for_manifest_work() -> None:
+    rendered = (REPO_ROOT / "scripts/e2e_run_manager.sh").read_text(encoding="utf-8")
+    assert '"$REPO_DIR/.venv/bin/python"' in rendered
+    assert 'if [[ -n "${PYTHON_BIN:-}" && "$PYTHON_BIN" != *"/docker-python-tool.sh" ]]; then' in rendered
+    assert "A host-visible Python interpreter is required for E2E run management." in rendered
+    assert 'helper_python="$(json_helper_python || true)"' in rendered
+
+
 def test_repo_node_tool_prefers_repo_and_windows_node_paths() -> None:
     rendered = (REPO_ROOT / "scripts/repo-node-tool.sh").read_text(encoding="utf-8")
     assert '"$REPO_DIR/node_modules/.bin/node"' in rendered
