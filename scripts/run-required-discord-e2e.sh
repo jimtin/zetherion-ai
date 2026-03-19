@@ -441,8 +441,6 @@ case "$(uname -s)" in
         ;;
 esac
 
-echo "[discord-e2e] Running required Discord E2E via blessed wrapper (provider=$DISCORD_E2E_PROVIDER, run_id=${DISCORD_E2E_RUN_ID}, channel_id=${TEST_DISCORD_CHANNEL_ID}, ssl_cert=$SSL_CERT_FILE)"
-
 PYTEST_COVERAGE_ARGS=(--no-cov)
 if [[ "${DISCORD_E2E_ENABLE_COVERAGE:-false}" == "true" ]]; then
     PYTEST_COVERAGE_ARGS=()
@@ -463,11 +461,19 @@ if [[ "$#" -gt 0 ]]; then
     PYTEST_ARGS+=("$@")
 fi
 
+SSL_CERT_ENV_ARGS=()
+SSL_CERT_DESCRIPTION="${SSL_CERT_FILE:-unset}"
+if [[ -n "${SSL_CERT_FILE:-}" ]]; then
+    SSL_CERT_ENV_ARGS=(SSL_CERT_FILE="$SSL_CERT_FILE")
+fi
+
+echo "[discord-e2e] Running required Discord E2E via blessed wrapper (provider=$DISCORD_E2E_PROVIDER, run_id=${DISCORD_E2E_RUN_ID}, channel_id=${TEST_DISCORD_CHANNEL_ID}, ssl_cert=$SSL_CERT_DESCRIPTION)"
+
 set +e
 env \
     DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" \
     DOCKER_MANAGED_EXTERNALLY=true \
-    SSL_CERT_FILE="$SSL_CERT_FILE" \
+    "${SSL_CERT_ENV_ARGS[@]}" \
     TEST_DISCORD_CHANNEL_ID="$TEST_DISCORD_CHANNEL_ID" \
     TEST_DISCORD_TARGET_BOT_ID="$TEST_DISCORD_TARGET_BOT_ID" \
     DISCORD_E2E_RUN_ID="$DISCORD_E2E_RUN_ID" \

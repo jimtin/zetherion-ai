@@ -48,6 +48,8 @@ def test_discord_wrappers_support_docker_python_fallback() -> None:
         assert 'DEFAULT_ZETHERION_ENV_FILE="$REPO_DIR/.env"' in rendered
         assert 'if [[ "${PYTHON_BIN:-}" == *"/docker-python-tool.sh" ]]; then' in rendered
         assert "unset SSL_CERT_FILE" in rendered
+        assert 'SSL_CERT_ENV_ARGS=()' in rendered
+        assert '"${SSL_CERT_ENV_ARGS[@]}"' in rendered
         assert "sub(/^\\xef\\xbb\\xbf/, \"\")" in rendered
         assert "/usr/lib/ssl/cert.pem" in rendered
         assert "/mingw64/ssl/certs/ca-bundle.crt" in rendered
