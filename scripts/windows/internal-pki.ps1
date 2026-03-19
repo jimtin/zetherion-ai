@@ -26,8 +26,38 @@ function Get-InternalPkiEnvDefaults {
     }
 }
 
+function Get-InternalPkiSchemaVersion {
+    return "2"
+}
+
+function Get-InternalPkiVersionFilePath {
+    param([string]$DeployPath = "C:\ZetherionAI")
+
+    return (Join-Path (Join-Path $DeployPath "data\certs") "version.txt")
+}
+
+function Test-InternalPkiSchemaCurrent {
+    param([string]$DeployPath = "C:\ZetherionAI")
+
+    $versionPath = Get-InternalPkiVersionFilePath -DeployPath $DeployPath
+    if (-not (Test-Path $versionPath)) {
+        return $false
+    }
+
+    $currentVersion = (Get-Content -Path $versionPath -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if (-not $currentVersion) {
+        return $false
+    }
+
+    return ($currentVersion.Trim() -eq (Get-InternalPkiSchemaVersion))
+}
+
 function Test-InternalPkiFilesPresent {
     param([string]$DeployPath = "C:\ZetherionAI")
+
+    if (-not (Test-InternalPkiSchemaCurrent -DeployPath $DeployPath)) {
+        return $false
+    }
 
     $defaults = Get-InternalPkiEnvDefaults -DeployPath $DeployPath
     $requiredPaths = @(
@@ -74,6 +104,11 @@ function Invoke-InternalPkiInitialization {
         throw "Internal PKI initializer not found: $scriptPath"
     }
 
+    $certificateRoot = Join-Path $DeployPath "data\certs"
+    if ((Test-Path $certificateRoot) -and (-not (Test-InternalPkiSchemaCurrent -DeployPath $DeployPath))) {
+        Remove-Item -Path $certificateRoot -Recurse -Force
+    }
+
     $null = & $scriptPath -DeployPath $DeployPath | Out-String
     if ($LASTEXITCODE -ne 0) {
         throw "Internal PKI initialization failed for $DeployPath"
@@ -81,6 +116,6 @@ function Invoke-InternalPkiInitialization {
 
     return [pscustomobject]@{
         generated = $true
-        certificate_root = (Join-Path $DeployPath "data\certs")
+        certificate_root = $certificateRoot
     }
 }

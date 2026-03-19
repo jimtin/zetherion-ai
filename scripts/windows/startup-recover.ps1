@@ -295,6 +295,30 @@ function Ensure-RequiredRuntimeEnv {
                 -Value "https://zetherion-ai-dev-agent:8787"
             $updatedKeys.Add("DEV_AGENT_SERVICE_URL")
         }
+
+        $qdrantUseTls = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("QDRANT_USE_TLS")
+        if (-not (Test-TruthyValue -Value $qdrantUseTls)) {
+            Set-OrAddEnvLine -Lines $lines -Key "QDRANT_USE_TLS" -Value "true"
+            $updatedKeys.Add("QDRANT_USE_TLS")
+        }
+
+        $postgresUseTls = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("POSTGRES_USE_TLS")
+        if (-not (Test-TruthyValue -Value $postgresUseTls)) {
+            Set-OrAddEnvLine -Lines $lines -Key "POSTGRES_USE_TLS" -Value "true"
+            $updatedKeys.Add("POSTGRES_USE_TLS")
+        }
+
+        $googleRedirectUri = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("GOOGLE_REDIRECT_URI")
+        if (
+            ($googleRedirectUri -eq "http://localhost:8080/gmail/callback") -or
+            ($googleRedirectUri -eq "http://localhost:18080/gmail/callback")
+        ) {
+            Set-OrAddEnvLine `
+                -Lines $lines `
+                -Key "GOOGLE_REDIRECT_URI" `
+                -Value "https://localhost:18443/gmail/callback"
+            $updatedKeys.Add("GOOGLE_REDIRECT_URI")
+        }
     }
 
     $ollamaEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ENABLE_OLLAMA_RUNTIME"))

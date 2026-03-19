@@ -248,6 +248,11 @@ def test_windows_runtime_scripts_thread_internal_pki_contract() -> None:
     assert 'QDRANT_CERT_PATH' in internal_pki
     assert 'UPDATER_TLS_CERT_PATH' in internal_pki
     assert 'DEV_AGENT_API_TLS_CERT_PATH' in internal_pki
+    assert "function Get-InternalPkiSchemaVersion" in internal_pki
+    assert "function Get-InternalPkiVersionFilePath" in internal_pki
+    assert "function Test-InternalPkiSchemaCurrent" in internal_pki
+    assert 'Join-Path (Join-Path $DeployPath "data\\certs") "version.txt"' in internal_pki
+    assert "Remove-Item -Path $certificateRoot -Recurse -Force" in internal_pki
     assert "function Initialize-ZetherionDpapiTypes" in runtime_secrets
     assert 'Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue' in runtime_secrets
     assert 'Join-Path $PSScriptRoot "windows\\internal-pki.ps1"' in verify_host
@@ -354,7 +359,26 @@ def test_default_runtime_disables_ollama_unless_explicitly_enabled() -> None:
             assert '--build' in script
             assert 'Keys @("DEV_AGENT_SERVICE_URL")' in script
             assert 'Value "https://zetherion-ai-dev-agent:8787"' in script
+            assert 'Keys @("QDRANT_USE_TLS")' in script
+            assert 'Set-OrAddEnvLine -Lines $lines -Key "QDRANT_USE_TLS" -Value "true"' in script
+            assert 'Keys @("POSTGRES_USE_TLS")' in script
+            assert 'Set-OrAddEnvLine -Lines $lines -Key "POSTGRES_USE_TLS" -Value "true"' in script
+            assert 'Keys @("GOOGLE_REDIRECT_URI")' in script
+            assert 'Value "https://localhost:18443/gmail/callback"' in script
         assert "--remove-orphans" in script
+
+
+def test_internal_pki_generator_writes_ca_extensions_and_schema_version() -> None:
+    generator = (REPO_ROOT / "scripts" / "generate-internal-pki.sh").read_text(encoding="utf-8")
+
+    assert 'PKI_SCHEMA_VERSION="${PKI_SCHEMA_VERSION:-2}"' in generator
+    assert 'PKI_VERSION_FILE="$CERT_ROOT/version.txt"' in generator
+    assert 'echo "basicConstraints=critical,CA:TRUE,pathlen:0"' in generator
+    assert 'echo "keyUsage=critical,keyCertSign,cRLSign"' in generator
+    assert 'echo "subjectKeyIdentifier=hash"' in generator
+    assert 'echo "authorityKeyIdentifier=keyid:always"' in generator
+    assert 'echo "authorityKeyIdentifier=keyid,issuer"' in generator
+    assert 'printf \'%s\\n\' "$PKI_SCHEMA_VERSION" >"$PKI_VERSION_FILE"' in generator
 
 
 def test_default_compose_marks_ollama_services_as_optional() -> None:
