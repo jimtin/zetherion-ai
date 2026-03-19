@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import zetherion_ai.owner_ci.profiles as owner_ci_profiles
 import zetherion_ai.skills.ci_controller as ci_controller
 from zetherion_ai.owner_ci import default_repo_profile
 from zetherion_ai.skills.base import SkillRequest
@@ -84,6 +86,23 @@ def test_lane_and_repo_helpers_cover_coercion_contexts_and_sha_inference() -> No
         "alpha",
         "beta",
     ]
+
+
+def test_default_repo_profile_prefers_workspace_root_environment_over_host_defaults() -> None:
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("ZETHERION_WORKSPACE_ROOT", "/workspace")
+        monkeypatch.setenv("CGS_WORKSPACE_ROOT", "/workspace-siblings/catalyst-group-solutions")
+        reloaded_profiles = importlib.reload(owner_ci_profiles)
+
+        zetherion_profile = reloaded_profiles.default_repo_profile("zetherion-ai")
+        cgs_profile = reloaded_profiles.default_repo_profile("catalyst-group-solutions")
+
+        assert zetherion_profile is not None
+        assert zetherion_profile["allowed_paths"][0] == "/workspace"
+        assert cgs_profile is not None
+        assert cgs_profile["allowed_paths"][0] == "/workspace-siblings/catalyst-group-solutions"
+
+    importlib.reload(owner_ci_profiles)
 
 
 def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certification_payload() -> (

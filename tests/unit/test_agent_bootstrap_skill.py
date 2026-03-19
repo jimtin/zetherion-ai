@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import tarfile
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import zetherion_ai.owner_ci.system_validation as system_validation_module
+import zetherion_ai.skills.agent_bootstrap as agent_bootstrap_module
 from zetherion_ai.skills.agent_bootstrap import AgentBootstrapSkill
 from zetherion_ai.skills.base import SkillRequest
 
@@ -923,11 +926,75 @@ async def test_publish_candidate_apply_delegates_to_controlled_apply_flow() -> N
 
 
 @pytest.mark.asyncio
-async def test_system_validation_handlers_return_matrix_plan_readiness_and_coaching() -> None:
+async def test_system_validation_handlers_return_matrix_plan_readiness_and_coaching(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     storage = _storage()
     skill = AgentBootstrapSkill(storage=storage)
     skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
     skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+    cgs_manifest_path = tmp_path / "cgs-shard-manifest.json"
+    cgs_manifest_path.write_text(
+        json.dumps(
+            {
+                "repo_id": "catalyst-group-solutions",
+                "validation_mode": "cgs_alone",
+                "resource_limits": {"cpu": 4},
+                "shards": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    combined_manifest_path = tmp_path / "system-validation.json"
+    combined_manifest_path.write_text(
+        json.dumps(
+            {
+                "mode_id": "combined_system",
+                "mode_label": "CGS + Zetherion together",
+                "repo_ids": ["zetherion-ai", "catalyst-group-solutions"],
+                "shards": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        agent_bootstrap_module,
+        "build_validation_matrix",
+        lambda: system_validation_module.build_validation_matrix(
+            cgs_manifest_path=cgs_manifest_path,
+            combined_manifest_path=combined_manifest_path,
+        ),
+    )
+    monkeypatch.setattr(
+        agent_bootstrap_module,
+        "build_system_run_plan",
+        lambda *, candidate_set: system_validation_module.build_system_run_plan(
+            candidate_set=candidate_set,
+            cgs_manifest_path=cgs_manifest_path,
+            combined_manifest_path=combined_manifest_path,
+        ),
+    )
+    monkeypatch.setattr(
+        agent_bootstrap_module,
+        "build_system_rollout_readiness",
+        lambda *, candidate_set: system_validation_module.build_system_rollout_readiness(
+            candidate_set=candidate_set,
+            cgs_manifest_path=cgs_manifest_path,
+            combined_manifest_path=combined_manifest_path,
+        ),
+    )
+    monkeypatch.setattr(
+        agent_bootstrap_module,
+        "build_system_coaching",
+        lambda *, candidate_set, principal_id=None: system_validation_module.build_system_coaching(
+            candidate_set=candidate_set,
+            principal_id=principal_id,
+            cgs_manifest_path=cgs_manifest_path,
+            combined_manifest_path=combined_manifest_path,
+        ),
+    )
 
     candidate_repos = [
         {"repo_id": "zetherion-ai", "git_ref": "codex/owner-ci-platform-hardening"},

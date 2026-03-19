@@ -554,6 +554,7 @@ class TestSkillsServerHelpers:
             )
 
         tenant_admin_manager.get_secret_cached.return_value = ""
+        server._bridge_signing_secret = ""
         with pytest.raises(ValueError, match="Bridge signing secret is not configured"):
             server._verify_bridge_signature(
                 request=request,

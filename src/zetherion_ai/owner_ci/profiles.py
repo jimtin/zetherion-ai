@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 _LOCAL_WORKSPACE_ROOT_CANDIDATES = (
     Path("/Users/jameshinton/Developer"),
     Path("/Users/jameshinton/Development"),
@@ -19,13 +21,43 @@ def _resolve_local_workspace_root() -> Path:
     return _LOCAL_WORKSPACE_ROOT_CANDIDATES[0]
 
 
+def _resolve_repo_workspace_root(*, env_var: str, repo_name: str) -> Path:
+    env_value = str(os.environ.get(env_var) or "").strip()
+    if env_value:
+        return Path(env_value)
+
+    if repo_name == "zetherion-ai":
+        return REPO_ROOT
+
+    repo_root = REPO_ROOT.parent / repo_name
+    if repo_root.exists():
+        return repo_root
+
+    for candidate in _LOCAL_WORKSPACE_ROOT_CANDIDATES:
+        repo_candidate = candidate / repo_name
+        if repo_candidate.exists():
+            return repo_candidate
+
+    return repo_root
+
+
 LOCAL_WORKSPACE_ROOT = _resolve_local_workspace_root()
 WINDOWS_WORKSPACE_ROOT = r"C:\ZetherionCI\workspaces"
 WINDOWS_RUNTIME_ROOT = r"C:\ZetherionCI\agent-runtime"
 WINDOWS_LIVE_DENYLIST = [r"C:\ZetherionAI", r"C:\ZetherionAI\*"]
 
-_CGS_ROOT = str((LOCAL_WORKSPACE_ROOT / "catalyst-group-solutions").resolve())
-_ZETHERION_ROOT = str((LOCAL_WORKSPACE_ROOT / "zetherion-ai").resolve())
+_CGS_ROOT = str(
+    _resolve_repo_workspace_root(
+        env_var="CGS_WORKSPACE_ROOT",
+        repo_name="catalyst-group-solutions",
+    ).resolve()
+)
+_ZETHERION_ROOT = str(
+    _resolve_repo_workspace_root(
+        env_var="ZETHERION_WORKSPACE_ROOT",
+        repo_name="zetherion-ai",
+    ).resolve()
+)
 _CGS_WINDOWS_WORKSPACE_ROOT = rf"{WINDOWS_WORKSPACE_ROOT}\catalyst-group-solutions"
 _ZETHERION_WINDOWS_WORKSPACE_ROOT = rf"{WINDOWS_WORKSPACE_ROOT}\zetherion-ai"
 
