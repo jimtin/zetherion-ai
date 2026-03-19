@@ -87,23 +87,33 @@ normalize_host_python_path() {
     printf '%s\n' "$raw_path"
 }
 
-normalize_shell_exports_for_current_shell() {
-    local exports_text="${1:-}"
+normalize_path_for_current_shell() {
+    local raw_path="${1:-}"
     local python_bin="${2:-}"
 
-    if [[ -z "$exports_text" ]] || ! host_python_uses_windows_paths "$python_bin"; then
-        printf '%s\n' "$exports_text"
+    if [[ -z "$raw_path" ]] || ! host_python_uses_windows_paths "$python_bin"; then
+        printf '%s\n' "$raw_path"
         return 0
     fi
 
     local windows_repo_root=""
     windows_repo_root="$(normalize_host_python_path "$REPO_DIR" "$python_bin")"
     if [[ -z "$windows_repo_root" || "$windows_repo_root" == "$REPO_DIR" ]]; then
-        printf '%s\n' "$exports_text"
+        printf '%s\n' "$raw_path"
         return 0
     fi
 
-    printf '%s\n' "${exports_text//$windows_repo_root/$REPO_DIR}"
+    case "$raw_path" in
+        "$windows_repo_root")
+            printf '%s\n' "$REPO_DIR"
+            ;;
+        "$windows_repo_root"/*)
+            printf '%s/%s\n' "$REPO_DIR" "${raw_path#"$windows_repo_root"/}"
+            ;;
+        *)
+            printf '%s\n' "$raw_path"
+            ;;
+    esac
 }
 
 start_e2e_run() {
@@ -129,10 +139,13 @@ start_e2e_run() {
         --ttl-minutes "$E2E_RUN_TTL_MINUTES" \
         --service-slot "$E2E_SERVICE_SLOT" \
         --shell | tr -d '\r')"
-    exports="$(normalize_shell_exports_for_current_shell "$exports" "$helper_python")"
     eval "$exports"
+    COMPOSE_FILE="$(normalize_path_for_current_shell "$COMPOSE_FILE" "$helper_python")"
+    E2E_RUN_MANIFEST_PATH="$(normalize_path_for_current_shell "$E2E_RUN_MANIFEST_PATH" "$helper_python")"
+    E2E_RUN_ENV_PATH="$(normalize_path_for_current_shell "$E2E_RUN_ENV_PATH" "$helper_python")"
+    ZETHERION_ENV_FILE="$(normalize_path_for_current_shell "${ZETHERION_ENV_FILE:-$E2E_RUN_ENV_PATH}" "$helper_python")"
     export E2E_RUN_ID E2E_PROJECT_NAME E2E_STACK_ROOT E2E_RUN_MANIFEST_PATH E2E_RUN_ENV_PATH PROJECT COMPOSE_FILE \
-        E2E_SERVICE_SLOT E2E_API_HOST_PORT E2E_CGS_GATEWAY_HOST_PORT E2E_SKILLS_HOST_PORT E2E_WHATSAPP_BRIDGE_HOST_PORT \
+        ZETHERION_ENV_FILE E2E_SERVICE_SLOT E2E_API_HOST_PORT E2E_CGS_GATEWAY_HOST_PORT E2E_SKILLS_HOST_PORT E2E_WHATSAPP_BRIDGE_HOST_PORT \
         E2E_OLLAMA_ROUTER_HOST_PORT E2E_OLLAMA_HOST_PORT E2E_POSTGRES_HOST_PORT E2E_QDRANT_HOST_PORT
 }
 
@@ -154,11 +167,14 @@ cleanup_e2e_run() {
         return 0
     fi
 
+    local manifest_arg=""
+    manifest_arg="$(normalize_host_python_path "$E2E_RUN_MANIFEST_PATH" "$helper_python")"
+
     "$helper_python" scripts/e2e_run_manager.py cleanup \
-        --manifest "$E2E_RUN_MANIFEST_PATH" \
+        --manifest "$manifest_arg" \
         --reason "$reason" >/dev/null || true
 
-    E2E_DOCKER_CLEANUP_STATUS="$("$helper_python" - "$E2E_RUN_MANIFEST_PATH" <<'PY'
+    E2E_DOCKER_CLEANUP_STATUS="$("$helper_python" - "$manifest_arg" <<'PY'
 import json
 import sys
 from pathlib import Path
