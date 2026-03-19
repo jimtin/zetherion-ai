@@ -1845,32 +1845,49 @@ function Ensure-ZetherionWslRuntimePaths {
     }
 
     $driveRoot = $driveMatch.Groups[1].Value
-    $driveLiteral = ConvertTo-ZetherionBashLiteral -Value $driveRoot
-    $mountCheckCommand = [string]::Join("; ", @(
-        "set -euo pipefail",
-        "drive_root=$driveLiteral",
-        'mount_line=$(mount | grep " on $drive_root " | head -n 1 || true)',
-        'if [ -z "$mount_line" ]; then echo "Unable to resolve WSL mount metadata for $drive_root." >&2; exit 1; fi',
-        'case "$mount_line" in *metadata*) ;; *) echo "WSL automount for $drive_root must include the metadata option to support writable runtime bind mounts." >&2; exit 1 ;; esac'
-    ))
-
     try {
-        Invoke-ZetherionWslCommand -User "root" -Command $mountCheckCommand | Out-Null
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+        $mountCheckScriptPath = Join-Path (
+            [System.IO.Path]::GetTempPath()
+        ) ("zetherion-wsl-runtime-mount-" + [guid]::NewGuid().ToString("N") + ".sh")
+        $mountCheckScript = @(
+            "set -euo pipefail"
+            "drive_root=$(printf '%s' " + (ConvertTo-ZetherionBashLiteral -Value $driveRoot) + ")"
+            'mount_line=$(mount | grep " on $drive_root " | head -n 1 || true)'
+            'if [ -z "$mount_line" ]; then echo "Unable to resolve WSL mount metadata for $drive_root." >&2; exit 1; fi'
+            'case "$mount_line" in *metadata*) ;; *) echo "WSL automount for $drive_root must include the metadata option to support writable runtime bind mounts." >&2; exit 1 ;; esac'
+        ) -join "`n"
+        [System.IO.File]::WriteAllText($mountCheckScriptPath, $mountCheckScript, $utf8NoBom)
+        $mountCheckScriptWslPath = ConvertTo-ZetherionWslPath -WindowsPath $mountCheckScriptPath
+        $mountCheckResult = Invoke-ZetherionWslCommandResult -User "root" -Command ("bash " + (ConvertTo-ZetherionBashLiteral -Value $mountCheckScriptWslPath))
+        if ($mountCheckResult.ExitCode -ne 0) {
+            throw $mountCheckResult.Text
+        }
 
         foreach ($relativePath in $RelativePaths) {
             $targetWindowsPath = Join-Path $DeployPath $relativePath
             $targetWslPath = ConvertTo-ZetherionWslPath -WindowsPath $targetWindowsPath
-            $targetLiteral = ConvertTo-ZetherionBashLiteral -Value $targetWslPath
-            $preparePathCommand = [string]::Join("; ", @(
-                "set -euo pipefail",
-                "target=$targetLiteral",
-                'mkdir -p "$target"',
-                'chmod -R a+rwX "$target"',
-                'touch "$target/.wsl-write-check"',
+            $preparePathScriptPath = Join-Path (
+                [System.IO.Path]::GetTempPath()
+            ) ("zetherion-wsl-runtime-path-" + [guid]::NewGuid().ToString("N") + ".sh")
+            $preparePathScript = @(
+                "set -euo pipefail"
+                "target=$(printf '%s' " + (ConvertTo-ZetherionBashLiteral -Value $targetWslPath) + ")"
+                'mkdir -p "$target"'
+                'chmod -R a+rwX "$target"'
+                'touch "$target/.wsl-write-check"'
                 'rm -f "$target/.wsl-write-check"'
-            ))
-            Invoke-ZetherionWslCommand -User "root" -Command $preparePathCommand | Out-Null
+            ) -join "`n"
+            [System.IO.File]::WriteAllText($preparePathScriptPath, $preparePathScript, $utf8NoBom)
+            $preparePathScriptWslPath = ConvertTo-ZetherionWslPath -WindowsPath $preparePathScriptPath
+            $preparePathResult = Invoke-ZetherionWslCommandResult -User "root" -Command ("bash " + (ConvertTo-ZetherionBashLiteral -Value $preparePathScriptWslPath))
+            if ($preparePathResult.ExitCode -ne 0) {
+                throw $preparePathResult.Text
+            }
+            Remove-Item -LiteralPath $preparePathScriptPath -Force -ErrorAction SilentlyContinue
         }
+        Remove-Item -LiteralPath $mountCheckScriptPath -Force -ErrorAction SilentlyContinue
     } catch {
         $reason = $_.Exception.Message
         if ($reason) {
