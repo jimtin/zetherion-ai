@@ -114,8 +114,8 @@ def test_check_lane_uses_repo_python_helper_for_mkdocs() -> None:
         "scripts/docker-python-tool.sh -m pytest tests/ -m 'not integration and not discord_e2e'"
         in rendered
     )
-    assert "scripts/repo-python-tool.sh -m coverage report" in rendered
-    assert "scripts/repo-python-tool.sh scripts/testing/coverage_gate.py" in rendered
+    assert "scripts/docker-python-tool.sh -m coverage report" in rendered
+    assert "scripts/docker-python-tool.sh scripts/testing/coverage_gate.py" in rendered
     assert "scripts/docker-python-tool.sh -m pytest tests/unit -q --tb=short --no-cov" in rendered
     assert "scripts/docker-python-tool.sh -m pytest tests/integration/test_api_http.py" in rendered
     assert (
