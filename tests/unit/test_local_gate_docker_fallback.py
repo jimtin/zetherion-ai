@@ -163,6 +163,11 @@ def test_e2e_run_manager_uses_host_python_for_manifest_work() -> None:
     assert "A host-visible Python interpreter is required for E2E run management." in rendered
     assert 'helper_python="$(json_helper_python || true)"' in rendered
     assert "--shell | tr -d '\\r'" in rendered
+    assert "host_python_uses_windows_paths()" in rendered
+    assert "normalize_host_python_path()" in rendered
+    assert 'pwd -W 2>/dev/null' in rendered
+    assert 'runs_root_arg="$(normalize_host_python_path "$E2E_RUNS_ROOT" "$helper_python")"' in rendered
+    assert 'compose_file_arg="$(normalize_host_python_path "$COMPOSE_FILE" "$helper_python")"' in rendered
 
 
 def test_repo_node_tool_prefers_repo_and_windows_node_paths() -> None:

@@ -41,6 +41,47 @@ json_helper_python() {
     return 1
 }
 
+host_python_uses_windows_paths() {
+    local python_bin="${1:-}"
+    case "$python_bin" in
+        *.exe|*.cmd|*.bat)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+normalize_host_python_path() {
+    local raw_path="${1:-}"
+    local python_bin="${2:-}"
+
+    if [[ -z "$raw_path" ]] || ! host_python_uses_windows_paths "$python_bin"; then
+        printf '%s\n' "$raw_path"
+        return 0
+    fi
+
+    local windows_repo_root=""
+    windows_repo_root="$(pwd -W 2>/dev/null | tr -d '\r' | tr '\\' '/')" || true
+    if [[ -n "$windows_repo_root" ]]; then
+        case "$raw_path" in
+            "$REPO_DIR")
+                printf '%s\n' "$windows_repo_root"
+                return 0
+                ;;
+            "$REPO_DIR"/*)
+                printf '%s/%s\n' \
+                    "${windows_repo_root%/}" \
+                    "${raw_path#"$REPO_DIR"/}"
+                return 0
+                ;;
+        esac
+    fi
+
+    printf '%s\n' "$raw_path"
+}
+
 start_e2e_run() {
     init_e2e_run_manager
     local helper_python=""
@@ -50,12 +91,16 @@ start_e2e_run() {
         exit 1
     fi
 
-    "$helper_python" scripts/e2e_run_manager.py janitor --runs-root "$E2E_RUNS_ROOT" >/dev/null || true
+    local runs_root_arg=""
+    local compose_file_arg=""
+    runs_root_arg="$(normalize_host_python_path "$E2E_RUNS_ROOT" "$helper_python")"
+    compose_file_arg="$(normalize_host_python_path "$COMPOSE_FILE" "$helper_python")"
+    "$helper_python" scripts/e2e_run_manager.py janitor --runs-root "$runs_root_arg" >/dev/null || true
 
     local exports
     exports="$($helper_python scripts/e2e_run_manager.py start \
-        --runs-root "$E2E_RUNS_ROOT" \
-        --compose-file "$COMPOSE_FILE" \
+        --runs-root "$runs_root_arg" \
+        --compose-file "$compose_file_arg" \
         --project-prefix "$E2E_PROJECT_PREFIX" \
         --ttl-minutes "$E2E_RUN_TTL_MINUTES" \
         --service-slot "$E2E_SERVICE_SLOT" \
