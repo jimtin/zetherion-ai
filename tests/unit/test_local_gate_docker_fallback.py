@@ -47,6 +47,8 @@ def test_discord_wrappers_support_docker_python_fallback() -> None:
         assert 'EXPLICIT_ZETHERION_ENV_FILE="${ZETHERION_ENV_FILE:-}"' in rendered
         assert 'DEFAULT_ZETHERION_ENV_FILE="$REPO_DIR/.env"' in rendered
         assert "sub(/^\\xef\\xbb\\xbf/, \"\")" in rendered
+        assert "/usr/lib/ssl/cert.pem" in rendered
+        assert "/mingw64/ssl/certs/ca-bundle.crt" in rendered
         assert "is_generated_e2e_env_file()" in rendered
         assert "Ignoring missing generated E2E env file" in rendered
     local_receipt = (REPO_ROOT / "scripts/local-required-e2e-receipt.sh").read_text(

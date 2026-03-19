@@ -236,6 +236,20 @@ ensure_python_ca_bundle() {
         return 0
     fi
 
+    local preferred_bundle
+    for preferred_bundle in \
+        /usr/lib/ssl/cert.pem \
+        /etc/ssl/cert.pem \
+        /etc/ssl/certs/ca-certificates.crt \
+        /mingw64/ssl/certs/ca-bundle.crt \
+        "/c/Program Files/Git/mingw64/ssl/certs/ca-bundle.crt" \
+        /c/ProgramData/chocolatey/lib/git.install/tools/mingw64/ssl/certs/ca-bundle.crt; do
+        if [[ -r "$preferred_bundle" ]]; then
+            export SSL_CERT_FILE="$preferred_bundle"
+            return 0
+        fi
+    done
+
     local ca_bundle
     ca_bundle="$($PYTHON_BIN - <<'PY' | tr -d '\r'
 import os
