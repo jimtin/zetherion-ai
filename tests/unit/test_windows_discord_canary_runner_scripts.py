@@ -51,6 +51,9 @@ def test_required_discord_wrapper_uses_thread_timeout_on_windows() -> None:
 
 def test_required_discord_wrapper_keeps_loaded_env_values() -> None:
     rendered = (REPO_ROOT / "scripts/run-required-discord-e2e.sh").read_text(encoding="utf-8")
+    assert "source_env_file()" in rendered
+    assert 'source_env_file "$DEFAULT_ZETHERION_ENV_FILE"' in rendered
+    assert 'source_env_file "$EXPLICIT_ZETHERION_ENV_FILE"' in rendered
     assert "printf 'export %s=%q\\n'" in rendered
     assert "printf 'unset %s\\n'" not in rendered
 

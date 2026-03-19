@@ -116,12 +116,12 @@ class DockerEnvironment:
 
     def start(self) -> None:
         """Start the Docker Compose environment with fresh images."""
-        print("🐳 Tearing down any stale test environment...")
+        print("[docker-e2e] Tearing down any stale test environment...")
         subprocess.run(
             ["docker", "compose", "-f", self.compose_file, "-p", self.project_name, "down", "-v"],
             capture_output=True,
         )
-        print("🐳 Building and starting Docker Compose environment...")
+        print("[docker-e2e] Building and starting Docker Compose environment...")
         subprocess.run(
             [
                 "docker",
@@ -140,7 +140,7 @@ class DockerEnvironment:
 
     def stop(self) -> None:
         """Stop and clean up the Docker Compose environment."""
-        print("🛑 Stopping Docker Compose environment...")
+        print("[docker-e2e] Stopping Docker Compose environment...")
         subprocess.run(
             [
                 "docker",
@@ -164,7 +164,7 @@ class DockerEnvironment:
 
     def wait_for_healthy(self, timeout: int = 180) -> bool:
         """Wait for all services to be healthy."""
-        print("⏳ Waiting for services to be healthy...")
+        print("[docker-e2e] Waiting for services to be healthy...")
         start_time = time.time()
         expected = {
             "postgres": "healthy",
@@ -188,10 +188,10 @@ class DockerEnvironment:
                 self._service_status(service) == state for service, state in expected.items()
             )
             if services_ok:
-                print("✅ All services healthy")
+                print("[docker-e2e] All services healthy")
                 return True
 
-            print("⏳ Services not ready yet, waiting...")
+            print("[docker-e2e] Services not ready yet, waiting...")
             time.sleep(5)
 
         return False
@@ -239,41 +239,43 @@ class DockerEnvironment:
 
         success = True
 
-        print(f"📥 Pulling router model '{router_model}' to ollama-router container...")
+        print(f"[docker-e2e] Pulling router model '{router_model}' to ollama-router container...")
         try:
             result = self._exec("ollama-router", "ollama", "pull", router_model, timeout=300)
             if result.returncode == 0:
-                print(f"✅ Router model '{router_model}' pulled successfully")
+                print(f"[docker-e2e] Router model '{router_model}' pulled successfully")
             else:
-                print(f"❌ Failed to pull router model: {result.stderr}")
+                print(f"[docker-e2e] Failed to pull router model: {result.stderr}")
                 success = False
         except (RuntimeError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
-            print(f"❌ Error pulling router model: {exc}")
+            print(f"[docker-e2e] Error pulling router model: {exc}")
             success = False
 
-        print(f"📥 Pulling generation model '{generation_model}' (this may take a few minutes)...")
+        print(
+            f"[docker-e2e] Pulling generation model '{generation_model}' (this may take a few minutes)..."
+        )
         try:
             result = self._exec("ollama", "ollama", "pull", generation_model, timeout=600)
             if result.returncode == 0:
-                print(f"✅ Generation model '{generation_model}' pulled successfully")
+                print(f"[docker-e2e] Generation model '{generation_model}' pulled successfully")
             else:
-                print(f"❌ Failed to pull generation model: {result.stderr}")
+                print(f"[docker-e2e] Failed to pull generation model: {result.stderr}")
                 success = False
         except (RuntimeError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
-            print(f"❌ Error pulling generation model: {exc}")
+            print(f"[docker-e2e] Error pulling generation model: {exc}")
             success = False
 
         if embedding_model:
-            print(f"📥 Pulling embedding model '{embedding_model}'...")
+            print(f"[docker-e2e] Pulling embedding model '{embedding_model}'...")
             try:
                 result = self._exec("ollama", "ollama", "pull", embedding_model, timeout=300)
                 if result.returncode == 0:
-                    print(f"✅ Embedding model '{embedding_model}' pulled successfully")
+                    print(f"[docker-e2e] Embedding model '{embedding_model}' pulled successfully")
                 else:
-                    print(f"❌ Failed to pull embedding model: {result.stderr}")
+                    print(f"[docker-e2e] Failed to pull embedding model: {result.stderr}")
                     success = False
             except (RuntimeError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
-                print(f"❌ Error pulling embedding model: {exc}")
+                print(f"[docker-e2e] Error pulling embedding model: {exc}")
                 success = False
 
         if success:
@@ -459,7 +461,7 @@ async def mock_bot(
 async def test_router_backend(mock_bot: MockDiscordBot) -> None:
     """Test that the router backend is working correctly."""
     backend = mock_bot.router_backend
-    print(f"🔧 Testing {backend.upper()} router backend")
+    print(f"[docker-e2e] Testing {backend.upper()} router backend")
 
     # Test a simple query that should be routed correctly
     response = await mock_bot.simulate_message("What is the capital of France?")
@@ -476,7 +478,7 @@ async def test_router_backend(mock_bot: MockDiscordBot) -> None:
     # Simple queries should mention Paris
     assert "paris" in lower
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
-    print(f"✅ {backend.upper()} router test passed: {preview}...")
+    print(f"[docker-e2e] {backend.upper()} router test passed: {preview}...")
 
 
 @pytest.mark.integration
@@ -488,7 +490,9 @@ async def test_simple_question(mock_bot: MockDiscordBot) -> None:
     assert len(response) > 0
     assert isinstance(response, str)
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
-    print(f"✅ Simple question test passed ({mock_bot.router_backend.upper()}): {preview}...")
+    print(
+        f"[docker-e2e] Simple question test passed ({mock_bot.router_backend.upper()}): {preview}..."
+    )
 
 
 @pytest.mark.integration
@@ -497,7 +501,7 @@ async def test_memory_store_and_recall(mock_bot: MockDiscordBot) -> None:
     # Store a memory
     store_response = await mock_bot.simulate_message("Remember that my favorite color is blue")
     assert "remember" in store_response.lower() or "blue" in store_response.lower()
-    print(f"✅ Memory stored: {store_response}")
+    print(f"[docker-e2e] Memory stored: {store_response}")
 
     # Brief pause for memory indexing
     await asyncio.sleep(1)
@@ -510,9 +514,9 @@ async def test_memory_store_and_recall(mock_bot: MockDiscordBot) -> None:
     assert "trouble processing" not in recall_response.lower()
     # Ideally should mention blue, but LLM responses can vary
     if "blue" in recall_response.lower():
-        print(f"✅ Memory recalled correctly: {recall_response}")
+        print(f"[docker-e2e] Memory recalled correctly: {recall_response}")
     else:
-        print(f"⚠️ Memory recall uncertain (may need longer indexing time): {recall_response}")
+        print(f"[docker-e2e] Memory recall uncertain (may need longer indexing time): {recall_response}")
 
 
 @pytest.mark.integration
@@ -560,7 +564,7 @@ async def test_complex_task(mock_bot: MockDiscordBot) -> None:
     ), f"Expected detailed response about async/sync, got: {response[:200]}"
 
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
-    print(f"✅ Complex task test passed: {preview}...")
+    print(f"[docker-e2e] Complex task test passed: {preview}...")
 
 
 @pytest.mark.integration
@@ -581,9 +585,9 @@ async def test_conversation_context(mock_bot: MockDiscordBot) -> None:
     # Ideally mentions name/testuser, but may also recall other context
     preview: str = response2[0:100] if len(response2) > 100 else response2  # type: ignore[index]
     if "testuser" in response2.lower() or "name" in response2.lower():
-        print(f"✅ Context retention test passed: {response2}")
+        print(f"[docker-e2e] Context retention test passed: {response2}")
     else:
-        print(f"⚠️ Context retention (recalled different context): {preview}...")
+        print(f"[docker-e2e] Context retention (recalled different context): {preview}...")
 
 
 @pytest.mark.integration
@@ -596,7 +600,7 @@ async def test_help_command(mock_bot: MockDiscordBot) -> None:
     assert len(response) > 20
     assert "trouble processing" not in response.lower()
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
-    print(f"✅ Help command test passed: {preview}...")
+    print(f"[docker-e2e] Help command test passed: {preview}...")
 
 
 @pytest.mark.integration
@@ -620,7 +624,7 @@ async def test_docker_services_running(docker_env: DockerEnvironment) -> None:
         text=True,
     )
     assert result.stdout.strip()
-    print("✅ Qdrant container is running")
+    print("[docker-e2e] Qdrant container is running")
 
     if _require_discord_runtime():
         # Check Zetherion AI (uses container_name from docker-compose.yml)
@@ -641,7 +645,7 @@ async def test_docker_services_running(docker_env: DockerEnvironment) -> None:
             text=True,
         )
         assert result.stdout.strip()
-        print("✅ Zetherion AI container is running")
+        print("[docker-e2e] Zetherion AI container is running")
     else:
         print("ℹ️ Discord bot container is not required for this E2E profile")
 
@@ -654,7 +658,7 @@ async def test_qdrant_collections_exist(docker_env: DockerEnvironment) -> None:
     collection_names = {entry.get("name") for entry in collections if isinstance(entry, dict)}
 
     assert "conversations" in collection_names or "long_term_memory" in collection_names
-    print("✅ Qdrant collections verified")
+    print("[docker-e2e] Qdrant collections verified")
 
 
 # Phase 5 Integration Tests
@@ -673,7 +677,7 @@ async def test_task_management_skill(mock_bot: MockDiscordBot) -> None:
     assert "skills service" not in lower
     assert "task" in lower
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
-    print(f"✅ Task management test: {preview}...")
+    print(f"[docker-e2e] Task management test: {preview}...")
 
 
 @pytest.mark.integration
@@ -688,7 +692,7 @@ async def test_calendar_query_skill(mock_bot: MockDiscordBot) -> None:
     assert "trouble processing" not in lower
     assert "skills service" not in lower
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
-    print(f"✅ Calendar query test: {preview}...")
+    print(f"[docker-e2e] Calendar query test: {preview}...")
 
 
 @pytest.mark.integration
@@ -703,7 +707,7 @@ async def test_profile_query_skill(mock_bot: MockDiscordBot) -> None:
     assert "trouble processing" not in lower
     assert "skills service" not in lower
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
-    print(f"✅ Profile query test: {preview}...")
+    print(f"[docker-e2e] Profile query test: {preview}...")
 
 
 @pytest.mark.integration
@@ -727,12 +731,12 @@ async def test_skills_service_health(docker_env: DockerEnvironment) -> None:
         text=True,
     )
     assert result.stdout.strip()
-    print("✅ Skills service container is running")
+    print("[docker-e2e] Skills service container is running")
 
     payload = _http_get_json(RUNTIME.skills_url + "/health")
     health = str(payload.get("status", payload)).lower()
     assert "healthy" in health or health == "ok"
-    print("✅ Skills service health check passed")
+    print("[docker-e2e] Skills service health check passed")
 
 
 @pytest.mark.integration
@@ -758,7 +762,7 @@ async def test_router_skill_intents(mock_bot: MockDiscordBot) -> None:
     # Should classify as profile_query or memory_recall
     print(f"Profile intent classified as: {decision.intent.value}")
 
-    print("✅ Router skill intent classification test passed")
+    print("[docker-e2e] Router skill intent classification test passed")
 
 
 @pytest.mark.integration
@@ -779,7 +783,7 @@ async def test_encryption_in_memory_storage(mock_bot: MockDiscordBot) -> None:
     assert len(recall) > 10
     # Should respond (either with the key or acknowledging it was stored)
     preview: str = recall[0:100] if len(recall) > 100 else recall  # type: ignore[index]
-    print(f"✅ Encryption transparency test: {preview}...")
+    print(f"[docker-e2e] Encryption transparency test: {preview}...")
 
 
 if __name__ == "__main__":

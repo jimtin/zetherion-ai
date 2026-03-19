@@ -82,9 +82,25 @@ is_generated_e2e_env_file() {
     esac
 }
 
-load_repo_env() {
-    local env_file="$DEFAULT_ZETHERION_ENV_FILE"
+source_env_file() {
+    local env_file="${1:-}"
+    if [[ -z "$env_file" || ! -f "$env_file" ]]; then
+        return 0
+    fi
 
+    local normalized_env
+    normalized_env="$(mktemp "${TMPDIR:-/tmp}/discord-e2e-env.XXXXXX")"
+    awk 'NR == 1 {sub(/^\xef\xbb\xbf/, "")} {gsub(/\r/, "")} {print}' \
+        "$env_file" >"$normalized_env"
+
+    set -a
+    # shellcheck disable=SC1090
+    source "$normalized_env"
+    set +a
+    rm -f "$normalized_env"
+}
+
+load_repo_env() {
     if [[ -n "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
         if [[ ! -f "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
             if is_generated_e2e_env_file "$EXPLICIT_ZETHERION_ENV_FILE"; then
@@ -134,13 +150,15 @@ load_repo_env() {
         fi
     done
 
-    awk 'NR == 1 {sub(/^\xef\xbb\xbf/, "")} {gsub(/\r/, "")} {print}' \
-        "$env_file" >"$normalized_env"
-
-    set -a
-    # shellcheck disable=SC1090
-    source "$normalized_env"
-    set +a
+    if [[ -n "$EXPLICIT_ZETHERION_ENV_FILE" && -f "$EXPLICIT_ZETHERION_ENV_FILE" ]] \
+        && is_generated_e2e_env_file "$EXPLICIT_ZETHERION_ENV_FILE"; then
+        source_env_file "$DEFAULT_ZETHERION_ENV_FILE"
+        source_env_file "$EXPLICIT_ZETHERION_ENV_FILE"
+    elif [[ -n "$EXPLICIT_ZETHERION_ENV_FILE" && -f "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
+        source_env_file "$EXPLICIT_ZETHERION_ENV_FILE"
+    else
+        source_env_file "$DEFAULT_ZETHERION_ENV_FILE"
+    fi
 
     # shellcheck source=/dev/null
     source "$restore_file"

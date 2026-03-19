@@ -195,11 +195,25 @@ def test_local_required_e2e_receipt_uses_thread_timeout_on_windows() -> None:
 
 def test_local_required_e2e_receipt_passes_discord_scope_to_wrapper() -> None:
     rendered = (REPO_ROOT / "scripts/local-required-e2e-receipt.sh").read_text(encoding="utf-8")
+    assert "source_env_file()" in rendered
+    assert 'source_env_file "$DEFAULT_ZETHERION_ENV_FILE"' in rendered
+    assert 'source_env_file "$EXPLICIT_ZETHERION_ENV_FILE"' in rendered
     assert 'DISCORD_E2E_ALLOWED_AUTHOR_IDS="${DISCORD_E2E_ALLOWED_AUTHOR_IDS:-}"' in rendered
     assert 'DISCORD_E2E_ENABLED="${DISCORD_E2E_ENABLED:-}"' in rendered
     assert 'TEST_DISCORD_BOT_TOKEN="${TEST_DISCORD_BOT_TOKEN:-}"' in rendered
     assert 'TEST_DISCORD_GUILD_ID="${TEST_DISCORD_GUILD_ID:-}"' in rendered
     assert 'OPENAI_API_KEY="${OPENAI_API_KEY:-}"' in rendered
+
+
+def test_windows_docker_e2e_logs_are_ascii_safe() -> None:
+    rendered = (REPO_ROOT / "tests/integration/test_e2e.py").read_text(encoding="utf-8")
+    assert "[docker-e2e] Tearing down any stale test environment..." in rendered
+    assert "[docker-e2e] Building and starting Docker Compose environment..." in rendered
+    assert "[docker-e2e] Stopping Docker Compose environment..." in rendered
+    assert "[docker-e2e] Waiting for services to be healthy..." in rendered
+    assert "🐳" not in rendered
+    assert "🛑" not in rendered
+    assert "⏳" not in rendered
 
 
 def test_repo_node_tool_prefers_repo_and_windows_node_paths() -> None:

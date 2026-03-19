@@ -87,6 +87,23 @@ is_generated_e2e_env_file() {
     esac
 }
 
+source_env_file() {
+    local env_file="${1:-}"
+    if [[ -z "$env_file" || ! -f "$env_file" ]]; then
+        return 0
+    fi
+
+    local normalized_env
+    normalized_env="$(mktemp "${TMPDIR:-/tmp}/zetherion-e2e-env.XXXXXX")"
+    awk 'NR == 1 {sub(/^\xef\xbb\xbf/, "")} {gsub(/\r/, "")} {print}' \
+        "$env_file" >"$normalized_env"
+    set -a
+    # shellcheck disable=SC1090
+    source "$normalized_env"
+    set +a
+    rm -f "$normalized_env"
+}
+
 ensure_optional_ollama_profile() {
     E2E_ENABLE_OLLAMA="$(normalize_bool "$E2E_ENABLE_OLLAMA")"
     if [[ "$DISCORD_E2E_PROVIDER" == "local" ]]; then
@@ -127,8 +144,6 @@ ensure_ollama_base_image() {
 }
 
 load_repo_env() {
-    local env_file="$DEFAULT_ZETHERION_ENV_FILE"
-
     if [[ -n "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
         if [[ ! -f "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
             if is_generated_e2e_env_file "$EXPLICIT_ZETHERION_ENV_FILE"; then
@@ -137,22 +152,17 @@ load_repo_env() {
                 echo "ERROR: ZETHERION_ENV_FILE points to a missing file: $EXPLICIT_ZETHERION_ENV_FILE" >&2
                 exit 1
             fi
+        elif is_generated_e2e_env_file "$EXPLICIT_ZETHERION_ENV_FILE"; then
+            source_env_file "$DEFAULT_ZETHERION_ENV_FILE"
+            source_env_file "$EXPLICIT_ZETHERION_ENV_FILE"
+            return 0
         else
-            env_file="$EXPLICIT_ZETHERION_ENV_FILE"
+            source_env_file "$EXPLICIT_ZETHERION_ENV_FILE"
+            return 0
         fi
     fi
 
-    if [[ -f "$env_file" ]]; then
-        local normalized_env
-        normalized_env="$(mktemp "${TMPDIR:-/tmp}/zetherion-e2e-env.XXXXXX")"
-        awk 'NR == 1 {sub(/^\xef\xbb\xbf/, "")} {gsub(/\r/, "")} {print}' \
-            "$env_file" >"$normalized_env"
-        set -a
-        # shellcheck disable=SC1090
-        source "$normalized_env"
-        set +a
-        rm -f "$normalized_env"
-    fi
+    source_env_file "$DEFAULT_ZETHERION_ENV_FILE"
 }
 
 activate_repo_venv() {
