@@ -253,7 +253,7 @@ export const LANE_DEFINITIONS = {
     timeoutSeconds: 1800,
     heartbeat: true,
     command: [
-      "sh",
+      "bash",
       "-lc",
       [
         "node --test scripts/testing/run-bounded.test.mjs",
