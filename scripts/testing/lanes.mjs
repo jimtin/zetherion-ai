@@ -88,7 +88,7 @@ export const LANE_DEFINITIONS = {
     command: [
       "bash",
       "-lc",
-      "scripts/repo-python-tool.sh -m pytest tests/unit -q --tb=short --no-cov",
+      "scripts/docker-python-tool.sh -m pytest tests/unit -q --tb=short --no-cov",
     ],
   },
   "z-unit-core": {
