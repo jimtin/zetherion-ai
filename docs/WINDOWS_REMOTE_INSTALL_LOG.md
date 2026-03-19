@@ -425,3 +425,11 @@ Current live blocker before full authoritative Windows certification:
 This means the next session should continue from **promotion-aware runtime
 validation**, not from environment harvest, Docker Desktop repair, or
 clean-candidate preparation.
+
+Additional capacity note:
+
+- `C:\Users\james\.wslconfig` is currently capping WSL at `64GB`
+- that explains why Docker reports about `62.8 GiB` of effective engine memory
+  even though Docker Desktop settings are already at the `96 GiB` target
+- aligning WSL memory/swap policy is the next controlled resource step, and it
+  will require a planned WSL/Docker restart to take full effect

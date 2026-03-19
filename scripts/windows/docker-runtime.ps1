@@ -18,6 +18,8 @@ $script:ZetherionDockerBackend = if ($env:ZETHERION_DOCKER_BACKEND) {
 $script:ZetherionRecommendedWslVmIdleTimeoutMs = 604800000
 $script:ZetherionRequiredDockerMemoryMiB = 98304
 $script:ZetherionRequiredDockerSwapMiB = 0
+$script:ZetherionRequiredWslMemoryMiB = 98304
+$script:ZetherionRequiredWslSwapMiB = 0
 $script:ZetherionDockerDesktopContextName = "desktop-linux"
 $script:ZetherionDockerDesktopServiceName = "com.docker.service"
 $script:ZetherionDockerDesktopStartupTaskName = "ZetherionDockerAutoStart"
@@ -44,6 +46,14 @@ function Get-ZetherionRequiredDockerMemoryMiB {
 
 function Get-ZetherionRequiredDockerSwapMiB {
     return [int]$script:ZetherionRequiredDockerSwapMiB
+}
+
+function Get-ZetherionRequiredWslMemoryMiB {
+    return [int]$script:ZetherionRequiredWslMemoryMiB
+}
+
+function Get-ZetherionRequiredWslSwapMiB {
+    return [int]$script:ZetherionRequiredWslSwapMiB
 }
 
 function Get-ZetherionDockerDesktopContextName {
@@ -233,6 +243,61 @@ function Get-ZetherionWslHostConfigPath {
     return Join-Path $env:USERPROFILE ".wslconfig"
 }
 
+function ConvertFrom-ZetherionWslSizeToMiB {
+    param(
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if (-not $Value) {
+        return $null
+    }
+
+    $normalized = ([string]$Value).Trim()
+    if (-not $normalized) {
+        return $null
+    }
+
+    $commentIndex = $normalized.IndexOf("#")
+    if ($commentIndex -ge 0) {
+        $normalized = $normalized.Substring(0, $commentIndex).Trim()
+    }
+    if (-not $normalized) {
+        return $null
+    }
+
+    if ($normalized -match '^(?<number>\d+)\s*(?<unit>[KMGTP]?B?)?$') {
+        $number = [double]$Matches["number"]
+        $unit = [string]$Matches["unit"]
+        switch ($unit.ToUpperInvariant()) {
+            "" { return [int]$number }
+            "B" { return [int][Math]::Floor($number / 1MB) }
+            "K" { return [int][Math]::Floor($number / 1024) }
+            "KB" { return [int][Math]::Floor($number / 1024) }
+            "M" { return [int]$number }
+            "MB" { return [int]$number }
+            "G" { return [int]($number * 1024) }
+            "GB" { return [int]($number * 1024) }
+            "T" { return [int]($number * 1024 * 1024) }
+            "TB" { return [int]($number * 1024 * 1024) }
+        }
+    }
+
+    return $null
+}
+
+function ConvertTo-ZetherionWslSizeLiteral {
+    param([int]$ValueMiB)
+
+    if ($ValueMiB -le 0) {
+        return "0"
+    }
+    if (($ValueMiB % 1024) -eq 0) {
+        return "$([int]($ValueMiB / 1024))GB"
+    }
+    return "${ValueMiB}MB"
+}
+
 function Get-ZetherionWslHostConfig {
     $path = Get-ZetherionWslHostConfigPath
     $exists = Test-Path -LiteralPath $path
@@ -247,6 +312,9 @@ function Get-ZetherionWslHostConfig {
 
     $section = ""
     $vmIdleTimeoutMs = $null
+    $memoryMiB = $null
+    $swapMiB = $null
+    $processors = $null
     foreach ($rawLine in $rawLines) {
         $trimmed = ([string]$rawLine).Trim()
         if (-not $trimmed -or $trimmed.StartsWith("#") -or $trimmed.StartsWith(";")) {
@@ -270,22 +338,58 @@ function Get-ZetherionWslHostConfig {
             if ([int64]::TryParse($value, [ref]$parsedValue)) {
                 $vmIdleTimeoutMs = $parsedValue
             }
+            continue
+        }
+        if ($key -eq "memory") {
+            $parsedMemoryMiB = ConvertFrom-ZetherionWslSizeToMiB -Value $value
+            if ($null -ne $parsedMemoryMiB) {
+                $memoryMiB = [int]$parsedMemoryMiB
+            }
+            continue
+        }
+        if ($key -eq "swap") {
+            $parsedSwapMiB = ConvertFrom-ZetherionWslSizeToMiB -Value $value
+            if ($null -ne $parsedSwapMiB) {
+                $swapMiB = [int]$parsedSwapMiB
+            }
+            continue
+        }
+        if ($key -eq "processors") {
+            $parsedProcessors = [int]0
+            if ([int]::TryParse(($value -replace '\s+#.*$', '').Trim(), [ref]$parsedProcessors)) {
+                $processors = $parsedProcessors
+            }
         }
     }
 
     $recommended = Get-ZetherionRecommendedWslVmIdleTimeoutMs
+    $requiredMemoryMiB = Get-ZetherionRequiredWslMemoryMiB
+    $requiredSwapMiB = Get-ZetherionRequiredWslSwapMiB
     return [pscustomobject]@{
         path = $path
         exists = [bool]$exists
         raw_lines = @($rawLines)
+        memory_mib = if ($null -ne $memoryMiB) { [int]$memoryMiB } else { $null }
+        swap_mib = if ($null -ne $swapMiB) { [int]$swapMiB } else { $null }
+        processors = if ($null -ne $processors) { [int]$processors } else { $null }
         vm_idle_timeout_ms = if ($null -ne $vmIdleTimeoutMs) { [int64]$vmIdleTimeoutMs } else { $null }
+        required_memory_mib = [int]$requiredMemoryMiB
+        required_swap_mib = [int]$requiredSwapMiB
         recommended_vm_idle_timeout_ms = [int64]$recommended
+        memory_meets_floor = [bool]($null -ne $memoryMiB -and [int]$memoryMiB -ge [int]$requiredMemoryMiB)
+        swap_matches_target = [bool]($null -ne $swapMiB -and [int]$swapMiB -eq [int]$requiredSwapMiB)
         passes_idle_timeout = [bool]($null -ne $vmIdleTimeoutMs -and [int64]$vmIdleTimeoutMs -ge [int64]$recommended)
+        passes_resource_policy = [bool](
+            ($null -ne $memoryMiB -and [int]$memoryMiB -ge [int]$requiredMemoryMiB) -and
+            ($null -ne $swapMiB -and [int]$swapMiB -eq [int]$requiredSwapMiB)
+        )
     }
 }
 
-function Set-ZetherionWslHostVmIdleTimeout {
+function Set-ZetherionWslHostConfiguration {
     param(
+        [int]$MemoryMiB = (Get-ZetherionRequiredWslMemoryMiB),
+        [int]$SwapMiB = (Get-ZetherionRequiredWslSwapMiB),
         [int64]$VmIdleTimeoutMs = (Get-ZetherionRecommendedWslVmIdleTimeoutMs)
     )
 
@@ -302,16 +406,30 @@ function Set-ZetherionWslHostVmIdleTimeout {
     $newLines = New-Object 'System.Collections.Generic.List[string]'
     $inWsl2Section = $false
     $sawWsl2Section = $false
+    $wroteMemory = $false
+    $wroteSwap = $false
     $wroteVmIdleTimeout = $false
+    $memoryLiteral = ConvertTo-ZetherionWslSizeLiteral -ValueMiB $MemoryMiB
+    $swapLiteral = ConvertTo-ZetherionWslSizeLiteral -ValueMiB $SwapMiB
 
     foreach ($rawLine in $existingLines) {
         $line = [string]$rawLine
         $trimmed = $line.Trim()
 
         if ($trimmed -match "^\[(.+)\]$") {
-            if ($inWsl2Section -and -not $wroteVmIdleTimeout) {
-                $newLines.Add("vmIdleTimeout=$VmIdleTimeoutMs")
-                $wroteVmIdleTimeout = $true
+            if ($inWsl2Section) {
+                if (-not $wroteMemory) {
+                    $newLines.Add("memory=$memoryLiteral")
+                    $wroteMemory = $true
+                }
+                if (-not $wroteSwap) {
+                    $newLines.Add("swap=$swapLiteral")
+                    $wroteSwap = $true
+                }
+                if (-not $wroteVmIdleTimeout) {
+                    $newLines.Add("vmIdleTimeout=$VmIdleTimeoutMs")
+                    $wroteVmIdleTimeout = $true
+                }
             }
             $section = $Matches[1].Trim().ToLowerInvariant()
             $inWsl2Section = ($section -eq "wsl2")
@@ -319,6 +437,22 @@ function Set-ZetherionWslHostVmIdleTimeout {
                 $sawWsl2Section = $true
             }
             $newLines.Add($line)
+            continue
+        }
+
+        if ($inWsl2Section -and $trimmed -match "^memory\s*=") {
+            if (-not $wroteMemory) {
+                $newLines.Add("memory=$memoryLiteral")
+                $wroteMemory = $true
+            }
+            continue
+        }
+
+        if ($inWsl2Section -and $trimmed -match "^swap\s*=") {
+            if (-not $wroteSwap) {
+                $newLines.Add("swap=$swapLiteral")
+                $wroteSwap = $true
+            }
             continue
         }
 
@@ -338,10 +472,20 @@ function Set-ZetherionWslHostVmIdleTimeout {
             $newLines.Add("")
         }
         $newLines.Add("[wsl2]")
+        $newLines.Add("memory=$memoryLiteral")
+        $newLines.Add("swap=$swapLiteral")
         $newLines.Add("vmIdleTimeout=$VmIdleTimeoutMs")
     }
-    elseif ($sawWsl2Section -and -not $wroteVmIdleTimeout) {
-        $newLines.Add("vmIdleTimeout=$VmIdleTimeoutMs")
+    elseif ($sawWsl2Section) {
+        if (-not $wroteMemory) {
+            $newLines.Add("memory=$memoryLiteral")
+        }
+        if (-not $wroteSwap) {
+            $newLines.Add("swap=$swapLiteral")
+        }
+        if (-not $wroteVmIdleTimeout) {
+            $newLines.Add("vmIdleTimeout=$VmIdleTimeoutMs")
+        }
     }
 
     $parent = Split-Path -Parent $path
@@ -349,8 +493,16 @@ function Set-ZetherionWslHostVmIdleTimeout {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
 
-    Set-Content -LiteralPath $path -Value $newLines -Encoding utf8
+    Set-ZetherionUtf8NoBomContent -Path $path -Content (($newLines -join [Environment]::NewLine) + [Environment]::NewLine)
     return Get-ZetherionWslHostConfig
+}
+
+function Set-ZetherionWslHostVmIdleTimeout {
+    param(
+        [int64]$VmIdleTimeoutMs = (Get-ZetherionRecommendedWslVmIdleTimeoutMs)
+    )
+
+    return Set-ZetherionWslHostConfiguration -VmIdleTimeoutMs $VmIdleTimeoutMs
 }
 
 function Get-ZetherionWslDockerConfigStatus {
@@ -873,6 +1025,7 @@ function Get-ZetherionDockerDesktopStatus {
     $contextStatus = Get-ZetherionDockerDesktopContextStatus
     $wslRuntimeStatus = Get-ZetherionDockerRuntimeStatus -ExecutionBackend "wsl_docker" -DockerBackend "wsl_docker"
     $startupTaskStatus = Get-ZetherionDockerDesktopStartupTaskStatus
+    $wslHostConfig = Get-ZetherionWslHostConfig
 
     $resourceSaverEnabled = $false
     if ($null -ne $settings.resource_saver_enabled) {
@@ -917,6 +1070,14 @@ function Get-ZetherionDockerDesktopStatus {
         wsl_docker_enabled = [bool]$wslRuntimeStatus.enabled
         wsl_docker_active = [bool]$wslRuntimeStatus.active
         wsl_docker_available = [bool]$wslRuntimeStatus.available
+        wsl_host_config = $wslHostConfig
+        wsl_memory_meets_floor = [bool]$wslHostConfig.memory_meets_floor
+        wsl_swap_matches_target = [bool]$wslHostConfig.swap_matches_target
+        wsl_vm_idle_timeout_ok = [bool]$wslHostConfig.passes_idle_timeout
+        wsl_resources_configured = [bool](
+            [bool]$wslHostConfig.passes_resource_policy -and
+            [bool]$wslHostConfig.passes_idle_timeout
+        )
     }
 }
 
@@ -1056,6 +1217,25 @@ function Repair-ZetherionDockerDesktopRuntime {
         if ($settingsRepair.changed) {
             $actions.Add("updated_docker_desktop_settings:$($settingsRepair.changed_keys -join ',')") | Out-Null
         }
+
+        $wslHostConfigBefore = Get-ZetherionWslHostConfig
+        $wslHostConfigAfter = Set-ZetherionWslHostConfiguration `
+            -MemoryMiB (Get-ZetherionRequiredWslMemoryMiB) `
+            -SwapMiB (Get-ZetherionRequiredWslSwapMiB) `
+            -VmIdleTimeoutMs (Get-ZetherionRecommendedWslVmIdleTimeoutMs)
+        $wslChangedKeys = New-Object 'System.Collections.Generic.List[string]'
+        if ($wslHostConfigBefore.memory_mib -ne $wslHostConfigAfter.memory_mib) {
+            $wslChangedKeys.Add("memory") | Out-Null
+        }
+        if ($wslHostConfigBefore.swap_mib -ne $wslHostConfigAfter.swap_mib) {
+            $wslChangedKeys.Add("swap") | Out-Null
+        }
+        if ($wslHostConfigBefore.vm_idle_timeout_ms -ne $wslHostConfigAfter.vm_idle_timeout_ms) {
+            $wslChangedKeys.Add("vmIdleTimeout") | Out-Null
+        }
+        if ($wslChangedKeys.Count -gt 0) {
+            $actions.Add("updated_wsl_host_config:$($wslChangedKeys -join ',')") | Out-Null
+        }
     }
 
     $initialStatus = Get-ZetherionDockerDesktopStatus
@@ -1114,6 +1294,7 @@ function Repair-ZetherionDockerDesktopRuntime {
         $finalStatus.auto_start -and
         $finalStatus.memory_meets_floor -and
         $finalStatus.swap_matches_target -and
+        $finalStatus.wsl_resources_configured -and
         $finalStatus.process_running -and
         $finalStatus.desktop_linux_engine_available -and
         $finalStatus.wsl_docker_active

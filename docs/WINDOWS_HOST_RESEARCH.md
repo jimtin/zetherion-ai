@@ -333,6 +333,10 @@ This means:
 - Docker Desktop configuration drift is fixed
 - the remaining capacity improvement is a **WSL memory policy** issue, not a
   Docker Desktop settings issue
+- the host currently has `C:\Users\james\.wslconfig` with:
+  - `memory=64GB`
+  - `processors=24`
+  - `vmIdleTimeout=604800000`
 - changing that will likely require a controlled WSL/Docker restart and should
   be treated as a planned optimization step during cutover, not as a rediscovery task
 

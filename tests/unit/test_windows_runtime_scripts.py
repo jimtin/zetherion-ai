@@ -71,6 +71,9 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "function Invoke-ZetherionWslDockerResult" in docker_runtime
     assert "function Get-ZetherionWslHostConfigPath" in docker_runtime
     assert "function Get-ZetherionWslHostConfig" in docker_runtime
+    assert "function ConvertFrom-ZetherionWslSizeToMiB" in docker_runtime
+    assert "function ConvertTo-ZetherionWslSizeLiteral" in docker_runtime
+    assert "function Set-ZetherionWslHostConfiguration" in docker_runtime
     assert "function Set-ZetherionWslHostVmIdleTimeout" in docker_runtime
     assert "function Get-ZetherionWslDockerConfigStatus" in docker_runtime
     assert "function Ensure-ZetherionWslDockerHeadlessConfig" in docker_runtime
@@ -112,6 +115,8 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "function Repair-ZetherionDockerDesktopRuntime" in docker_runtime
     assert '$script:ZetherionRequiredDockerMemoryMiB = 98304' in docker_runtime
     assert '$script:ZetherionRequiredDockerSwapMiB = 0' in docker_runtime
+    assert '$script:ZetherionRequiredWslMemoryMiB = 98304' in docker_runtime
+    assert '$script:ZetherionRequiredWslSwapMiB = 0' in docker_runtime
     assert '$script:ZetherionDockerDesktopContextName = "desktop-linux"' in docker_runtime
     assert '$script:ZetherionDockerDesktopServiceName = "com.docker.service"' in docker_runtime
     assert '$script:ZetherionDockerDesktopStartupTaskName = "ZetherionDockerAutoStart"' in docker_runtime
@@ -122,12 +127,17 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "return ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)" in docker_runtime
     assert "$requiresEncodingRewrite = Test-ZetherionUtf8Bom -Path $current.path" in docker_runtime
     assert "Set-ZetherionUtf8NoBomContent -Path $current.path -Content $settingsJson" in docker_runtime
+    assert 'return "$([int]($ValueMiB / 1024))GB"' in docker_runtime
+    assert 'memory=$memoryLiteral' in docker_runtime
+    assert 'swap=$swapLiteral' in docker_runtime
+    assert 'updated_wsl_host_config:$($wslChangedKeys -join ' in docker_runtime
     assert "encoding_rewritten = [bool]$requiresEncodingRewrite" in docker_runtime
     assert 'action_matches = [bool](Test-ZetherionScheduledTaskActionContains -Task $task -Needle "Docker Desktop.exe")' in docker_runtime
     assert 'Start-ScheduledTask -TaskName $taskStatus.task_name -ErrorAction Stop' in docker_runtime
     assert 'method = "scheduled_task"' in docker_runtime
     assert 'started_docker_desktop_process:$($startResult.method)' in docker_runtime
     assert '& $dockerCli.Source --context $contextName info *> $null' in docker_runtime
+    assert 'wsl_resources_configured = [bool](' in docker_runtime
 
 
 def test_docker_runtime_supports_native_windows_backend() -> None:
@@ -298,6 +308,7 @@ def test_verify_windows_host_treats_ollama_as_optional_runtime() -> None:
     assert '$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution' in verify_windows_host
     assert 'Get-ZetherionDockerDesktopStatus' in verify_windows_host
     assert 'Add-Check -Name "docker_resources"' in verify_windows_host
+    assert 'Add-Check -Name "wsl_host_resources"' in verify_windows_host
     assert 'Add-Check -Name "docker_service"' in verify_windows_host
     assert 'Add-Check -Name "wsl_docker_service"' in verify_windows_host
     assert 'Add-Check -Name "docker_unattended_recovery"' in verify_windows_host

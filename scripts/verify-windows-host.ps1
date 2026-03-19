@@ -149,6 +149,13 @@ try {
     else {
         Add-Check -Name "docker_unattended_recovery" -Status "warn" -Message "Docker Desktop still has auto-pause or resource saver enabled"
     }
+
+    if ($dockerDesktop.wsl_resources_configured) {
+        Add-Check -Name "wsl_host_resources" -Status "pass" -Message "WSL host memory, swap, and idle-timeout policy match the required host profile"
+    }
+    else {
+        Add-Check -Name "wsl_host_resources" -Status "warn" -Message "WSL host resource policy does not yet match the required host profile"
+    }
 }
 catch {
     Add-Check -Name "docker_running" -Status "fail" -Message "Docker Desktop status check failed"
@@ -156,6 +163,7 @@ catch {
     Add-Check -Name "docker_resources" -Status "fail" -Message "Docker Desktop resource configuration check failed"
     Add-Check -Name "docker_service" -Status "fail" -Message "Docker Desktop service check failed"
     Add-Check -Name "wsl_docker_service" -Status "fail" -Message "WSL docker.service check failed"
+    Add-Check -Name "wsl_host_resources" -Status "warn" -Message "WSL host resource policy check failed"
 }
 
 # 3. Network Profile

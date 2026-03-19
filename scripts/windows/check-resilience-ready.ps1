@@ -210,6 +210,7 @@ $checks = [ordered]@{
     docker_service_persistent = $false
     docker_desktop_recoverable = $false
     docker_desktop_resources_configured = $false
+    wsl_host_resources_configured = $false
 }
 
 $details = [ordered]@{
@@ -337,6 +338,10 @@ try {
         -and [bool]$dockerDesktop.auto_pause_disabled `
         -and -not [bool]$dockerDesktop.resource_saver_enabled
     )
+    $checks.wsl_host_resources_configured = [bool](
+        $dockerDesktop `
+        -and [bool]$dockerDesktop.wsl_resources_configured
+    )
 
     $allowServiceFallback = $false
     $fallbackRaw = [string]($env:WINDOWS_RESILIENCE_ALLOW_SERVICE_FALLBACK)
@@ -375,7 +380,8 @@ if (
     -and $checks.runner_service_persistent `
     -and $checks.docker_service_persistent `
     -and $checks.docker_desktop_recoverable `
-    -and $checks.docker_desktop_resources_configured
+    -and $checks.docker_desktop_resources_configured `
+    -and $checks.wsl_host_resources_configured
 ) {
     exit 0
 }
