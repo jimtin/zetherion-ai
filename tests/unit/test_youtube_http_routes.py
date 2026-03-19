@@ -8,7 +8,8 @@ count route coverage in the canonical unit-full gate.
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from tests.integration import test_youtube_http as integration_youtube_http
 
@@ -51,4 +52,3 @@ for _name in dir(integration_youtube_http):
     _target = getattr(integration_youtube_http, _name)
     if callable(_target):
         globals()[_name] = _make_wrapper(_target)
-

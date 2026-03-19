@@ -132,7 +132,9 @@ def test_resolve_local_workspace_root_falls_back_to_first_candidate(tmp_path: Pa
         assert owner_ci_profiles._resolve_local_workspace_root() == first
 
 
-def test_resolve_repo_workspace_root_covers_repo_root_candidate_and_fallback(tmp_path: Path) -> None:
+def test_resolve_repo_workspace_root_covers_repo_root_candidate_and_fallback(
+    tmp_path: Path,
+) -> None:
     repo_root = tmp_path / "workspace" / "zetherion-ai"
     repo_root.mkdir(parents=True)
     local_candidate_root = tmp_path / "Developer"
@@ -149,22 +151,31 @@ def test_resolve_repo_workspace_root_covers_repo_root_candidate_and_fallback(tmp
             (local_candidate_root,),
         )
 
-        assert owner_ci_profiles._resolve_repo_workspace_root(
-            env_var="ZETHERION_WORKSPACE_ROOT",
-            repo_name="zetherion-ai",
-        ) == repo_root
-        assert owner_ci_profiles._resolve_repo_workspace_root(
-            env_var="CGS_WORKSPACE_ROOT",
-            repo_name="catalyst-group-solutions",
-        ) == local_repo_candidate
+        assert (
+            owner_ci_profiles._resolve_repo_workspace_root(
+                env_var="ZETHERION_WORKSPACE_ROOT",
+                repo_name="zetherion-ai",
+            )
+            == repo_root
+        )
+        assert (
+            owner_ci_profiles._resolve_repo_workspace_root(
+                env_var="CGS_WORKSPACE_ROOT",
+                repo_name="catalyst-group-solutions",
+            )
+            == local_repo_candidate
+        )
 
         local_repo_candidate.rmdir()
 
         expected_fallback = repo_root.parent / "catalyst-group-solutions"
-        assert owner_ci_profiles._resolve_repo_workspace_root(
-            env_var="CGS_WORKSPACE_ROOT",
-            repo_name="catalyst-group-solutions",
-        ) == expected_fallback
+        assert (
+            owner_ci_profiles._resolve_repo_workspace_root(
+                env_var="CGS_WORKSPACE_ROOT",
+                repo_name="catalyst-group-solutions",
+            )
+            == expected_fallback
+        )
 
 
 def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certification_payload() -> (
