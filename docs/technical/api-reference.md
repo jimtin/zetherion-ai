@@ -64,6 +64,48 @@ Registry status summary.
 }
 ```
 
+### GET /internal/runtime/health
+
+Operator-facing runtime health summary used by internal dashboards and release verification.
+
+**Headers:** `X-API-Secret`
+
+**Response 200:**
+
+```json
+{
+  "generated_at": "2026-03-19T01:45:00+00:00",
+  "domains": [
+    {
+      "key": "skills",
+      "label": "Skills",
+      "status": "healthy",
+      "summary": "Skills service is responding over the direct internal path.",
+      "details": {
+        "skills_ready": 12
+      },
+      "incident_type": null
+    },
+    {
+      "key": "release_verification",
+      "label": "Release Verification",
+      "status": "degraded",
+      "summary": "Release is deployed with degraded checks.",
+      "details": {
+        "blocker_count": 0,
+        "degraded_count": 1,
+        "receipt_status": "deployed_but_unhealthy"
+      },
+      "incident_type": "release_blocker"
+    }
+  ],
+  "summary": {
+    "blocker_count": 0,
+    "degraded_count": 1
+  }
+}
+```
+
 ### GET /skills
 
 List registered skills.
