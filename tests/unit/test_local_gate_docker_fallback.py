@@ -165,10 +165,12 @@ def test_e2e_run_manager_uses_host_python_for_manifest_work() -> None:
     assert "--shell | tr -d '\\r'" in rendered
     assert "host_python_uses_windows_paths()" in rendered
     assert "normalize_host_python_path()" in rendered
+    assert "normalize_shell_exports_for_current_shell()" in rendered
     assert 'cmd.exe /c cd' in rendered
     assert 'pwd -W 2>/dev/null' in rendered
     assert 'runs_root_arg="$(normalize_host_python_path "$E2E_RUNS_ROOT" "$helper_python")"' in rendered
     assert 'compose_file_arg="$(normalize_host_python_path "$COMPOSE_FILE" "$helper_python")"' in rendered
+    assert 'exports="$(normalize_shell_exports_for_current_shell "$exports" "$helper_python")"' in rendered
 
 
 def test_repo_node_tool_prefers_repo_and_windows_node_paths() -> None:

@@ -87,6 +87,25 @@ normalize_host_python_path() {
     printf '%s\n' "$raw_path"
 }
 
+normalize_shell_exports_for_current_shell() {
+    local exports_text="${1:-}"
+    local python_bin="${2:-}"
+
+    if [[ -z "$exports_text" ]] || ! host_python_uses_windows_paths "$python_bin"; then
+        printf '%s\n' "$exports_text"
+        return 0
+    fi
+
+    local windows_repo_root=""
+    windows_repo_root="$(normalize_host_python_path "$REPO_DIR" "$python_bin")"
+    if [[ -z "$windows_repo_root" || "$windows_repo_root" == "$REPO_DIR" ]]; then
+        printf '%s\n' "$exports_text"
+        return 0
+    fi
+
+    printf '%s\n' "${exports_text//$windows_repo_root/$REPO_DIR}"
+}
+
 start_e2e_run() {
     init_e2e_run_manager
     local helper_python=""
@@ -110,6 +129,7 @@ start_e2e_run() {
         --ttl-minutes "$E2E_RUN_TTL_MINUTES" \
         --service-slot "$E2E_SERVICE_SLOT" \
         --shell | tr -d '\r')"
+    exports="$(normalize_shell_exports_for_current_shell "$exports" "$helper_python")"
     eval "$exports"
     export E2E_RUN_ID E2E_PROJECT_NAME E2E_STACK_ROOT E2E_RUN_MANIFEST_PATH E2E_RUN_ENV_PATH PROJECT COMPOSE_FILE \
         E2E_SERVICE_SLOT E2E_API_HOST_PORT E2E_CGS_GATEWAY_HOST_PORT E2E_SKILLS_HOST_PORT E2E_WHATSAPP_BRIDGE_HOST_PORT \
