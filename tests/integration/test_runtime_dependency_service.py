@@ -17,8 +17,11 @@ pytestmark = [
 RUNTIME = get_runtime()
 
 
-def _fetch_json(url: str) -> dict[str, object]:
-    request = Request(url, headers={"Accept": "application/json"})
+def _fetch_json(url: str, *, headers: dict[str, str] | None = None) -> dict[str, object]:
+    request_headers = {"Accept": "application/json"}
+    if headers:
+        request_headers.update(headers)
+    request = Request(url, headers=request_headers)
     with urlopen(request, timeout=20) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -43,6 +46,14 @@ def _ensure_qdrant_collections(names: set[str]) -> None:
         )
 
 
+def _skills_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    api_secret = RUNTIME.resolve_secret("SKILLS_API_SECRET", "ZETHERION_SKILLS_API_SECRET")
+    if api_secret:
+        headers["X-API-Secret"] = api_secret
+    return headers
+
+
 def test_public_api_health_endpoint_is_reachable() -> None:
     payload = _fetch_json(f"{RUNTIME.api_url}/api/v1/health")
     assert str(payload.get("status", "")).lower() in {"ok", "healthy"}
@@ -54,7 +65,10 @@ def test_cgs_gateway_health_endpoint_is_reachable() -> None:
 
 
 def test_skills_runtime_health_reports_domains() -> None:
-    payload = _fetch_json(f"{RUNTIME.skills_url}/internal/runtime/health")
+    payload = _fetch_json(
+        f"{RUNTIME.skills_url}/internal/runtime/health",
+        headers=_skills_headers(),
+    )
     domains = payload.get("domains")
     assert isinstance(domains, list)
     keys = {
