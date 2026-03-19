@@ -1,9 +1,10 @@
 """Agent core - LLM interaction and response generation with routing."""
 
 import asyncio
+import base64
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from zetherion_ai.agent.docs_knowledge import DocsKnowledgeBase
@@ -787,6 +788,33 @@ class Agent:
         log.debug("handling_simple_query")
         return await self._router.generate_simple_response(message)
 
+    @staticmethod
+    def _looks_like_docs_help_query(message: str) -> bool:
+        """Return True only for actual setup/help queries, not incidental 'docs' mentions."""
+        lowered = " ".join(message.lower().split())
+        setup_hints = (
+            "how do i",
+            "how can i",
+            "how to",
+            "set up",
+            "setup",
+            "configure",
+            "connect",
+            "enable",
+            "disable",
+            "what command",
+            "where do i",
+            "where can i",
+        )
+        if any(hint in lowered for hint in setup_hints):
+            return True
+
+        docs_terms = ("docs", "documentation", "manual")
+        docs_verbs = ("show", "open", "read", "find", "where", "help", "guide")
+        return any(term in lowered for term in docs_terms) and any(
+            verb in lowered for verb in docs_verbs
+        )
+
     def _should_use_docs_knowledge(self, message: str, routing: RoutingDecision) -> bool:
         """Whether this message should first try docs-backed answering."""
         if self._docs_knowledge is None:
@@ -795,13 +823,13 @@ class Agent:
         if not DocsKnowledgeBase.should_handle_question(message):
             return False
 
+        if not self._looks_like_docs_help_query(message):
+            return False
+
         return routing.intent in (
             MessageIntent.SYSTEM_COMMAND,
             MessageIntent.EMAIL_MANAGEMENT,
             MessageIntent.SIMPLE_QUERY,
-            MessageIntent.PROFILE_QUERY,
-            MessageIntent.TASK_MANAGEMENT,
-            MessageIntent.CALENDAR_QUERY,
         )
 
     async def _maybe_answer_from_docs(
@@ -1032,7 +1060,43 @@ class Agent:
                 if record_id:
                     seen_ids.add(record_id)
                 merged.append(record)
+        merged.sort(key=self._memory_timestamp_sort_key, reverse=True)
         return merged
+
+    @staticmethod
+    def _memory_timestamp_sort_key(record: dict[str, Any]) -> datetime:
+        """Sort most recent memories first, tolerating missing or invalid timestamps."""
+        raw_timestamp = str(record.get("timestamp") or "").strip()
+        if not raw_timestamp:
+            return datetime.min.replace(tzinfo=UTC)
+        normalized = raw_timestamp.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return datetime.min.replace(tzinfo=UTC)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+
+    def _looks_like_encrypted_memory_content(self, content: str) -> bool:
+        """Best-effort check to avoid surfacing ciphertext in user-visible summaries."""
+        candidate = content.strip()
+        if not candidate or any(ch.isspace() for ch in candidate):
+            return False
+        encryptor = getattr(self._memory, "_encryptor", None)
+        if encryptor is not None and hasattr(encryptor, "is_encrypted"):
+            try:
+                if bool(encryptor.is_encrypted(candidate)):
+                    return True
+            except Exception:
+                pass
+        if len(candidate) < 32:
+            return False
+        try:
+            decoded = base64.b64decode(candidate.encode("ascii"), validate=True)
+        except Exception:
+            return False
+        return len(decoded) >= 29
 
     async def _collect_profile_memory_facts(self, user_id: int) -> list[str]:
         """Collect normalized user memory facts suitable for summary output."""
@@ -1051,6 +1115,14 @@ class Agent:
                 continue
             content = str(memory.get("content") or "").strip()
             if not content:
+                continue
+            if self._looks_like_encrypted_memory_content(content):
+                log.info(
+                    "user_knowledge_memory_content_skipped",
+                    user_id=user_id,
+                    reason="encrypted_payload",
+                    memory_id=str(memory.get("id") or ""),
+                )
                 continue
             collapsed = " ".join(content.split())
             key = collapsed.casefold()

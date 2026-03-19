@@ -902,6 +902,41 @@ class TestGenerateResponseSkillIntents:
         assert "I work as a software engineer" in result
         assert "my favorite color is teal-abc123" in result
 
+    async def test_unified_summary_skips_encrypted_memory_and_prefers_recent_facts(self):
+        """Encrypted-looking stale payloads should not leak into the user-facing summary."""
+        mock_memory = AsyncMock()
+        mock_memory._encryptor = MagicMock()
+        mock_memory._encryptor.is_encrypted.side_effect = lambda value: value == "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo="
+
+        async def _filter_by_field(*, collection_name, field, value, limit=100):
+            if collection_name != "long_term_memory" or field != "user_id":
+                return []
+            if value not in (123, "123"):
+                return []
+            return [
+                {
+                    "id": "old-encrypted",
+                    "type": "general",
+                    "content": "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=",
+                    "timestamp": "2026-03-01T10:00:00+00:00",
+                },
+                {
+                    "id": "fresh-human",
+                    "type": "user_request",
+                    "content": "I work as a software engineer",
+                    "timestamp": "2026-03-19T09:15:00+00:00",
+                },
+            ]
+
+        mock_memory.filter_scoped_by_field = AsyncMock(side_effect=_filter_by_field)
+        agent = _make_agent(mock_memory=mock_memory)
+        agent._get_skills_client = AsyncMock(return_value=None)
+
+        result = await agent._handle_user_knowledge_summary(123, "what do you know about me")
+
+        assert "I work as a software engineer" in result
+        assert "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=" not in result
+
     async def test_update_management_intent(self):
         """UPDATE_MANAGEMENT routes to _handle_skill_intent(update_checker)."""
         mock_memory = AsyncMock()
@@ -998,6 +1033,33 @@ class TestGenerateResponseSkillIntents:
             123,
             "How do I add an email account?",
             "email",
+        )
+
+    async def test_task_messages_with_docs_in_title_do_not_detour_into_docs_rag(self):
+        """Task requests mentioning 'docs' in content should still stay on the task path."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.TASK_MANAGEMENT),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._docs_knowledge = AsyncMock()
+        agent._docs_knowledge.maybe_answer = AsyncMock(return_value="docs answer")
+        agent._handle_skill_intent = AsyncMock(return_value="task response")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="add a task to review the design docs",
+        )
+
+        assert result == "task response"
+        agent._docs_knowledge.maybe_answer.assert_not_awaited()
+        agent._handle_skill_intent.assert_awaited_once_with(
+            123,
+            "add a task to review the design docs",
+            "task_manager",
         )
 
     async def test_simple_query_does_not_store_messages(self):

@@ -5847,12 +5847,16 @@ def main() -> None:  # pragma: no cover — CLI entry-point
     gmail_skill = GmailSkill()
     email_skill = EmailSkill(default_provider="google", legacy_gmail_skill=gmail_skill)
     profile_skill = ProfileSkill()
-    registry.register(TaskManagerSkill())
-    registry.register(CalendarSkill())
+    task_manager_skill = TaskManagerSkill()
+    calendar_skill = CalendarSkill()
+    dev_watcher_skill = DevWatcherSkill()
+    milestone_skill = MilestoneSkill()
+    registry.register(task_manager_skill)
+    registry.register(calendar_skill)
     registry.register(profile_skill)
     registry.register(HealthAnalyzerSkill())
-    registry.register(DevWatcherSkill())
-    registry.register(MilestoneSkill())
+    registry.register(dev_watcher_skill)
+    registry.register(milestone_skill)
     registry.register(gmail_skill)
     # Register email skill after Gmail so shared provider-agnostic intents win.
     registry.register(email_skill)
@@ -5960,6 +5964,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         announcement_repository = None
         announcement_policy_engine = None
         encryptor = None
+        owner_vector_memory = None
         tenant_vector_memory = None
         personal_db_pool = None
         integration_pool = None
@@ -6036,6 +6041,36 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             try:
                 from zetherion_ai.memory.qdrant import QdrantMemory
 
+                owner_vector_memory = QdrantMemory(
+                    encryptor=encryptors.owner_personal,
+                    trust_domain=TrustDomain.OWNER_PERSONAL,
+                )
+                await owner_vector_memory.initialize()
+                for skill in (
+                    task_manager_skill,
+                    calendar_skill,
+                    profile_skill,
+                    dev_watcher_skill,
+                    milestone_skill,
+                ):
+                    skill._memory = owner_vector_memory
+                log.info(
+                    "owner_personal_skill_memory_wired",
+                    skills=[
+                        "task_manager",
+                        "calendar",
+                        "profile_manager",
+                        "dev_watcher",
+                        "milestone_tracker",
+                    ],
+                )
+            except Exception as exc:
+                owner_vector_memory = None
+                log.warning("owner_personal_vector_memory_unavailable", error=str(exc))
+
+            try:
+                from zetherion_ai.memory.qdrant import QdrantMemory
+
                 tenant_vector_memory = QdrantMemory(
                     encryptor=tenant_encryptor,
                     trust_domain=TrustDomain.TENANT_RAW,
@@ -6045,12 +6080,12 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 tenant_vector_memory = None
                 log.warning("tenant_email_vector_memory_unavailable", error=str(exc))
 
-            if tenant_vector_memory is not None:
+            if owner_vector_memory is not None:
                 try:
                     from zetherion_ai.profile.builder import ProfileBuilder
 
                     profile_builder = ProfileBuilder(
-                        memory=tenant_vector_memory,
+                        memory=owner_vector_memory,
                         inference_broker=None,
                         tier1_only=True,
                         auto_apply_threshold=float(settings.profile_confidence_threshold),
@@ -6058,12 +6093,12 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                         max_pending_confirmations=int(settings.profile_max_pending_confirmations),
                     )
                     profile_skill.configure_dependencies(
-                        memory=tenant_vector_memory,
+                        memory=owner_vector_memory,
                         profile_builder=profile_builder,
                     )
                     log.info("profile_skill_dependencies_wired", has_memory=True, has_builder=True)
                 except Exception as exc:
-                    profile_skill.configure_dependencies(memory=tenant_vector_memory)
+                    profile_skill.configure_dependencies(memory=owner_vector_memory)
                     log.warning(
                         "profile_skill_builder_wiring_failed",
                         error=str(exc),
@@ -6328,6 +6363,8 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 await runtime_db_pool.close()
             if personal_db_pool is not None:
                 await personal_db_pool.close()
+            if owner_vector_memory is not None:
+                await owner_vector_memory.close()
             if tenant_vector_memory is not None:
                 await tenant_vector_memory.close()
             if _tenant_inference_broker is not None:
