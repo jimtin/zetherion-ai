@@ -99,12 +99,32 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "function Get-ZetherionComposeProjects" in docker_runtime
     assert "function Get-ZetherionComposeProjectCreatedAtUtc" in docker_runtime
     assert "function Remove-ZetherionDockerResourcesByLabel" in docker_runtime
+    assert "function Get-ZetherionDockerImagesForProject" in docker_runtime
+    assert "function Remove-ZetherionDockerImagesForProject" in docker_runtime
+    assert "function Get-ZetherionDockerImageCreatedAtUtc" in docker_runtime
+    assert "function Test-ZetherionDockerImageInUse" in docker_runtime
+    assert "function Remove-ZetherionStaleEphemeralImages" in docker_runtime
+    assert "function Remove-ZetherionForbiddenProductionVolumes" in docker_runtime
     assert "function Remove-ZetherionStaleComposeProjects" in docker_runtime
     assert 'if ($projectName -notlike "zetherion-ai-test-run-*"' in docker_runtime
     assert '$projectName -notlike "owner-ci-*"' in docker_runtime
     assert "stale_compose_project_detected" in docker_runtime
     assert 'action = "stale_compose_project_$($resource.suffix)_remove"' in docker_runtime
+    assert 'action = "stale_compose_project_images_remove"' in docker_runtime
+    assert 'action = "stale_ephemeral_image_remove"' in docker_runtime
+    assert 'action = "stale_ephemeral_image_skip_in_use"' in docker_runtime
+    assert 'action = "forbidden_production_volume_remove"' in docker_runtime
     assert '-LabelFilter "label=com.docker.compose.project=$projectName"' in docker_runtime
+    assert '"reference=${ProjectName}-*"' in docker_runtime
+    assert 'if ($repository -notlike "zetherion-ai-test-run-*"' in docker_runtime
+    assert '$repository -notlike "owner-ci-*"' in docker_runtime
+    assert '"zetherionai_ollama_models"' in docker_runtime
+    assert '"zetherionai_ollama_router_models"' in docker_runtime
+    assert '$staleTestImageRetentionHours = if ($Aggressive -or $before.under_pressure) { 2 } else { 6 }' in docker_runtime
+    assert '$buildCacheRetentionHours = 6' in docker_runtime
+    assert "Remove-ZetherionStaleEphemeralImages `" in docker_runtime
+    assert "Remove-ZetherionForbiddenProductionVolumes `" in docker_runtime
+    assert '"until=${buildCacheRetentionHours}h"' in docker_runtime
     assert "stale_compose_project_minutes" in docker_runtime
     assert '"credsStore"' in docker_runtime
     assert '"headless_ready"' in docker_runtime
@@ -165,6 +185,9 @@ def test_docker_runtime_exposes_non_throwing_wsl_helpers() -> None:
     assert "started_docker_desktop_process:$($startResult.method)" in docker_runtime
     assert "& $dockerCli.Source --context $contextName info *> $null" in docker_runtime
     assert "wsl_resources_configured = [bool](" in docker_runtime
+    assert "stale_test_image_retention_hours" in docker_runtime
+    assert "build_cache_retention_hours" in docker_runtime
+    assert "forbidden_production_volumes" in docker_runtime
 
 
 def test_docker_runtime_supports_native_windows_backend() -> None:

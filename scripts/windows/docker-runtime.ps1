@@ -1583,6 +1583,293 @@ function Remove-ZetherionDockerResourcesByLabel {
             $Warnings.Add("stale_compose_project_remove_failed:${ProjectName}:$($resource.suffix):$($removeResult.Text)") | Out-Null
         }
     }
+
+    Remove-ZetherionDockerImagesForProject `
+        -ProjectName $ProjectName `
+        -Actions $Actions `
+        -Warnings $Warnings
+}
+
+function Get-ZetherionDockerImagesForProject {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectName,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[string]]$Warnings
+    )
+
+    $images = New-Object 'System.Collections.Generic.List[object]'
+    $seen = @{}
+    $querySpecs = @(
+        @{
+            name = "compose_label"
+            args = @("image", "ls", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}", "--filter", "label=com.docker.compose.project=$ProjectName")
+        },
+        @{
+            name = "repository_prefix"
+            args = @("image", "ls", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}", "--filter", "reference=${ProjectName}-*")
+        }
+    )
+
+    foreach ($querySpec in $querySpecs) {
+        $result = Invoke-ZetherionDockerResult @($querySpec.args)
+        if ($result.ExitCode -ne 0) {
+            $Warnings.Add("project_image_query_failed:${ProjectName}:$($querySpec.name):$($result.Text)") | Out-Null
+            continue
+        }
+
+        foreach ($line in @($result.Output)) {
+            $parts = ([string]$line) -split "\|", 3
+            if ($parts.Count -lt 3) {
+                continue
+            }
+
+            $repository = [string]$parts[0]
+            $tag = [string]$parts[1]
+            $imageId = [string]$parts[2]
+            if ([string]::IsNullOrWhiteSpace($imageId) -or $seen.ContainsKey($imageId)) {
+                continue
+            }
+
+            $seen[$imageId] = $true
+            $images.Add([ordered]@{
+                id = $imageId
+                repository = $repository
+                tag = $tag
+                source = [string]$querySpec.name
+            }) | Out-Null
+        }
+    }
+
+    return @($images.ToArray())
+}
+
+function Remove-ZetherionDockerImagesForProject {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectName,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[object]]$Actions,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[string]]$Warnings
+    )
+
+    $images = @(Get-ZetherionDockerImagesForProject -ProjectName $ProjectName -Warnings $Warnings)
+    if ($images.Count -eq 0) {
+        return
+    }
+
+    $imageIds = @($images | ForEach-Object { [string]$_.id } | Sort-Object -Unique)
+    $imageRefs = @(
+        $images |
+            ForEach-Object {
+                if ([string]::IsNullOrWhiteSpace([string]$_.repository) -or [string]$_.repository -eq "<none>") {
+                    [string]$_.id
+                }
+                elseif ([string]::IsNullOrWhiteSpace([string]$_.tag) -or [string]$_.tag -eq "<none>") {
+                    [string]$_.repository
+                }
+                else {
+                    "$([string]$_.repository):$([string]$_.tag)"
+                }
+            } |
+            Sort-Object -Unique
+    )
+    $removeArgs = @("image", "rm", "-f") + @($imageIds)
+    $removeResult = Invoke-ZetherionDockerResult @removeArgs
+    $Actions.Add([ordered]@{
+        action = "stale_compose_project_images_remove"
+        target = $ProjectName
+        resources = @($imageIds)
+        image_refs = @($imageRefs)
+        success = [bool]($removeResult.ExitCode -eq 0)
+        exit_code = [int]$removeResult.ExitCode
+        output = [string]$removeResult.Text
+    }) | Out-Null
+    if ($removeResult.ExitCode -ne 0) {
+        $Warnings.Add("stale_compose_project_remove_failed:${ProjectName}:images:$($removeResult.Text)") | Out-Null
+    }
+}
+
+function Get-ZetherionDockerImageCreatedAtUtc {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ImageId,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[string]]$Warnings
+    )
+
+    $inspectResult = Invoke-ZetherionDockerResult image inspect --format "{{.Created}}" $ImageId
+    if ($inspectResult.ExitCode -ne 0) {
+        $Warnings.Add("image_created_failed:${ImageId}:$($inspectResult.Text)") | Out-Null
+        return $null
+    }
+
+    try {
+        return [datetimeoffset]::Parse([string]$inspectResult.Text).UtcDateTime
+    }
+    catch {
+        $Warnings.Add("image_created_parse_failed:${ImageId}:$($_.Exception.Message)") | Out-Null
+        return $null
+    }
+}
+
+function Test-ZetherionDockerImageInUse {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ImageId,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[string]]$Warnings
+    )
+
+    $result = Invoke-ZetherionDockerResult ps -aq --filter "ancestor=$ImageId"
+    if ($result.ExitCode -ne 0) {
+        $Warnings.Add("image_usage_query_failed:${ImageId}:$($result.Text)") | Out-Null
+        return $true
+    }
+
+    $containerIds = @($result.Output | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    return ($containerIds.Count -gt 0)
+}
+
+function Remove-ZetherionStaleEphemeralImages {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[object]]$Actions,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[string]]$Warnings,
+        [int]$RetentionHours = 6
+    )
+
+    $result = Invoke-ZetherionDockerResult image ls --format "{{.Repository}}|{{.Tag}}|{{.ID}}"
+    if ($result.ExitCode -ne 0) {
+        $Warnings.Add("stale_ephemeral_images_query_failed:$($result.Text)") | Out-Null
+        return
+    }
+
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $cutoffUtc = $nowUtc.AddHours(-1 * [Math]::Max(1, $RetentionHours))
+    $candidates = @{}
+    foreach ($line in @($result.Output)) {
+        $parts = ([string]$line) -split "\|", 3
+        if ($parts.Count -lt 3) {
+            continue
+        }
+
+        $repository = [string]$parts[0]
+        $tag = [string]$parts[1]
+        $imageId = [string]$parts[2]
+        if ([string]::IsNullOrWhiteSpace($imageId) -or $candidates.ContainsKey($imageId)) {
+            continue
+        }
+        if ([string]::IsNullOrWhiteSpace($repository) -or $repository -eq "<none>") {
+            continue
+        }
+        if ($repository -notlike "zetherion-ai-test-run-*" -and $repository -notlike "owner-ci-*") {
+            continue
+        }
+
+        $candidates[$imageId] = [ordered]@{
+            id = $imageId
+            repository = $repository
+            tag = $tag
+        }
+    }
+
+    foreach ($candidate in @($candidates.Values)) {
+        $createdAtUtc = Get-ZetherionDockerImageCreatedAtUtc -ImageId ([string]$candidate.id) -Warnings $Warnings
+        if (-not $createdAtUtc -or [datetime]$createdAtUtc -gt $cutoffUtc) {
+            continue
+        }
+
+        if (Test-ZetherionDockerImageInUse -ImageId ([string]$candidate.id) -Warnings $Warnings) {
+            $Actions.Add([ordered]@{
+                action = "stale_ephemeral_image_skip_in_use"
+                target = [string]$candidate.id
+                repository = [string]$candidate.repository
+                tag = [string]$candidate.tag
+                success = $true
+                retention_hours = [int]$RetentionHours
+            }) | Out-Null
+            continue
+        }
+
+        $removeResult = Invoke-ZetherionDockerResult image rm -f ([string]$candidate.id)
+        $Actions.Add([ordered]@{
+            action = "stale_ephemeral_image_remove"
+            target = [string]$candidate.id
+            repository = [string]$candidate.repository
+            tag = [string]$candidate.tag
+            success = [bool]($removeResult.ExitCode -eq 0)
+            exit_code = [int]$removeResult.ExitCode
+            output = [string]$removeResult.Text
+            retention_hours = [int]$RetentionHours
+        }) | Out-Null
+        if ($removeResult.ExitCode -ne 0) {
+            $Warnings.Add("stale_ephemeral_image_remove_failed:$([string]$candidate.id):$($removeResult.Text)") | Out-Null
+        }
+    }
+}
+
+function Remove-ZetherionForbiddenProductionVolumes {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[object]]$Actions,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[string]]$Warnings
+    )
+
+    $forbiddenVolumeNames = @(
+        "zetherionai_ollama_models",
+        "zetherionai_ollama_router_models"
+    )
+
+    foreach ($volumeName in $forbiddenVolumeNames) {
+        $inspectResult = Invoke-ZetherionDockerResult volume inspect $volumeName
+        if ($inspectResult.ExitCode -ne 0) {
+            continue
+        }
+
+        $usageResult = Invoke-ZetherionDockerResult ps -aq --filter "volume=$volumeName"
+        if ($usageResult.ExitCode -ne 0) {
+            $Warnings.Add("forbidden_volume_usage_query_failed:${volumeName}:$($usageResult.Text)") | Out-Null
+            continue
+        }
+
+        $containerIds = @($usageResult.Output | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        if ($containerIds.Count -gt 0) {
+            $Warnings.Add("forbidden_volume_in_use:${volumeName}") | Out-Null
+            $Actions.Add([ordered]@{
+                action = "forbidden_production_volume_detected"
+                target = $volumeName
+                success = $false
+                reason = "in_use"
+                containers = @($containerIds)
+            }) | Out-Null
+            continue
+        }
+
+        $removeResult = Invoke-ZetherionDockerResult volume rm -f $volumeName
+        $Actions.Add([ordered]@{
+            action = "forbidden_production_volume_remove"
+            target = $volumeName
+            success = [bool]($removeResult.ExitCode -eq 0)
+            exit_code = [int]$removeResult.ExitCode
+            output = [string]$removeResult.Text
+        }) | Out-Null
+        if ($removeResult.ExitCode -ne 0) {
+            $Warnings.Add("forbidden_volume_remove_failed:${volumeName}:$($removeResult.Text)") | Out-Null
+        }
+    }
 }
 
 function Remove-ZetherionStaleComposeProjects {
@@ -1678,6 +1965,8 @@ function Invoke-ZetherionDiskCleanup {
     $artifactCutoff = (Get-Date).ToUniversalTime().AddHours(-1 * [Math]::Max(1, $ArtifactRetentionHours))
     $logCutoff = (Get-Date).ToUniversalTime().AddDays(-1 * [Math]::Max(1, $LogRetentionDays))
     $staleComposeProjectMinutes = if ($Aggressive -or $before.under_pressure) { 30 } else { 90 }
+    $staleTestImageRetentionHours = if ($Aggressive -or $before.under_pressure) { 2 } else { 6 }
+    $buildCacheRetentionHours = 6
     $preservedArtifactFiles = @(
         "ci-worker-connectivity.json",
         "e2e-receipt.json",
@@ -1782,11 +2071,20 @@ function Invoke-ZetherionDiskCleanup {
         -Warnings $warnings `
         -MaxAgeMinutes $staleComposeProjectMinutes
 
+    Remove-ZetherionStaleEphemeralImages `
+        -Actions $actions `
+        -Warnings $warnings `
+        -RetentionHours $staleTestImageRetentionHours
+
+    Remove-ZetherionForbiddenProductionVolumes `
+        -Actions $actions `
+        -Warnings $warnings
+
     $dockerCommands = New-Object 'System.Collections.Generic.List[object]'
     $dockerCommands.Add(@{ name = "container_prune"; args = @("container", "prune", "-f") }) | Out-Null
     $dockerCommands.Add(@{ name = "network_prune"; args = @("network", "prune", "-f") }) | Out-Null
     $dockerCommands.Add(@{ name = "image_prune_dangling"; args = @("image", "prune", "-f") }) | Out-Null
-    $dockerCommands.Add(@{ name = "builder_prune_standard"; args = @("builder", "prune", "-f", "--filter", "until=24h") }) | Out-Null
+    $dockerCommands.Add(@{ name = "builder_prune_standard"; args = @("builder", "prune", "-f", "--filter", "until=${buildCacheRetentionHours}h") }) | Out-Null
 
     if ($Aggressive -or $before.under_pressure) {
         $dockerCommands.Add(@{ name = "image_prune_unused"; args = @("image", "prune", "-af", "--filter", "until=168h") }) | Out-Null
@@ -1825,6 +2123,9 @@ function Invoke-ZetherionDiskCleanup {
         artifact_retention_hours = [int]$ArtifactRetentionHours
         log_retention_days = [int]$LogRetentionDays
         stale_compose_project_minutes = [int]$staleComposeProjectMinutes
+        stale_test_image_retention_hours = [int]$staleTestImageRetentionHours
+        build_cache_retention_hours = [int]$buildCacheRetentionHours
+        forbidden_production_volumes = @("zetherionai_ollama_models", "zetherionai_ollama_router_models")
         actions = @($actions.ToArray())
         warnings = @($warnings.ToArray())
     })

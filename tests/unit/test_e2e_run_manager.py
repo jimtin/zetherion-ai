@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -55,11 +55,42 @@ def test_create_run_writes_manifest_and_exports(tmp_path, monkeypatch) -> None:
     )
 
     assert manifest["run_id"] == "run-fixed"
+    assert manifest["version"] == 2
     assert manifest["compose_project"] == "zetherion-ai-test-run-fixed"
     assert manifest["ports"] == PORTS
     assert manifest["service_slot"] == "slot_a"
     assert Path(manifest["stack_root"]).is_dir()
     assert Path(manifest["env_file"]).is_file()
+    assert manifest["cleanup"]["receipt_path"] == str(Path(manifest["resources"]["manifest_path"]))
+    assert manifest["resources"]["containers"]["classification"] == "ephemeral"
+    assert manifest["resources"]["networks"]["classification"] == "ephemeral"
+    assert (
+        manifest["resources"]["docker_label_filters"]["compose_project"]
+        == "com.docker.compose.project=zetherion-ai-test-run-fixed"
+    )
+    assert (
+        manifest["resources"]["volumes"]["ephemeral_names"]
+        == [
+            "zetherion-ai-test-run-fixed_postgres_data_test",
+            "zetherion-ai-test-run-fixed_qdrant_storage_test",
+            "zetherion-ai-test-run-fixed_ollama_models_test",
+            "zetherion-ai-test-run-fixed_ollama_router_models_test",
+        ]
+    )
+    assert manifest["resources"]["volumes"]["persistent_runtime"] == [
+        "zetherionai_postgres_data",
+        "zetherionai_qdrant_storage",
+    ]
+    assert manifest["resources"]["volumes"]["forbidden_in_prod"] == [
+        "zetherionai_ollama_models",
+        "zetherionai_ollama_router_models",
+    ]
+    assert (
+        manifest["resources"]["images"]["reference_patterns"]
+        == ["zetherion-ai-test-run-fixed-*"]
+    )
+    assert manifest["resources"]["images"]["stale_test_retention_hours"] == 6
+    assert manifest["resources"]["artifacts"]["stale_manifest_threshold_hours"] == 2
     assert exports["E2E_PROJECT_NAME"] == "zetherion-ai-test-run-fixed"
     assert exports["E2E_QDRANT_HOST_PORT"] == str(PORTS["E2E_QDRANT_HOST_PORT"])
     assert exports["E2E_SERVICE_SLOT"] == "slot_a"
@@ -334,7 +365,7 @@ def test_janitor_cleans_only_expired_runs(tmp_path, monkeypatch) -> None:
 
     expired_manifest = layout.manifests_dir / "expired.json"
     active_manifest = layout.manifests_dir / "active.json"
-    now = datetime.now(tz=UTC)
+    now = datetime.now(tz=timezone.utc)
 
     module.write_manifest(
         expired_manifest,

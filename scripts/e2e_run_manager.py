@@ -23,6 +23,23 @@ DEFAULT_RUNS_ROOT = REPO_ROOT / ".artifacts" / "ci-e2e-runs"
 DEFAULT_PROJECT_PREFIX = "zetherion-ai-test"
 DEFAULT_TTL_MINUTES = 180
 RUN_LABEL = "zetherion.e2e"
+STALE_TEST_IMAGE_RETENTION_HOURS = 6
+STALE_RUN_MANIFEST_THRESHOLD_HOURS = 2
+ACTIVE_CANDIDATE_IMAGE_RETENTION_HOURS = 24
+EPHEMERAL_VOLUME_NAMES = (
+    "postgres_data_test",
+    "qdrant_storage_test",
+    "ollama_models_test",
+    "ollama_router_models_test",
+)
+PERSISTENT_RUNTIME_VOLUMES = (
+    "zetherionai_postgres_data",
+    "zetherionai_qdrant_storage",
+)
+FORBIDDEN_PRODUCTION_VOLUMES = (
+    "zetherionai_ollama_models",
+    "zetherionai_ollama_router_models",
+)
 
 PORT_DEFAULTS: dict[str, int] = {
     "E2E_API_HOST_PORT": 28443,
@@ -238,6 +255,51 @@ def write_manifest(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def build_resource_contract(*, project_name: str, paths: RunPaths) -> dict[str, Any]:
+    image_repository_prefix = f"{project_name}-"
+    return {
+        "compose_project": project_name,
+        "manifest_path": str(paths.manifest_path),
+        "env_file": str(paths.env_file),
+        "workspace_root": str(paths.stack_root),
+        "cleanup_receipt_path": str(paths.manifest_path),
+        "docker_label_filters": {
+            "compose_project": f"com.docker.compose.project={project_name}",
+            "run_label": RUN_LABEL,
+        },
+        "containers": {
+            "classification": "ephemeral",
+            "remove_on_terminal_state": True,
+        },
+        "networks": {
+            "classification": "ephemeral",
+            "remove_on_terminal_state": True,
+        },
+        "volumes": {
+            "persistent_runtime": list(PERSISTENT_RUNTIME_VOLUMES),
+            "ephemeral_names": [
+                f"{project_name}_{volume_name}" for volume_name in EPHEMERAL_VOLUME_NAMES
+            ],
+            "ephemeral_classification": "ephemeral",
+            "persistent_classification": "persistent",
+            "forbidden_in_prod": list(FORBIDDEN_PRODUCTION_VOLUMES),
+        },
+        "images": {
+            "classification": "ephemeral",
+            "repository_prefixes": [image_repository_prefix],
+            "reference_patterns": [f"{image_repository_prefix}*"],
+            "protected_sets": ["live", "rollback", "active_candidate"],
+            "stale_test_retention_hours": STALE_TEST_IMAGE_RETENTION_HOURS,
+            "active_candidate_retention_hours": ACTIVE_CANDIDATE_IMAGE_RETENTION_HOURS,
+        },
+        "artifacts": {
+            "classification": "ephemeral",
+            "paths": [str(paths.data_root), str(paths.logs_root)],
+            "stale_manifest_threshold_hours": STALE_RUN_MANIFEST_THRESHOLD_HOURS,
+        },
+    }
+
+
 SHELL_PATH_EXPORT_KEYS = {
     "E2E_STACK_ROOT",
     "E2E_RUN_MANIFEST_PATH",
@@ -443,7 +505,7 @@ def create_run(
     write_env_file(paths.env_file, runtime_env_defaults)
 
     manifest: dict[str, Any] = {
-        "version": 1,
+        "version": 2,
         "run_label": RUN_LABEL,
         "run_id": run_id,
         "compose_project": project_name,
@@ -454,6 +516,7 @@ def create_run(
             "data_root": str(paths.data_root),
             "logs_root": str(paths.logs_root),
         },
+        "resources": build_resource_contract(project_name=project_name, paths=paths),
         "ports": host_ports,
         "service_slot": normalized_slot or "dynamic",
         "lease": {
@@ -468,6 +531,7 @@ def create_run(
             "reason": "",
             "completed_at": None,
             "details": None,
+            "receipt_path": str(paths.manifest_path),
         },
     }
     write_manifest(paths.manifest_path, manifest)
