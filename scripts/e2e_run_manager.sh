@@ -63,7 +63,12 @@ normalize_host_python_path() {
     fi
 
     local windows_repo_root=""
-    windows_repo_root="$(pwd -W 2>/dev/null | tr -d '\r' | tr '\\' '/')" || true
+    if command -v cmd.exe >/dev/null 2>&1; then
+        windows_repo_root="$(cmd.exe /c cd 2>/dev/null | tr -d '\r' | tail -n 1 | tr '\\' '/')" || true
+    fi
+    if [[ -z "$windows_repo_root" ]]; then
+        windows_repo_root="$(pwd -W 2>/dev/null | tr -d '\r' | tr '\\' '/')" || true
+    fi
     if [[ -n "$windows_repo_root" ]]; then
         case "$raw_path" in
             "$REPO_DIR")
