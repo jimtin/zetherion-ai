@@ -58,7 +58,7 @@ export const LANE_DEFINITIONS = {
     command: [
       "bash",
       "-lc",
-      "ruff check src/ tests/ updater_sidecar/ && ruff format --check src/ tests/",
+      "scripts/repo-python-tool.sh -m ruff check src/ tests/ updater_sidecar/ && scripts/repo-python-tool.sh -m ruff format --check src/ tests/",
     ],
   },
   "nextjs-only-audit": {

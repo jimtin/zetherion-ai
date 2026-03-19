@@ -40,8 +40,11 @@ if [ -z "$PYTHON_BIN" ]; then
     invoke_with_docker_fallback "$@"
 fi
 
-if [ "${1:-}" = "-m" ] && [ "${2:-}" = "mkdocs" ] && ! python_supports_module "$PYTHON_BIN" "mkdocs"; then
-    invoke_with_docker_fallback "$@"
+if [ "${1:-}" = "-m" ]; then
+    MODULE_NAME="${2:-}"
+    if [ -n "$MODULE_NAME" ] && ! python_supports_module "$PYTHON_BIN" "$MODULE_NAME"; then
+        invoke_with_docker_fallback "$@"
+    fi
 fi
 
 exec "$PYTHON_BIN" "$@"

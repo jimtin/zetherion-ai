@@ -108,6 +108,8 @@ def test_fullstack_critical_lane_uses_heartbeat_wrapper() -> None:
 def test_check_lane_uses_repo_python_helper_for_mkdocs() -> None:
     rendered = (REPO_ROOT / "scripts/testing/lanes.mjs").read_text(encoding="utf-8")
     assert 'scripts/repo-python-tool.sh -m mkdocs build --strict' in rendered
+    assert 'scripts/repo-python-tool.sh -m ruff check src/ tests/ updater_sidecar/' in rendered
+    assert 'scripts/repo-python-tool.sh -m ruff format --check src/ tests/' in rendered
 
 
 def test_repo_python_tool_prefers_repo_virtualenvs_before_python3() -> None:
@@ -118,7 +120,8 @@ def test_repo_python_tool_prefers_repo_virtualenvs_before_python3() -> None:
     assert 'DOCKER_PYTHON_WRAPPER="$SCRIPT_DIR/docker-python-tool.sh"' in rendered
     assert 'python_supports_module' in rendered
     assert 'exec "$DOCKER_PYTHON_WRAPPER" "$@"' in rendered
-    assert '[ "${1:-}" = "-m" ] && [ "${2:-}" = "mkdocs" ]' in rendered
+    assert 'MODULE_NAME="${2:-}"' in rendered
+    assert 'python_supports_module "$PYTHON_BIN" "$MODULE_NAME"' in rendered
     assert 'exec "$PYTHON_BIN" "$@"' in rendered
 
 
