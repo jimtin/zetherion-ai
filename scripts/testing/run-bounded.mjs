@@ -228,6 +228,17 @@ function isPythonExecutable(command) {
   return /(^|\/)python([0-9]+(\.[0-9]+)*)?$/.test(value);
 }
 
+function localVenvPythonCandidates() {
+  return [
+    path.resolve(".venv/bin/python"),
+    path.resolve(".venv/Scripts/python.exe"),
+    path.resolve(".venv/Scripts/python.cmd"),
+    path.resolve("venv/bin/python"),
+    path.resolve("venv/Scripts/python.exe"),
+    path.resolve("venv/Scripts/python.cmd"),
+  ];
+}
+
 function pythonExecutableSupportsPytest(executable, env = process.env) {
   const result = spawnSync(executable, ["-c", "import pytest"], {
     cwd: process.cwd(),
@@ -257,11 +268,18 @@ function rewriteDirectPytestInvocation(command, args, env = process.env) {
     return { command, args, rewritten: false };
   }
 
-  const venvPython = path.resolve(".venv/bin/python");
-  if (!isReadableFile(venvPython)) {
-    return { command, args, rewritten: false };
+  let venvPython = "";
+  for (const candidate of localVenvPythonCandidates()) {
+    if (!isReadableFile(candidate)) {
+      continue;
+    }
+    if (!pythonExecutableSupportsPytest(candidate, env)) {
+      continue;
+    }
+    venvPython = candidate;
+    break;
   }
-  if (!pythonExecutableSupportsPytest(venvPython, env)) {
+  if (!venvPython) {
     return { command, args, rewritten: false };
   }
 
