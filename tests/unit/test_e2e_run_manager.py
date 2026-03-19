@@ -116,6 +116,11 @@ def test_create_run_uses_repo_env_fallbacks_when_process_env_is_missing(tmp_path
                 "DISCORD_E2E_GUILD_ID=file-guild",
                 "DISCORD_E2E_CATEGORY_ID=file-category",
                 "DISCORD_E2E_CHANNEL_PREFIX=file-prefix",
+                "TEST_DISCORD_BOT_TOKEN=file-bot-token",
+                "TEST_DISCORD_GUILD_ID=file-test-guild",
+                "TEST_DISCORD_E2E_CATEGORY_ID=file-test-category-id",
+                "TEST_DISCORD_E2E_CATEGORY_NAME=file-test-category-name",
+                "TEST_DISCORD_TARGET_BOT_ID=file-target-bot",
                 "EMBEDDINGS_BACKEND=ollama",
                 "ENCRYPTION_PASSPHRASE=file-passphrase",
                 "GEMINI_API_KEY=file-gemini",
@@ -142,6 +147,11 @@ def test_create_run_uses_repo_env_fallbacks_when_process_env_is_missing(tmp_path
     assert exports["DISCORD_E2E_GUILD_ID"] == "file-guild"
     assert exports["DISCORD_E2E_CATEGORY_ID"] == "file-category"
     assert exports["DISCORD_E2E_CHANNEL_PREFIX"] == "file-prefix"
+    assert exports["TEST_DISCORD_BOT_TOKEN"] == "file-bot-token"
+    assert exports["TEST_DISCORD_GUILD_ID"] == "file-test-guild"
+    assert exports["TEST_DISCORD_E2E_CATEGORY_ID"] == "file-test-category-id"
+    assert exports["TEST_DISCORD_E2E_CATEGORY_NAME"] == "file-test-category-name"
+    assert exports["TEST_DISCORD_TARGET_BOT_ID"] == "file-target-bot"
     assert exports["EMBEDDINGS_BACKEND"] == "ollama"
     assert exports["ENCRYPTION_PASSPHRASE"] == "file-passphrase"
     assert exports["GEMINI_API_KEY"] == "file-gemini"
@@ -149,6 +159,7 @@ def test_create_run_uses_repo_env_fallbacks_when_process_env_is_missing(tmp_path
     env_text = Path(manifest["env_file"]).read_text(encoding="utf-8")
     assert "GROQ_API_KEY=file-groq" in env_text
     assert "DISCORD_E2E_ALLOWED_AUTHOR_IDS=123,456" in env_text
+    assert "TEST_DISCORD_BOT_TOKEN=file-bot-token" in env_text
 
 
 def test_render_shell_exports_normalizes_windows_paths_for_shell_use() -> None:

@@ -210,6 +210,7 @@ def test_local_required_e2e_receipt_passes_discord_scope_to_wrapper() -> None:
     assert 'TEST_DISCORD_BOT_TOKEN="${TEST_DISCORD_BOT_TOKEN:-}"' in rendered
     assert 'TEST_DISCORD_GUILD_ID="${TEST_DISCORD_GUILD_ID:-}"' in rendered
     assert 'OPENAI_API_KEY="${OPENAI_API_KEY:-}"' in rendered
+    assert 'ZETHERION_ENV_FILE="${ZETHERION_ENV_FILE:-}"' in rendered
 
 
 def test_live_discord_lanes_skip_non_blocking_docker_suite() -> None:

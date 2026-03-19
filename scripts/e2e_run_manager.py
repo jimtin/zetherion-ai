@@ -399,6 +399,21 @@ def create_run(
         "DISCORD_E2E_CHANNEL_PREFIX": resolve_runtime_env_value(
             source_env_values, "DISCORD_E2E_CHANNEL_PREFIX", "zeth-e2e"
         ),
+        "TEST_DISCORD_BOT_TOKEN": resolve_runtime_env_value(
+            source_env_values, "TEST_DISCORD_BOT_TOKEN", ""
+        ),
+        "TEST_DISCORD_GUILD_ID": resolve_runtime_env_value(
+            source_env_values, "TEST_DISCORD_GUILD_ID", ""
+        ),
+        "TEST_DISCORD_E2E_CATEGORY_ID": resolve_runtime_env_value(
+            source_env_values, "TEST_DISCORD_E2E_CATEGORY_ID", ""
+        ),
+        "TEST_DISCORD_E2E_CATEGORY_NAME": resolve_runtime_env_value(
+            source_env_values, "TEST_DISCORD_E2E_CATEGORY_NAME", ""
+        ),
+        "TEST_DISCORD_TARGET_BOT_ID": resolve_runtime_env_value(
+            source_env_values, "TEST_DISCORD_TARGET_BOT_ID", ""
+        ),
         "EMBEDDINGS_BACKEND": resolve_runtime_env_value(
             source_env_values, "EMBEDDINGS_BACKEND", "openai"
         ),
