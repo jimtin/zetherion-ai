@@ -12,6 +12,18 @@ This document reflects the current shipped topology:
 - public API (`:8443`) with tenant auth
 - blue/green API and skills deployment behind Traefik
 
+Important: this document describes the current shipped topology, not the stricter
+"no HTTP anywhere" target state. As of 2026-03-20, the required production bar
+has been raised to:
+
+- all data encrypted in transit
+- all data encrypted at rest
+- no HTTP routes in the live production path
+
+The current runtime does not yet fully meet that stricter bar. Public edge TLS
+can exist while internal hops still use plain HTTP, and some at-rest protections
+remain field-level or selective rather than universal.
+
 ---
 
 ## Container and Runtime Hardening
@@ -34,6 +46,13 @@ This document reflects the current shipped topology:
 | Public exposure | Public API reachable through routed API service path; tunnel optional via cloudflared |
 | Host-exposed ports | Qdrant (`6333`) and Ollama generation (`11434`) by default in compose |
 | Internal-only services | Skills/API backends, Traefik internal entrypoints, updater sidecar, postgres, ollama-router |
+
+Current gap against the stricter transport requirement:
+
+- several live internal links still use `http://...`
+- Traefik currently routes to backend services over HTTP
+- the internal Skills API remains documented and configured as an HTTP service
+- loopback/admin/event paths on Windows still include HTTP defaults
 
 Important: Zetherion now includes an inbound public API surface (`/api/v1`).
 The older “Discord-only inbound” assumption is no longer valid.
@@ -69,6 +88,14 @@ The older “Discord-only inbound” assumption is no longer valid.
 - AES-256-GCM field encryption for sensitive stored values
 - key material derived from `ENCRYPTION_PASSPHRASE` + persistent salt
 - strict decrypt behavior controlled by `ENCRYPTION_STRICT`
+
+Current gap against the stricter at-rest requirement:
+
+- encryption is strong where it is applied, but it is not yet universal across
+  every persisted byte of the live system
+- field-level encrypted storage does not automatically cover every volume, log,
+  temp artifact, or vector payload representation
+- Qdrant vectors are not encrypted at the application layer
 
 ### Secrets Handling
 
