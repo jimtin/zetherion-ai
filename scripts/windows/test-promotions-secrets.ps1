@@ -7,7 +7,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 function Initialize-ZetherionDpapiTypes {
-    if ($script:ZetherionDpapiTypesReady) {
+    $ready = Get-Variable -Scope Script -Name ZetherionDpapiTypesReady -ValueOnly -ErrorAction SilentlyContinue
+    if ($ready) {
         return
     }
 
