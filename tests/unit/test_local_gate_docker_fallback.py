@@ -109,7 +109,18 @@ def test_check_lane_uses_repo_python_helper_for_mkdocs() -> None:
     assert "scripts/repo-python-tool.sh -m mkdocs build --strict" in rendered
     assert "scripts/repo-python-tool.sh -m ruff check src/ tests/ updater_sidecar/" in rendered
     assert "scripts/repo-python-tool.sh -m ruff format --check src/ tests/" in rendered
+    assert (
+        "scripts/docker-python-tool.sh -m pytest tests/ -m 'not integration and not discord_e2e'"
+        in rendered
+    )
+    assert "scripts/repo-python-tool.sh -m coverage report" in rendered
+    assert "scripts/repo-python-tool.sh scripts/testing/coverage_gate.py" in rendered
     assert "scripts/docker-python-tool.sh -m pytest tests/unit -q --tb=short --no-cov" in rendered
+    assert "scripts/docker-python-tool.sh -m pytest tests/integration/test_api_http.py" in rendered
+    assert (
+        "scripts/docker-python-tool.sh -m pytest tests/integration/test_dev_watcher_e2e.py"
+        in rendered
+    )
 
 
 def test_repo_python_tool_prefers_repo_virtualenvs_before_python3() -> None:
