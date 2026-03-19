@@ -106,6 +106,16 @@ normalize_path_for_current_shell() {
     printf '%s\n' "$raw_path"
 }
 
+ensure_shell_writable_stack_root() {
+    local stack_root="${1:-}"
+    if [[ -z "$stack_root" ]]; then
+        return 0
+    fi
+
+    mkdir -p "$stack_root/data" "$stack_root/logs" >/dev/null 2>&1 || true
+    chmod 0777 "$stack_root" "$stack_root/data" "$stack_root/logs" >/dev/null 2>&1 || true
+}
+
 start_e2e_run() {
     init_e2e_run_manager
     local helper_python=""
@@ -135,6 +145,7 @@ start_e2e_run() {
     E2E_RUN_MANIFEST_PATH="$(normalize_path_for_current_shell "$E2E_RUN_MANIFEST_PATH" "$helper_python")"
     E2E_RUN_ENV_PATH="$(normalize_path_for_current_shell "$E2E_RUN_ENV_PATH" "$helper_python")"
     ZETHERION_ENV_FILE="$(normalize_path_for_current_shell "${ZETHERION_ENV_FILE:-$E2E_RUN_ENV_PATH}" "$helper_python")"
+    ensure_shell_writable_stack_root "$E2E_STACK_ROOT"
     export E2E_RUN_ID E2E_PROJECT_NAME E2E_STACK_ROOT E2E_RUN_MANIFEST_PATH E2E_RUN_ENV_PATH PROJECT COMPOSE_FILE \
         ZETHERION_ENV_FILE E2E_SERVICE_SLOT E2E_API_HOST_PORT E2E_CGS_GATEWAY_HOST_PORT E2E_SKILLS_HOST_PORT E2E_WHATSAPP_BRIDGE_HOST_PORT \
         E2E_OLLAMA_ROUTER_HOST_PORT E2E_OLLAMA_HOST_PORT E2E_POSTGRES_HOST_PORT E2E_QDRANT_HOST_PORT

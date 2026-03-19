@@ -193,6 +193,7 @@ def test_cleanup_run_updates_manifest_and_removes_stack_root(tmp_path, monkeypat
             "containers_removed": [],
             "volumes_removed": [],
             "networks_removed": [],
+            "images_removed": [],
             "errors": [],
         },
     )
@@ -205,6 +206,43 @@ def test_cleanup_run_updates_manifest_and_removes_stack_root(tmp_path, monkeypat
 
     stored = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert stored["lease"]["status"] == "cleaned"
+
+
+def test_cleanup_resources_removes_project_images(monkeypatch) -> None:
+    module = _load_module()
+
+    def fake_list_resource_ids(kind: str, label: str) -> list[str]:
+        assert label == "com.docker.compose.project=proj-1"
+        mapping = {
+            "volume": ["volume-1"],
+            "network": ["network-1"],
+            "image": ["image-1", "image-2"],
+        }
+        return mapping.get(kind, [])
+
+    commands: list[list[str]] = []
+
+    def fake_run_command(command: list[str]):
+        commands.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(module, "_list_resource_ids", fake_list_resource_ids)
+    monkeypatch.setattr(module, "_list_container_ids", lambda project: ["container-1"])
+    monkeypatch.setattr(module, "_run_command", fake_run_command)
+
+    cleanup = module.cleanup_resources(compose_file="docker-compose.test.yml", project="proj-1")
+
+    assert cleanup["containers_removed"] == ["container-1"]
+    assert cleanup["volumes_removed"] == ["volume-1"]
+    assert cleanup["networks_removed"] == ["network-1"]
+    assert cleanup["images_removed"] == ["image-1", "image-2"]
+    assert ["docker", "image", "rm", "-f", "image-1", "image-2"] in commands
 
 
 def test_janitor_cleans_only_expired_runs(tmp_path, monkeypatch) -> None:

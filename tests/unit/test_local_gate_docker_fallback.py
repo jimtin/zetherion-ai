@@ -166,17 +166,21 @@ def test_e2e_run_manager_uses_host_python_for_manifest_work() -> None:
     assert "host_python_uses_windows_paths()" in rendered
     assert "normalize_host_python_path()" in rendered
     assert "normalize_path_for_current_shell()" in rendered
+    assert "ensure_shell_writable_stack_root()" in rendered
     assert 'cmd.exe /c cd' in rendered
     assert 'command -v wslpath' in rendered
     assert 'wslpath -u "$windows_style_path"' in rendered
     assert 'pwd -W 2>/dev/null' in rendered
     assert 'runs_root_arg="$(normalize_host_python_path "$E2E_RUNS_ROOT" "$helper_python")"' in rendered
     assert 'compose_file_arg="$(normalize_host_python_path "$COMPOSE_FILE" "$helper_python")"' in rendered
+    assert 'mkdir -p "$stack_root/data" "$stack_root/logs"' in rendered
+    assert 'chmod 0777 "$stack_root" "$stack_root/data" "$stack_root/logs"' in rendered
     assert 'COMPOSE_FILE="$(normalize_path_for_current_shell "$COMPOSE_FILE" "$helper_python")"' in rendered
     assert 'E2E_STACK_ROOT="$(normalize_path_for_current_shell "$E2E_STACK_ROOT" "$helper_python")"' in rendered
     assert 'E2E_RUN_MANIFEST_PATH="$(normalize_path_for_current_shell "$E2E_RUN_MANIFEST_PATH" "$helper_python")"' in rendered
     assert 'E2E_RUN_ENV_PATH="$(normalize_path_for_current_shell "$E2E_RUN_ENV_PATH" "$helper_python")"' in rendered
     assert 'ZETHERION_ENV_FILE="$(normalize_path_for_current_shell "${ZETHERION_ENV_FILE:-$E2E_RUN_ENV_PATH}" "$helper_python")"' in rendered
+    assert 'ensure_shell_writable_stack_root "$E2E_STACK_ROOT"' in rendered
     assert 'manifest_arg="$(normalize_host_python_path "$E2E_RUN_MANIFEST_PATH" "$helper_python")"' in rendered
 
 

@@ -239,6 +239,7 @@ def cleanup_resources(*, compose_file: str, project: str) -> dict[str, Any]:
         "containers_removed": [],
         "volumes_removed": [],
         "networks_removed": [],
+        "images_removed": [],
         "errors": [],
     }
 
@@ -289,6 +290,16 @@ def cleanup_resources(*, compose_file: str, project: str) -> dict[str, Any]:
         else:
             cleanup["errors"].append(
                 f"docker network rm failed for project {project}: {rm_result.stderr.strip()}"
+            )
+
+    image_ids = _list_resource_ids("image", f"com.docker.compose.project={project}")
+    if image_ids:
+        rm_result = _run_command(["docker", "image", "rm", "-f", *image_ids])
+        if rm_result.returncode == 0:
+            cleanup["images_removed"] = image_ids
+        else:
+            cleanup["errors"].append(
+                f"docker image rm failed for project {project}: {rm_result.stderr.strip()}"
             )
 
     return cleanup
