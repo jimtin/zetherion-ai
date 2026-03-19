@@ -41,6 +41,7 @@ async def _bootstrap_dynamic_model_settings(
         ("claude_model", getattr(settings, "claude_model", None)),
         ("groq_model", getattr(settings, "groq_model", None)),
         ("router_model", getattr(settings, "router_model", None)),
+        ("embedding_model", getattr(settings, "embedding_model", None)),
         ("ollama_generation_model", getattr(settings, "ollama_generation_model", None)),
     )
 
