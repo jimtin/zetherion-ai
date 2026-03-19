@@ -105,6 +105,68 @@ def test_default_repo_profile_prefers_workspace_root_environment_over_host_defau
     importlib.reload(owner_ci_profiles)
 
 
+def test_resolve_local_workspace_root_prefers_first_existing_candidate(tmp_path: Path) -> None:
+    first = tmp_path / "Developer"
+    second = tmp_path / "Development"
+    second.mkdir()
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            owner_ci_profiles,
+            "_LOCAL_WORKSPACE_ROOT_CANDIDATES",
+            (first, second),
+        )
+        assert owner_ci_profiles._resolve_local_workspace_root() == second
+
+
+def test_resolve_local_workspace_root_falls_back_to_first_candidate(tmp_path: Path) -> None:
+    first = tmp_path / "Developer"
+    second = tmp_path / "Development"
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            owner_ci_profiles,
+            "_LOCAL_WORKSPACE_ROOT_CANDIDATES",
+            (first, second),
+        )
+        assert owner_ci_profiles._resolve_local_workspace_root() == first
+
+
+def test_resolve_repo_workspace_root_covers_repo_root_candidate_and_fallback(tmp_path: Path) -> None:
+    repo_root = tmp_path / "workspace" / "zetherion-ai"
+    repo_root.mkdir(parents=True)
+    local_candidate_root = tmp_path / "Developer"
+    local_repo_candidate = local_candidate_root / "catalyst-group-solutions"
+    local_repo_candidate.mkdir(parents=True)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.delenv("ZETHERION_WORKSPACE_ROOT", raising=False)
+        monkeypatch.delenv("CGS_WORKSPACE_ROOT", raising=False)
+        monkeypatch.setattr(owner_ci_profiles, "REPO_ROOT", repo_root)
+        monkeypatch.setattr(
+            owner_ci_profiles,
+            "_LOCAL_WORKSPACE_ROOT_CANDIDATES",
+            (local_candidate_root,),
+        )
+
+        assert owner_ci_profiles._resolve_repo_workspace_root(
+            env_var="ZETHERION_WORKSPACE_ROOT",
+            repo_name="zetherion-ai",
+        ) == repo_root
+        assert owner_ci_profiles._resolve_repo_workspace_root(
+            env_var="CGS_WORKSPACE_ROOT",
+            repo_name="catalyst-group-solutions",
+        ) == local_repo_candidate
+
+        local_repo_candidate.rmdir()
+
+        expected_fallback = repo_root.parent / "catalyst-group-solutions"
+        assert owner_ci_profiles._resolve_repo_workspace_root(
+            env_var="CGS_WORKSPACE_ROOT",
+            repo_name="catalyst-group-solutions",
+        ) == expected_fallback
+
+
 def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certification_payload() -> (
     None
 ):

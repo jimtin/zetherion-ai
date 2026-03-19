@@ -147,3 +147,28 @@ class TestSessionTokens:
         )
         with pytest.raises(jwt.InvalidTokenError, match="Unsupported JWT critical header"):
             validate_session_token(f"{SESSION_TOKEN_PREFIX}{token}", self.JWT_SECRET)
+
+    def test_validate_allows_empty_crit_entries(self):
+        """Empty critical-header entries are ignored instead of rejected."""
+        token = create_session_token("tid", "sid", self.JWT_SECRET)
+
+        def _blank_crit_header(_token):
+            return {"alg": "HS256", "crit": ["", "  "]}
+
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr("zetherion_ai.api.auth.jwt.get_unverified_header", _blank_crit_header)
+            payload = validate_session_token(token, self.JWT_SECRET)
+
+        assert payload["tenant_id"] == "tid"
+        assert payload["session_id"] == "sid"
+
+    def test_validate_rewrites_pyjwt_unsupported_critical_extension_error(self, monkeypatch):
+        """PyJWT unsupported critical-extension errors are normalized."""
+
+        def _raise_invalid_header(_token):
+            raise jwt.InvalidTokenError("Unsupported critical extension: exp")
+
+        monkeypatch.setattr("zetherion_ai.api.auth.jwt.get_unverified_header", _raise_invalid_header)
+
+        with pytest.raises(jwt.InvalidTokenError, match="Unsupported JWT critical header"):
+            validate_session_token("zt_sess_header.payload.signature", self.JWT_SECRET)
