@@ -162,6 +162,7 @@ def test_e2e_run_manager_uses_host_python_for_manifest_work() -> None:
     assert 'if [[ -n "${PYTHON_BIN:-}" && "$PYTHON_BIN" != *"/docker-python-tool.sh" ]]; then' in rendered
     assert "A host-visible Python interpreter is required for E2E run management." in rendered
     assert 'helper_python="$(json_helper_python || true)"' in rendered
+    assert "--shell | tr -d '\\r'" in rendered
 
 
 def test_repo_node_tool_prefers_repo_and_windows_node_paths() -> None:

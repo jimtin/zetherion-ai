@@ -59,7 +59,7 @@ start_e2e_run() {
         --project-prefix "$E2E_PROJECT_PREFIX" \
         --ttl-minutes "$E2E_RUN_TTL_MINUTES" \
         --service-slot "$E2E_SERVICE_SLOT" \
-        --shell)"
+        --shell | tr -d '\r')"
     eval "$exports"
     export E2E_RUN_ID E2E_PROJECT_NAME E2E_STACK_ROOT E2E_RUN_MANIFEST_PATH E2E_RUN_ENV_PATH PROJECT COMPOSE_FILE \
         E2E_SERVICE_SLOT E2E_API_HOST_PORT E2E_CGS_GATEWAY_HOST_PORT E2E_SKILLS_HOST_PORT E2E_WHATSAPP_BRIDGE_HOST_PORT \
