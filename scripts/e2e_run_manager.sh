@@ -96,24 +96,14 @@ normalize_path_for_current_shell() {
         return 0
     fi
 
-    local windows_repo_root=""
-    windows_repo_root="$(normalize_host_python_path "$REPO_DIR" "$python_bin")"
-    if [[ -z "$windows_repo_root" || "$windows_repo_root" == "$REPO_DIR" ]]; then
-        printf '%s\n' "$raw_path"
+    if [[ "$raw_path" =~ ^[A-Za-z]:[/\\] ]] && command -v wslpath >/dev/null 2>&1; then
+        local windows_style_path="$raw_path"
+        windows_style_path="${windows_style_path//\//\\}"
+        wslpath -u "$windows_style_path"
         return 0
     fi
 
-    case "$raw_path" in
-        "$windows_repo_root")
-            printf '%s\n' "$REPO_DIR"
-            ;;
-        "$windows_repo_root"/*)
-            printf '%s/%s\n' "$REPO_DIR" "${raw_path#"$windows_repo_root"/}"
-            ;;
-        *)
-            printf '%s\n' "$raw_path"
-            ;;
-    esac
+    printf '%s\n' "$raw_path"
 }
 
 start_e2e_run() {

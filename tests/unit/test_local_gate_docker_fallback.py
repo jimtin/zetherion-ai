@@ -167,6 +167,8 @@ def test_e2e_run_manager_uses_host_python_for_manifest_work() -> None:
     assert "normalize_host_python_path()" in rendered
     assert "normalize_path_for_current_shell()" in rendered
     assert 'cmd.exe /c cd' in rendered
+    assert 'command -v wslpath' in rendered
+    assert 'wslpath -u "$windows_style_path"' in rendered
     assert 'pwd -W 2>/dev/null' in rendered
     assert 'runs_root_arg="$(normalize_host_python_path "$E2E_RUNS_ROOT" "$helper_python")"' in rendered
     assert 'compose_file_arg="$(normalize_host_python_path "$COMPOSE_FILE" "$helper_python")"' in rendered
