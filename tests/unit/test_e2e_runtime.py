@@ -58,6 +58,43 @@ def test_service_container_id_uses_compose_ps(monkeypatch) -> None:
     ]
 
 
+def test_service_container_id_falls_back_to_label_lookup(monkeypatch) -> None:
+    module = importlib.import_module("tests.integration.e2e_runtime")
+    module._runtime = None
+    runtime = module.get_runtime()
+
+    calls: list[list[str]] = []
+
+    def fake_run(command, capture_output=False, text=False, timeout=None):
+        calls.append(command)
+        if command[:7] == [
+            "docker",
+            "compose",
+            "-f",
+            runtime.compose_file,
+            "-p",
+            runtime.project_name,
+            "ps",
+        ]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="compose failed")
+        return SimpleNamespace(returncode=0, stdout="container-fallback\n", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    container_id = runtime.service_container_id("zetherion-ai-skills")
+
+    assert container_id == "container-fallback"
+    assert calls[1] == [
+        "docker",
+        "ps",
+        "-q",
+        "--filter",
+        f"label=com.docker.compose.project={runtime.project_name}",
+        "--filter",
+        "label=com.docker.compose.service=zetherion-ai-skills",
+    ]
+
+
 def test_service_running_reads_inspect_status(monkeypatch) -> None:
     module = importlib.import_module("tests.integration.e2e_runtime")
     module._runtime = None

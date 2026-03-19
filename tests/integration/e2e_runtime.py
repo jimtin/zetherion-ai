@@ -101,9 +101,28 @@ class E2ERuntime:
             text=True,
             timeout=10,
         )
-        if result.returncode != 0:
+        if result.returncode == 0:
+            container_id = result.stdout.strip().splitlines()
+            if container_id:
+                return container_id[0].strip()
+
+        fallback = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "-q",
+                "--filter",
+                f"label=com.docker.compose.project={self.project_name}",
+                "--filter",
+                f"label=com.docker.compose.service={service}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if fallback.returncode != 0:
             return None
-        container_id = result.stdout.strip().splitlines()
+        container_id = fallback.stdout.strip().splitlines()
         return container_id[0].strip() if container_id else None
 
     def service_running(self, service: str) -> bool:
