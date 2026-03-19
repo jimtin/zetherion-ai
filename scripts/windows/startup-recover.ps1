@@ -424,6 +424,10 @@ try {
         $composeArgs.Add("up")
         $composeArgs.Add("-d")
         $composeArgs.Add("--build")
+        if ($bootstrappedKeys.Count -gt 0) {
+            $composeArgs.Add("--force-recreate")
+            $actionsTaken += "compose_force_recreate_due_to_bootstrap"
+        }
         $composeArgs.Add("--remove-orphans")
         $composeResult = Invoke-ZetherionNativeDockerResult @composeArgs
         foreach ($entry in @($composeResult.Output)) {
