@@ -909,24 +909,27 @@ class TestGenerateResponseSkillIntents:
         mock_memory._encryptor.is_encrypted.side_effect = lambda value: value == "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo="
 
         async def _filter_by_field(*, collection_name, field, value, limit=100):
-            if collection_name != "long_term_memory" or field != "user_id":
+            if field != "user_id" or value not in (123, "123"):
                 return []
-            if value not in (123, "123"):
-                return []
-            return [
-                {
-                    "id": "old-encrypted",
-                    "type": "general",
-                    "content": "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=",
-                    "timestamp": "2026-03-01T10:00:00+00:00",
-                },
-                {
-                    "id": "fresh-human",
-                    "type": "user_request",
-                    "content": "I work as a software engineer",
-                    "timestamp": "2026-03-19T09:15:00+00:00",
-                },
-            ]
+            if collection_name == "long_term_memory":
+                return [
+                    {
+                        "id": "old-encrypted",
+                        "type": "general",
+                        "content": "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=",
+                        "timestamp": "2026-03-01T10:00:00+00:00",
+                    },
+                ]
+            if collection_name == "conversations":
+                return [
+                    {
+                        "id": "recent-conversation",
+                        "role": "user",
+                        "content": "remember that I work as a software engineer",
+                        "timestamp": "2026-03-19T09:15:00+00:00",
+                    },
+                ]
+            return []
 
         mock_memory.filter_scoped_by_field = AsyncMock(side_effect=_filter_by_field)
         agent = _make_agent(mock_memory=mock_memory)
@@ -934,7 +937,7 @@ class TestGenerateResponseSkillIntents:
 
         result = await agent._handle_user_knowledge_summary(123, "what do you know about me")
 
-        assert "I work as a software engineer" in result
+        assert "You work as a software engineer." in result
         assert "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=" not in result
 
     async def test_update_management_intent(self):

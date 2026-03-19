@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,7 +17,11 @@ from zetherion_ai.agent.router_factory import create_router_sync
 from zetherion_ai.config import get_dynamic, get_settings
 from zetherion_ai.constants import CONTEXT_HISTORY_LIMIT, MEMORY_SCORE_THRESHOLD
 from zetherion_ai.logging import get_logger
-from zetherion_ai.memory.qdrant import LONG_TERM_MEMORY_COLLECTION, QdrantMemory
+from zetherion_ai.memory.qdrant import (
+    CONVERSATIONS_COLLECTION,
+    LONG_TERM_MEMORY_COLLECTION,
+    QdrantMemory,
+)
 from zetherion_ai.skills.base import SkillRequest, SkillResponse
 from zetherion_ai.skills.client import SkillsClient, SkillsClientError
 from zetherion_ai.trust.scope import (
@@ -1081,7 +1086,15 @@ class Agent:
     def _looks_like_encrypted_memory_content(self, content: str) -> bool:
         """Best-effort check to avoid surfacing ciphertext in user-visible summaries."""
         candidate = content.strip()
-        if not candidate or any(ch.isspace() for ch in candidate):
+        if not candidate:
+            return False
+        if not any(ch.isspace() for ch in candidate) and len(candidate) >= 32:
+            base64ish_chars = set(
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-"
+            )
+            if all(ch in base64ish_chars for ch in candidate):
+                return True
+        if any(ch.isspace() for ch in candidate):
             return False
         encryptor = getattr(self._memory, "_encryptor", None)
         if encryptor is not None and hasattr(encryptor, "is_encrypted"):
@@ -1097,6 +1110,87 @@ class Agent:
         except Exception:
             return False
         return len(decoded) >= 29
+
+    async def _list_recent_conversations_for_user(self, user_id: int) -> list[dict[str, Any]]:
+        """Load recent conversation messages for the user to recover fresh remembered facts."""
+        candidates: list[int | str] = [user_id, str(user_id)]
+        merged: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+
+        for candidate in candidates:
+            try:
+                records = await self._memory.filter_scoped_by_field(
+                    collection_name=CONVERSATIONS_COLLECTION,
+                    field="user_id",
+                    value=candidate,
+                    limit=100,
+                )
+            except Exception as exc:
+                log.debug(
+                    "user_knowledge_conversation_filter_failed",
+                    user_id=user_id,
+                    candidate_type=type(candidate).__name__,
+                    error=str(exc),
+                )
+                continue
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                record_id = str(record.get("id") or "").strip()
+                if record_id and record_id in seen_ids:
+                    continue
+                if record.get("role") != "user":
+                    continue
+                if record_id:
+                    seen_ids.add(record_id)
+                merged.append(record)
+
+        merged.sort(key=self._memory_timestamp_sort_key, reverse=True)
+        return merged
+
+    @staticmethod
+    def _recover_fact_from_recent_message(message: str) -> str | None:
+        """Recover a human-readable fact from a recent remember-style message."""
+        lowered = " ".join(message.lower().split())
+        patterns: tuple[tuple[str, str], ...] = (
+            (r"^remember that i work as a[n]?\s+(.+)$", "You work as a {value}."),
+            (r"^remember that my favorite color is\s+(.+)$", "Favorite color: {value}"),
+            (r"^remember that i am\s+(.+)$", "You are {value}."),
+            (r"^remember that i prefer\s+(.+)$", "You prefer {value}."),
+        )
+        for pattern, template in patterns:
+            match = re.match(pattern, lowered, flags=re.IGNORECASE)
+            if match is None:
+                continue
+            value = " ".join(match.group(1).split()).strip(" .!?")
+            if not value:
+                return None
+            return template.format(value=value)
+        return None
+
+    async def _collect_recent_memory_store_facts(self, user_id: int) -> list[str]:
+        """Recover recent remember-style facts from conversation history as a production fallback."""
+        try:
+            conversations = await self._list_recent_conversations_for_user(user_id)
+        except Exception as exc:
+            log.debug("user_knowledge_recent_conversations_failed", user_id=user_id, error=str(exc))
+            return []
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for record in conversations:
+            content = str(record.get("content") or "").strip()
+            if not content:
+                continue
+            fact = self._recover_fact_from_recent_message(content)
+            if not fact:
+                continue
+            key = fact.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(fact)
+        return normalized[:USER_KNOWLEDGE_FACT_DISPLAY_LIMIT]
 
     async def _collect_profile_memory_facts(self, user_id: int) -> list[str]:
         """Collect normalized user memory facts suitable for summary output."""
@@ -1130,6 +1224,12 @@ class Agent:
                 continue
             seen.add(key)
             normalized.append(collapsed)
+        for fact in await self._collect_recent_memory_store_facts(user_id):
+            key = fact.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(fact)
         return normalized[:USER_KNOWLEDGE_FACT_DISPLAY_LIMIT]
 
     async def _handle_user_knowledge_summary(self, user_id: int, message: str) -> str:
