@@ -180,6 +180,62 @@ function Copy-AllowlistedRuntimeState {
     return @($copied.ToArray())
 }
 
+function Normalize-DotenvInlineComments {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return [ordered]@{
+            path = $Path
+            changed = $false
+            normalized_lines = 0
+        }
+    }
+
+    $lines = [System.IO.File]::ReadAllLines($Path)
+    $normalizedLines = New-Object 'System.Collections.Generic.List[string]'
+    $changed = $false
+    $normalizedCount = 0
+
+    foreach ($line in $lines) {
+        $updatedLine = $line
+        $trimmed = $line.TrimStart()
+        if (-not $trimmed.StartsWith("#")) {
+            $equalsIndex = $line.IndexOf("=")
+            if ($equalsIndex -gt 0) {
+                $key = $line.Substring(0, $equalsIndex)
+                $value = $line.Substring($equalsIndex + 1)
+                $valueTrimmedStart = $value.TrimStart()
+                if (
+                    -not $valueTrimmedStart.StartsWith('"') -and
+                    -not $valueTrimmedStart.StartsWith("'")
+                ) {
+                    $commentIndex = $value.IndexOf(" #")
+                    if ($commentIndex -ge 0) {
+                        $updatedLine = "$key=$($value.Substring(0, $commentIndex).TrimEnd())"
+                        if ($updatedLine -ne $line) {
+                            $changed = $true
+                            $normalizedCount += 1
+                        }
+                    }
+                }
+            }
+        }
+
+        $normalizedLines.Add($updatedLine) | Out-Null
+    }
+
+    if ($changed) {
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllLines($Path, $normalizedLines, $utf8NoBom)
+    }
+
+    return [ordered]@{
+        path = $Path
+        changed = $changed
+        normalized_lines = $normalizedCount
+    }
+}
+
 function Write-Receipt {
     param(
         [Parameter(Mandatory = $true)]
@@ -208,6 +264,7 @@ $receipt = [ordered]@{
     forensic_inventory = $null
     candidate_inventory = $null
     carried_forward_state = @()
+    normalized_file_state = @()
     rescue_copy_exit_code = $null
     error = ""
 }
@@ -243,6 +300,13 @@ try {
         -DestinationRoot $CandidatePath `
         -FilePaths $FileStatePaths `
         -DirectoryPaths $PersistentDirectories
+    $receipt.normalized_file_state = @(
+        foreach ($carriedItem in @($receipt.carried_forward_state)) {
+            if ($carriedItem.kind -eq "file" -and $carriedItem.relative_path -eq ".env") {
+                Normalize-DotenvInlineComments -Path ([string]$carriedItem.destination)
+            }
+        }
+    )
     $receipt.candidate_inventory = Get-RepositoryForensics -RepositoryPath $CandidatePath
     $receipt.status = "prepared"
 }
