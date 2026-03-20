@@ -74,3 +74,4 @@ Runtime updater state is persisted in `/app/data/updater-state.json`.
 - Bot remains single-instance by design to avoid dual active Discord gateway sessions.
 - Zero-downtime guarantee applies to `skills`/`api`/`cgs-gateway` route switching; bot uses graceful reconnect.
 - Dynamic route defaults are committed at `config/traefik/dynamic/updater-routes.yml`.
+- Windows maintenance procedures for live cleanup versus offline Docker VHD compaction live in [windows-docker-maintenance-runbook.md](/Users/jameshinton/Developer/zetherion-ai/docs/technical/windows-docker-maintenance-runbook.md).
