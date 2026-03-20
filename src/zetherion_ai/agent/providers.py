@@ -40,6 +40,7 @@ class TaskType(Enum):
     CLASSIFICATION = "classification"
     DATA_EXTRACTION = "data_extraction"
     CONVERSATION = "conversation"
+    COACHING_SYNTHESIS = "coaching_synthesis"
 
     # Internal tasks - Ollama preferred (keeps data local)
     PROFILE_EXTRACTION = "profile_extraction"
@@ -137,6 +138,11 @@ CAPABILITY_MATRIX: dict[TaskType, ProviderConfig] = {
         provider=Provider.GROQ,
         rationale="Fast cloud extraction with strong structured-output quality",
         fallbacks=[Provider.GEMINI, Provider.CLAUDE, Provider.OPENAI, Provider.OLLAMA],
+    ),
+    TaskType.COACHING_SYNTHESIS: ProviderConfig(
+        provider=Provider.GROQ,
+        rationale="Grounded coaching synthesis with low-latency cloud reasoning",
+        fallbacks=[],
     ),
     TaskType.CONVERSATION: ProviderConfig(
         provider=Provider.CLAUDE,

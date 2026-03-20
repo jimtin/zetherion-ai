@@ -403,6 +403,37 @@ async def test_ci_observer_loads_run_report_graph_and_coaching() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ci_observer_attaches_synthesized_guidance_when_available() -> None:
+    storage = _storage()
+    storage.list_agent_coaching_feedback.return_value = [{"feedback_id": "coach-1"}]
+    synthesizer = MagicMock()
+    synthesizer.synthesize_many = AsyncMock(
+        return_value=[
+            {
+                "feedback_id": "coach-1",
+                "synthesized_guidance": {
+                    "status": "synthesized",
+                    "summary": "Tighten preflight checks first.",
+                },
+            }
+        ]
+    )
+    skill = CiObserverSkill(storage=storage, coaching_synthesizer=synthesizer)
+
+    coaching = await skill.handle(
+        SkillRequest(
+            intent="ci_run_coaching",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+
+    assert coaching.success is True
+    assert coaching.data["coaching"][0]["synthesized_guidance"]["status"] == "synthesized"
+    synthesizer.synthesize_many.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_ci_observer_loads_storage_and_vercel_reporting() -> None:
     storage = _storage()
     storage.list_repo_profiles.return_value = [

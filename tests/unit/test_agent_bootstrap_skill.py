@@ -321,6 +321,57 @@ async def test_agent_app_adoption_handlers_return_gaps_readiness_and_coaching() 
     assert readiness.data["rollout_readiness"]["metadata"]["open_recorded_gap_total"] == 1
 
 
+@pytest.mark.asyncio
+async def test_agent_app_coaching_attaches_synthesized_guidance_when_available() -> None:
+    storage = _storage()
+    storage.get_agent_app_profile.return_value = _app_profile()
+    storage.list_agent_app_profiles.return_value = [_app_profile()]
+    storage.list_external_access_grants.return_value = [
+        {
+            "resource_type": "app",
+            "resource_id": "catalyst-group-solutions",
+            "active": True,
+        }
+    ]
+    storage.list_external_service_connectors.return_value = []
+    storage.list_agent_gap_events.return_value = []
+    storage.list_agent_coaching_feedback = AsyncMock(
+        return_value=[{"feedback_id": "coach-1", "scope": "app"}]
+    )
+    synthesizer = MagicMock()
+    synthesizer.synthesize_many = AsyncMock(
+        return_value=[
+            {
+                "feedback_id": "coach-1",
+                "scope": "app",
+                "synthesized_guidance": {
+                    "status": "synthesized",
+                    "summary": "Stabilize onboarding docs first.",
+                },
+            }
+        ]
+    )
+    skill = AgentBootstrapSkill(storage=storage, coaching_synthesizer=synthesizer)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    coaching = await skill.handle(
+        SkillRequest(
+            intent="agent_app_coaching_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-1",
+                "app_id": "catalyst-group-solutions",
+            },
+        )
+    )
+
+    assert coaching.success is True
+    assert coaching.data["coaching"][0]["synthesized_guidance"]["status"] == "synthesized"
+    synthesizer.synthesize_many.assert_awaited_once()
+
+
 def test_app_profile_helpers_normalize_repo_policy_and_agent_profiles() -> None:
     skill = AgentBootstrapSkill(storage=_storage())
 

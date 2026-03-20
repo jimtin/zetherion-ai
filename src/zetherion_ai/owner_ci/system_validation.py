@@ -790,7 +790,7 @@ def build_system_coaching(
         created_at=_utc_now_iso(),
         updated_at=_utc_now_iso(),
     )
-    return [feedback.model_dump(mode="json")]
+    return [feedback.model_dump(mode="json", exclude_none=True)]
 
 
 def build_system_run_usage_summary(
@@ -1172,7 +1172,10 @@ def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
         "recommended_next_actions": recommended_next_actions,
         "generated_at": _utc_now_iso(),
     }
-    coaching_payload = [feedback.model_dump(mode="json") for feedback in normalized.coaching]
+    coaching_payload = [
+        feedback.model_dump(mode="json", exclude_none=True)
+        for feedback in normalized.coaching
+    ]
     package_files = [
         {"kind": "run_graph", "path": "run_report/run_graph.json"},
         {"kind": "correlation_context", "path": "run_report/correlation_context.json"},

@@ -20,6 +20,7 @@ from uuid import UUID
 
 from zetherion_ai.logging import get_logger
 from zetherion_ai.owner_ci import OwnerCiStorage, default_repo_profile, default_repo_profiles
+from zetherion_ai.owner_ci.coaching_synthesis import CoachingSynthesizer
 from zetherion_ai.owner_ci.diagnostics import (
     build_operation_diagnosis,
     build_run_diagnostics,
@@ -806,9 +807,15 @@ def _stable_gap_key(parts: list[str | None]) -> str:
 class AgentBootstrapSkill(Skill):
     """Store broker state for downstream Codex agents and expose machine-readable app knowledge."""
 
-    def __init__(self, *, storage: OwnerCiStorage) -> None:
+    def __init__(
+        self,
+        *,
+        storage: OwnerCiStorage,
+        coaching_synthesizer: CoachingSynthesizer | None = None,
+    ) -> None:
         super().__init__(memory=None)
         self._storage = storage
+        self._coaching_synthesizer = coaching_synthesizer
 
     @property
     def metadata(self) -> SkillMetadata:
@@ -892,6 +899,14 @@ class AgentBootstrapSkill(Skill):
     async def initialize(self) -> bool:
         log.info("agent_bootstrap_initialized")
         return True
+
+    async def _prepare_coaching_payload(
+        self,
+        coaching: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if self._coaching_synthesizer is None:
+            return coaching
+        return await self._coaching_synthesizer.synthesize_many(coaching)
 
     async def handle(self, request: SkillRequest) -> SkillResponse:
         owner_id = _normalize_owner_id(request)
@@ -1830,7 +1845,7 @@ class AgentBootstrapSkill(Skill):
             created_at=datetime.now(UTC).isoformat(),
             updated_at=datetime.now(UTC).isoformat(),
         )
-        return [generated.model_dump(mode="json"), *recorded]
+        return [generated.model_dump(mode="json", exclude_none=True), *recorded]
 
     async def _handle_app_coaching_get(
         self,
@@ -1854,6 +1869,7 @@ class AgentBootstrapSkill(Skill):
             app_profile=app_profile,
             limit=limit,
         )
+        coaching = await self._prepare_coaching_payload(coaching)
         return SkillResponse(
             request_id=request.id,
             message=f"Loaded {len(coaching)} app coaching items for `{app_id}`.",
@@ -2414,6 +2430,7 @@ class AgentBootstrapSkill(Skill):
         if not system_run_id:
             return SkillResponse.error_response(request.id, "system_run_id is required")
         coaching = await self._storage.get_system_run_coaching(owner_id, system_run_id)
+        coaching = await self._prepare_coaching_payload(coaching)
         return SkillResponse(
             request_id=request.id,
             message=f"Loaded {len(coaching)} coaching item(s) for `{system_run_id}`.",
@@ -2464,6 +2481,7 @@ class AgentBootstrapSkill(Skill):
             candidate_set=candidate_set,
             principal_id=principal_id,
         )
+        coaching = await self._prepare_coaching_payload(coaching)
         return SkillResponse(
             request_id=request.id,
             message=f"Loaded {len(coaching)} system coaching items.",

@@ -150,6 +150,34 @@ class Settings(BaseSettings):
         default="https://api.groq.com/openai/v1",
         description="Groq OpenAI-compatible API base URL",
     )
+    coaching_synthesis_enabled: bool = Field(
+        default=True,
+        description="Enable Groq-backed synthesized coaching overlays",
+    )
+    coaching_model_provider: str = Field(
+        default="groq",
+        description="Provider used for synthesized coaching overlays",
+    )
+    coaching_model: str = Field(
+        default="openai/gpt-oss-120b",
+        description="Model used for synthesized coaching overlays",
+    )
+    coaching_timeout_seconds: int = Field(
+        default=8,
+        description="Timeout in seconds for synthesized coaching requests",
+    )
+    coaching_max_tokens: int = Field(
+        default=900,
+        description="Max output tokens for synthesized coaching",
+    )
+    coaching_temperature: float = Field(
+        default=0.1,
+        description="Sampling temperature for synthesized coaching",
+    )
+    coaching_max_items_per_response: int = Field(
+        default=10,
+        description="Maximum coaching items to synthesize per response",
+    )
 
     # Qdrant
     qdrant_host: str = Field(default="qdrant", description="Qdrant server host")

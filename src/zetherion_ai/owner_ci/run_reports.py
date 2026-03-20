@@ -318,7 +318,7 @@ def build_agent_coaching_feedback(gaps: list[dict[str, Any]]) -> list[dict[str, 
             created_at=str(gap.get("first_seen_at") or "").strip() or None,
             updated_at=str(gap.get("updated_at") or "").strip() or None,
         )
-        coaching_feedback.append(feedback.model_dump(mode="json"))
+        coaching_feedback.append(feedback.model_dump(mode="json", exclude_none=True))
     return coaching_feedback
 
 

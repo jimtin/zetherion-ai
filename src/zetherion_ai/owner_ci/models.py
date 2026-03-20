@@ -402,6 +402,22 @@ class AgentCoachingFinding(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SynthesizedCoachingGuidance(BaseModel):
+    """Additive model-generated guidance grounded in deterministic coaching evidence."""
+
+    status: str = "synthesized"
+    summary: str = ""
+    explanation: str = ""
+    prioritized_actions: list[str] = Field(default_factory=list)
+    agents_md_delta: str | None = None
+    cited_finding_ids: list[str] = Field(default_factory=list)
+    cited_rule_codes: list[str] = Field(default_factory=list)
+    cited_evidence_ref_ids: list[str] = Field(default_factory=list)
+    provider: str | None = None
+    model: str | None = None
+    generated_at: str | None = None
+
+
 class AgentCoachingFeedback(BaseModel):
     """Stored coaching package returned to downstream agents."""
 
@@ -420,6 +436,7 @@ class AgentCoachingFeedback(BaseModel):
     recommendations: list[AgentInstructionRecommendation] = Field(default_factory=list)
     rule_violations: list[AgentRuleViolation] = Field(default_factory=list)
     evidence_references: list[EvidenceReference] = Field(default_factory=list)
+    synthesized_guidance: SynthesizedCoachingGuidance | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str | None = None
     updated_at: str | None = None

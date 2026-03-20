@@ -6120,14 +6120,39 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             await tenant_admin_manager.initialize()
             set_tenant_admin_manager(tenant_admin_manager)
             if owner_ci_storage is not None:
+                from zetherion_ai.agent.inference import InferenceBroker
+                from zetherion_ai.owner_ci.coaching_synthesis import CoachingSynthesizer
                 from zetherion_ai.skills.agent_bootstrap import AgentBootstrapSkill
                 from zetherion_ai.skills.ci_controller import CiControllerSkill
                 from zetherion_ai.skills.ci_observer import CiObserverSkill
                 from zetherion_ai.skills.pr_reviewer import PrReviewerSkill
 
-                registry.register(AgentBootstrapSkill(storage=owner_ci_storage))
+                coaching_synthesizer = None
+                if settings.coaching_synthesis_enabled:
+                    try:
+                        coaching_synthesizer = CoachingSynthesizer(
+                            inference=InferenceBroker()
+                        )
+                    except Exception as exc:
+                        coaching_synthesizer = None
+                        log.warning(
+                            "coaching_synthesizer_registration_failed",
+                            error=str(exc),
+                        )
+
+                registry.register(
+                    AgentBootstrapSkill(
+                        storage=owner_ci_storage,
+                        coaching_synthesizer=coaching_synthesizer,
+                    )
+                )
                 registry.register(CiControllerSkill(storage=owner_ci_storage))
-                registry.register(CiObserverSkill(storage=owner_ci_storage))
+                registry.register(
+                    CiObserverSkill(
+                        storage=owner_ci_storage,
+                        coaching_synthesizer=coaching_synthesizer,
+                    )
+                )
                 registry.register(PrReviewerSkill(storage=owner_ci_storage))
         if settings.work_router_enabled and settings.postgres_dsn:
             import asyncpg

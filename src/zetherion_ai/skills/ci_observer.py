@@ -20,6 +20,7 @@ from zetherion_ai.owner_ci import (
     StorageInventorySnapshot,
     StoragePressureIncident,
 )
+from zetherion_ai.owner_ci.coaching_synthesis import CoachingSynthesizer
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
 from zetherion_ai.skills.github.client import GitHubAPIError, GitHubClient
 from zetherion_ai.skills.permissions import Permission, PermissionSet
@@ -1117,9 +1118,15 @@ async def _build_vercel_report(
 class CiObserverSkill(Skill):
     """Read-only observability and reporting for owner CI."""
 
-    def __init__(self, *, storage: OwnerCiStorage) -> None:
+    def __init__(
+        self,
+        *,
+        storage: OwnerCiStorage,
+        coaching_synthesizer: CoachingSynthesizer | None = None,
+    ) -> None:
         super().__init__(memory=None)
         self._storage = storage
+        self._coaching_synthesizer = coaching_synthesizer
 
     @property
     def metadata(self) -> SkillMetadata:
@@ -1154,6 +1161,14 @@ class CiObserverSkill(Skill):
     async def initialize(self) -> bool:
         log.info("ci_observer_initialized")
         return True
+
+    async def _prepare_coaching_payload(
+        self,
+        coaching: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if self._coaching_synthesizer is None:
+            return coaching
+        return await self._coaching_synthesizer.synthesize_many(coaching)
 
     async def handle(self, request: SkillRequest) -> SkillResponse:
         owner_id = _normalize_owner_id(request)
@@ -1291,6 +1306,7 @@ class CiObserverSkill(Skill):
                 run_id=run_id,
                 limit=int(request.context.get("limit") or 50),
             )
+            coaching = await self._prepare_coaching_payload(coaching)
             return SkillResponse(
                 request_id=request.id,
                 message=f"Loaded {len(coaching)} coaching items.",
