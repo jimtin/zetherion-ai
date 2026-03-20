@@ -679,12 +679,56 @@ async def test_ci_observer_storage_and_vercel_report_helpers_cover_alerting_path
     vercel_report = await _build_vercel_report(storage=storage, owner_id="owner-1", limit=5)
 
     assert vercel_report["summary"]["failed_operations"] == 1
+    assert vercel_report["summary"]["alert_failed_operations"] == 1
     assert vercel_report["summary"]["active_operations"] == 1
     assert vercel_report["summary"]["blocking_incident_total"] == 1
     assert vercel_report["routes"][0]["route_path"] == "/admin/ai"
     assert vercel_report["routes"][0]["blocking_count"] == 1
     assert vercel_report["incident_types"][0]["incident_type"] == "deployment_failed"
     assert vercel_report["announcement_events"][0]["category"] == "ops.vercel_reporting"
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_vercel_report_ignores_resolved_incidents_for_alerting() -> None:
+    storage = _storage()
+    storage.list_managed_operations = AsyncMock(return_value=[
+        {
+            "operation_id": "op-1",
+            "app_id": "cgs",
+            "repo_id": "catalyst-group-solutions",
+            "status": "failed",
+            "summary": {"route_path": "/admin/ai"},
+            "metadata": {},
+        }
+    ])
+    storage.get_operation_hydrated = AsyncMock(return_value={
+        "operation_id": "op-1",
+        "app_id": "cgs",
+        "repo_id": "catalyst-group-solutions",
+        "status": "failed",
+        "summary": {"route_path": "/admin/ai"},
+        "metadata": {},
+        "refs": [
+            {"ref_kind": "vercel_deployment_id", "ref_value": "dep-1"},
+            {"ref_kind": "branch", "ref_value": "main"},
+        ],
+        "incidents": [
+            {
+                "incident_type": "deployment_failed",
+                "blocking": True,
+                "status": "resolved",
+            }
+        ],
+    })
+
+    vercel_report = await _build_vercel_report(storage=storage, owner_id="owner-1", limit=5)
+
+    assert vercel_report["summary"]["failed_operations"] == 1
+    assert vercel_report["summary"]["alert_failed_operations"] == 0
+    assert vercel_report["summary"]["incident_total"] == 0
+    assert vercel_report["summary"]["blocking_incident_total"] == 0
+    assert vercel_report["deployments"][0]["incident_count"] == 0
+    assert vercel_report["announcement_events"] == []
 
 
 @pytest.mark.asyncio

@@ -964,11 +964,18 @@ async def _build_vercel_report(
     incident_type_counts: dict[str, int] = {}
     incident_total = 0
     blocking_incident_total = 0
+    alert_failed_operations = 0
     for operation in hydrated:
         refs = list(operation.get("refs") or [])
         incidents = list(operation.get("incidents") or [])
+        open_incidents = [
+            incident
+            for incident in incidents
+            if str(incident.get("status") or "open").strip().lower() != "resolved"
+        ]
         summary = dict(operation.get("summary") or {})
         metadata = dict(operation.get("metadata") or {})
+        operation_status = str(operation.get("status") or "").strip()
         deployment_id = next(
             (
                 str(ref.get("ref_value") or "").strip()
@@ -990,7 +997,9 @@ async def _build_vercel_report(
         route_path = (
             str(summary.get("route_path") or metadata.get("route_path") or "").strip() or None
         )
-        for incident in incidents:
+        if operation_status in {"failed", "error"} and open_incidents:
+            alert_failed_operations += 1
+        for incident in open_incidents:
             incident_total += 1
             if bool(incident.get("blocking")):
                 blocking_incident_total += 1
@@ -1012,8 +1021,8 @@ async def _build_vercel_report(
                 "deployment_id": deployment_id or None,
                 "branch": branch or None,
                 "route_path": route_path,
-                "incident_count": len(incidents),
-                "top_incident": incidents[0] if incidents else None,
+                "incident_count": len(open_incidents),
+                "top_incident": open_incidents[0] if open_incidents else (incidents[0] if incidents else None),
             }
         )
 
@@ -1026,7 +1035,7 @@ async def _build_vercel_report(
         if str(operation.get("status") or "") not in {"resolved", "succeeded", "failed", "error"}
     )
     alerts: list[str] = []
-    if failed_operations > 0:
+    if alert_failed_operations > 0:
         alerts.append(
             "Recent Vercel operations are failing. Start with the newest blocked deployment and "
             "inspect its correlated incidents before retrying."
@@ -1049,11 +1058,14 @@ async def _build_vercel_report(
                     else "Vercel reporting needs attention"
                 ),
                 "body": alerts[0],
-                "fingerprint": f"vercel:{owner_id}:{failed_operations}:{blocking_incident_total}",
+                "fingerprint": (
+                    f"vercel:{owner_id}:{alert_failed_operations}:{blocking_incident_total}"
+                ),
                 "payload": {
                     "summary": {
                         "total_operations": len(hydrated),
                         "failed_operations": failed_operations,
+                        "alert_failed_operations": alert_failed_operations,
                         "active_operations": active_operations,
                         "incident_total": incident_total,
                         "blocking_incident_total": blocking_incident_total,
@@ -1083,6 +1095,7 @@ async def _build_vercel_report(
         "summary": {
             "total_operations": len(hydrated),
             "failed_operations": failed_operations,
+            "alert_failed_operations": alert_failed_operations,
             "active_operations": active_operations,
             "incident_total": incident_total,
             "blocking_incident_total": blocking_incident_total,
