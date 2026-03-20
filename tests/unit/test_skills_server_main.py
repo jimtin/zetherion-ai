@@ -351,7 +351,7 @@ def test_work_router_startup_uses_runtime_tenant_encryptor(
     google_auth.generate_auth_url.return_value = ("https://example.test/auth", "state-token")
 
     with ExitStack() as stack:
-        stack.enter_context(
+        mock_asyncpg_create_pool = stack.enter_context(
             patch(
                 "asyncpg.create_pool",
                 new_callable=AsyncMock,
@@ -572,6 +572,9 @@ def test_work_router_startup_uses_runtime_tenant_encryptor(
     runtime_pool.close.assert_awaited_once()
     integration_pool.close.assert_awaited_once()
     personal_pool.close.assert_awaited_once()
+    assert len(mock_asyncpg_create_pool.await_args_list) == 3
+    for call in mock_asyncpg_create_pool.await_args_list:
+        assert call.kwargs["ssl"] is mock_settings.postgres_ssl_context
     security_pipeline.close.assert_awaited_once()
     tenant_inference_broker.close.assert_awaited_once()
     email_inference_broker.close.assert_awaited_once()
