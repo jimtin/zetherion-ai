@@ -749,8 +749,18 @@ function Invoke-ZetherionWslCommandResult {
     $wslArgs.Add("-lc")
     $wslArgs.Add($Command)
 
-    $output = & wsl.exe @wslArgs 2>&1
-    $exitCode = $LASTEXITCODE
+    # PowerShell can surface native stderr as ErrorRecord objects; capture it as command output
+    # so callers can inspect the exit code and text instead of tripping the global Stop policy.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $exitCode = 1
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = & wsl.exe @wslArgs 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     $global:LASTEXITCODE = $exitCode
 
     return [pscustomobject]@{
@@ -2235,8 +2245,17 @@ function Invoke-ZetherionNativeDockerResult {
         }
     }
 
-    $output = & $dockerCli.Source @DockerArguments 2>&1
-    $exitCode = $LASTEXITCODE
+    # Treat docker stderr as process output so callers can decide based on the exit code.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $exitCode = 1
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = & $dockerCli.Source @DockerArguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     $global:LASTEXITCODE = $exitCode
 
     return [pscustomobject]@{
