@@ -721,6 +721,45 @@ CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_workspace_bundles (
 CREATE INDEX IF NOT EXISTS idx_owner_ci_workspace_bundles_owner_app
     ON "{validated}".owner_ci_workspace_bundles (owner_id, app_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_workspace_uploads (
+    owner_id            TEXT         NOT NULL,
+    upload_id           TEXT         NOT NULL,
+    principal_id        TEXT         NOT NULL,
+    app_id              TEXT         NOT NULL,
+    status              TEXT         NOT NULL DEFAULT 'uploaded',
+    layout_value        TEXT         NOT NULL,
+    digest_sha256       TEXT         NOT NULL,
+    size_bytes          BIGINT       NOT NULL DEFAULT 0,
+    manifest_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    validation_json     JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    bundle_base64_value TEXT         NOT NULL,
+    expires_at          TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, upload_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_workspace_uploads_owner_app
+    ON "{validated}".owner_ci_workspace_uploads (owner_id, app_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_execution_candidates (
+    owner_id            TEXT         NOT NULL,
+    candidate_id        TEXT         NOT NULL,
+    principal_id        TEXT         NOT NULL,
+    app_id              TEXT         NOT NULL,
+    upload_id           TEXT         NOT NULL,
+    status              TEXT         NOT NULL DEFAULT 'validated',
+    candidate_json      JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    validation_json     JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    expires_at          TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, candidate_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_execution_candidates_owner_app
+    ON "{validated}".owner_ci_execution_candidates (owner_id, app_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_publish_candidates (
     owner_id            TEXT         NOT NULL,
     candidate_id        TEXT         NOT NULL,
@@ -1569,6 +1608,39 @@ class OwnerCiStorage:
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
             "downloaded_at": row["downloaded_at"].isoformat() if row.get("downloaded_at") else None,
+        }
+
+    def _workspace_upload_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "upload_id": str(row["upload_id"]),
+            "principal_id": str(row["principal_id"]),
+            "app_id": str(row["app_id"]),
+            "status": str(row["status"]),
+            "layout": str(row["layout_value"]),
+            "digest_sha256": str(row["digest_sha256"]),
+            "size_bytes": int(row.get("size_bytes") or 0),
+            "manifest": self._coerce_json_object(row["manifest_json"], "manifest_json"),
+            "validation": self._coerce_json_object(row["validation_json"], "validation_json"),
+            "bundle_base64": self._decrypt_text(str(row["bundle_base64_value"])) or "",
+            "expires_at": row["expires_at"].isoformat() if row.get("expires_at") else None,
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _execution_candidate_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "candidate_id": str(row["candidate_id"]),
+            "principal_id": str(row["principal_id"]),
+            "app_id": str(row["app_id"]),
+            "upload_id": str(row["upload_id"]),
+            "status": str(row["status"]),
+            "candidate": self._coerce_json_object(row["candidate_json"], "candidate_json"),
+            "validation": self._coerce_json_object(row["validation_json"], "validation_json"),
+            "expires_at": row["expires_at"].isoformat() if row.get("expires_at") else None,
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
 
     def _publish_candidate_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -4999,6 +5071,151 @@ class OwnerCiStorage:
             raise RuntimeError("Create publish candidate returned no row")
         return self._publish_candidate_from_row(dict(row))
 
+    async def create_workspace_upload(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str,
+        app_id: str,
+        layout: str,
+        digest_sha256: str,
+        size_bytes: int,
+        manifest: dict[str, Any],
+        validation: dict[str, Any],
+        bundle_base64: str,
+        status: str = "uploaded",
+        expires_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_workspace_uploads'
+        upload_id = uuid4().hex
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    upload_id,
+                    principal_id,
+                    app_id,
+                    status,
+                    layout_value,
+                    digest_sha256,
+                    size_bytes,
+                    manifest_json,
+                    validation_json,
+                    bundle_base64_value,
+                    expires_at,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, now(), now()
+                )
+                RETURNING *
+                """,
+                owner_id,
+                upload_id,
+                principal_id,
+                app_id,
+                status,
+                layout,
+                digest_sha256,
+                int(size_bytes),
+                json.dumps(manifest),
+                json.dumps(validation),
+                self._encrypt_text(bundle_base64) or "",
+                expires_at,
+            )
+        if row is None:
+            raise RuntimeError("Create workspace upload returned no row")
+        return self._workspace_upload_from_row(dict(row))
+
+    async def get_workspace_upload(
+        self,
+        owner_id: str,
+        upload_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_workspace_uploads'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND upload_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                upload_id,
+            )
+        return self._workspace_upload_from_row(dict(row)) if row is not None else None
+
+    async def create_execution_candidate(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str,
+        app_id: str,
+        upload_id: str,
+        candidate: dict[str, Any],
+        validation: dict[str, Any],
+        status: str = "validated",
+        expires_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_execution_candidates'
+        candidate_id = str(candidate.get("candidate_id") or uuid4().hex)
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    candidate_id,
+                    principal_id,
+                    app_id,
+                    upload_id,
+                    status,
+                    candidate_json,
+                    validation_json,
+                    expires_at,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, now(), now()
+                )
+                RETURNING *
+                """,
+                owner_id,
+                candidate_id,
+                principal_id,
+                app_id,
+                upload_id,
+                status,
+                json.dumps({**candidate, "candidate_id": candidate_id}),
+                json.dumps(validation),
+                expires_at,
+            )
+        if row is None:
+            raise RuntimeError("Create execution candidate returned no row")
+        return self._execution_candidate_from_row(dict(row))
+
+    async def get_execution_candidate(
+        self,
+        owner_id: str,
+        candidate_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_execution_candidates'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND candidate_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                candidate_id,
+            )
+        return self._execution_candidate_from_row(dict(row)) if row is not None else None
+
     async def get_publish_candidate(
         self,
         owner_id: str,
@@ -5152,6 +5369,48 @@ class OwnerCiStorage:
         if row is None:
             raise RuntimeError("Upsert secret ref returned no row")
         return self._secret_ref_from_row(dict(row))
+
+    async def get_secret_ref(
+        self,
+        owner_id: str,
+        secret_ref_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_secret_refs'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND secret_ref_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                secret_ref_id,
+            )
+        return self._secret_ref_from_row(dict(row)) if row is not None else None
+
+    async def get_secret_ref_value(
+        self,
+        owner_id: str,
+        secret_ref_id: str,
+    ) -> str | None:
+        table = f'"{self._schema}".owner_ci_secret_refs'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT secret_value
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND secret_ref_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                secret_ref_id,
+            )
+        if row is None or not row.get("secret_value"):
+            return None
+        return self._decrypt_text(str(row["secret_value"]))
 
     async def record_agent_audit_event(
         self,

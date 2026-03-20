@@ -802,6 +802,7 @@ def build_system_run_usage_summary(
     execution: dict[str, Any] | None,
 ) -> dict[str, Any]:
     normalized_candidates = _candidate_set_from_input(candidate_set)
+    candidate_metadata = dict(normalized_candidates.metadata or {})
     execution_payload = dict(execution or {})
     shard_results = [
         dict(item) for item in list(execution_payload.get("shards") or []) if isinstance(item, dict)
@@ -852,6 +853,21 @@ def build_system_run_usage_summary(
         metadata={
             "all_passed": bool(execution_payload.get("all_passed", False)),
             "batch_count": len(list(execution_payload.get("batches") or [])),
+            "source_kind": str(candidate_metadata.get("source_kind") or "").strip() or None,
+            "app_id": str(candidate_metadata.get("app_id") or "").strip() or None,
+            "workspace_upload_id": (
+                str(candidate_metadata.get("workspace_upload_id") or "").strip() or None
+            ),
+            "execution_candidate_id": (
+                str(candidate_metadata.get("execution_candidate_id") or "").strip() or None
+            ),
+            "repo_summary": list(candidate_metadata.get("repo_summary") or []),
+            "execution_plan_summary": (
+                str(candidate_metadata.get("execution_plan_summary") or "").strip() or None
+            ),
+            "secret_capability_status": dict(
+                candidate_metadata.get("secret_capability_status") or {}
+            ),
         },
         generated_at=_utc_now_iso(),
     )
@@ -860,6 +876,9 @@ def build_system_run_usage_summary(
 
 def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
     normalized = SystemRun.model_validate(system_run)
+    candidate_metadata = dict(normalized.candidate_set.metadata or {})
+    plan_metadata = dict(normalized.plan.metadata or {})
+    run_metadata = dict(normalized.metadata or {})
     run_node_id = _system_run_node_id(normalized.system_run_id)
     nodes: list[RunGraphNode] = [
         RunGraphNode(
@@ -1143,6 +1162,11 @@ def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
             "system_id": normalized.system_id,
             "mode_id": normalized.mode_id,
             "repo_ids": [repo.repo_id for repo in normalized.candidate_set.repos],
+            "source_kind": str(candidate_metadata.get("source_kind") or "").strip() or None,
+            "execution_candidate_id": (
+                str(candidate_metadata.get("execution_candidate_id") or "").strip() or None
+            ),
+            "app_id": str(candidate_metadata.get("app_id") or "").strip() or None,
         },
     ).model_dump(mode="json")
     correlation_context = CorrelationContext(
@@ -1156,6 +1180,10 @@ def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
         metadata={
             "system_id": normalized.system_id,
             "mode_id": normalized.mode_id,
+            "source_kind": str(candidate_metadata.get("source_kind") or "").strip() or None,
+            "execution_candidate_id": (
+                str(candidate_metadata.get("execution_candidate_id") or "").strip() or None
+            ),
         },
     ).model_dump(mode="json")
     recommended_next_actions = [
@@ -1185,11 +1213,64 @@ def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
         {"kind": "evidence_index", "path": "run_report/evidence/index.json"},
         {"kind": "coaching", "path": "run_report/coaching.json"},
     ]
+    evidence = []
+    execution_candidate_id = str(candidate_metadata.get("execution_candidate_id") or "").strip()
+    if execution_candidate_id:
+        evidence.append(
+            {
+                "evidence_ref_id": f"uploaded-ci:{normalized.system_run_id}:candidate",
+                "node_id": run_node_id,
+                "evidence_type": "execution_candidate",
+                "summary": "Uploaded execution candidate metadata for this system run.",
+                "metadata": {
+                    "execution_candidate_id": execution_candidate_id,
+                    "workspace_upload_id": (
+                        str(candidate_metadata.get("workspace_upload_id") or "").strip() or None
+                    ),
+                    "repo_summary": list(candidate_metadata.get("repo_summary") or []),
+                    "execution_plan_summary": (
+                        str(candidate_metadata.get("execution_plan_summary") or "").strip()
+                        or None
+                    ),
+                },
+            }
+        )
+    secret_capability_status = dict(
+        candidate_metadata.get("secret_capability_status")
+        or plan_metadata.get("secret_capability_status")
+        or run_metadata.get("secret_capability_status")
+        or {}
+    )
+    if secret_capability_status:
+        evidence.append(
+            {
+                "evidence_ref_id": f"uploaded-ci:{normalized.system_run_id}:secrets",
+                "node_id": run_node_id,
+                "evidence_type": "secret_capability_status",
+                "summary": "Approved secret capability status captured for this uploaded CI run.",
+                "metadata": {
+                    "secret_capability_status": secret_capability_status,
+                },
+            }
+        )
     return {
         "system_run_id": normalized.system_run_id,
         "system_id": normalized.system_id,
         "mode_id": normalized.mode_id,
         "status": normalized.status,
+        "source_kind": str(candidate_metadata.get("source_kind") or "").strip() or None,
+        "app_id": str(candidate_metadata.get("app_id") or "").strip() or None,
+        "execution_candidate_id": execution_candidate_id or None,
+        "workspace_upload_id": (
+            str(candidate_metadata.get("workspace_upload_id") or "").strip() or None
+        ),
+        "repo_summary": list(candidate_metadata.get("repo_summary") or []),
+        "execution_plan_summary": (
+            str(candidate_metadata.get("execution_plan_summary") or "").strip()
+            or str(plan_metadata.get("execution_plan_summary") or "").strip()
+            or None
+        ),
+        "secret_capability_status": secret_capability_status,
         "candidate_set": normalized.candidate_set.model_dump(mode="json"),
         "plan": normalized.plan.model_dump(mode="json"),
         "readiness": normalized.readiness.model_dump(mode="json"),
@@ -1202,8 +1283,8 @@ def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
         "coverage_gaps": {},
         "correlated_incidents": [],
         "artifacts": [artifact.model_dump(mode="json") for artifact in artifacts],
-        "evidence": [],
-        "all_evidence_references": [],
+        "evidence": evidence,
+        "all_evidence_references": evidence,
         "coaching": coaching_payload,
         "usage_summary": (
             normalized.usage_summary.model_dump(mode="json")

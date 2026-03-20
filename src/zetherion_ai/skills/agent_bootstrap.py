@@ -10,7 +10,9 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
+import sys
 import tarfile
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -71,6 +73,41 @@ _GITHUB_CONNECTOR_ID = "github-primary"
 _VERCEL_CONNECTOR_ID = "vercel-primary"
 _CLERK_CONNECTOR_ID = "clerk-primary"
 _STRIPE_CONNECTOR_ID = "stripe-primary"
+_WORKSPACE_UPLOAD_MAX_BYTES = 64 * 1024 * 1024
+_WORKSPACE_UPLOAD_MAX_FILE_BYTES = 32 * 1024 * 1024
+_WORKSPACE_UPLOAD_MAX_EXTRACTED_BYTES = 256 * 1024 * 1024
+_UPLOADED_CI_WORKSPACE_ROOT = Path(tempfile.gettempdir()) / "zetherion_uploaded_ci"
+_APPROVED_SECRET_CAPABILITIES: dict[str, dict[str, Any]] = {
+    "clerk_test": {
+        "title": "Clerk Test Credentials",
+        "service_kind": "clerk",
+        "required": [
+            {"env_name": "CLERK_SECRET_KEY", "purpose": "clerk_test_secret_key"},
+            {
+                "env_name": "CLERK_PUBLISHABLE_KEY",
+                "purpose": "clerk_test_publishable_key",
+            },
+        ],
+    },
+    "stripe_test": {
+        "title": "Stripe Test Credentials",
+        "service_kind": "stripe",
+        "required": [
+            {"env_name": "STRIPE_SECRET_KEY", "purpose": "stripe_test_secret_key"},
+            {
+                "env_name": "STRIPE_PUBLISHABLE_KEY",
+                "purpose": "stripe_test_publishable_key",
+            },
+        ],
+    },
+    "postgres_test": {
+        "title": "Postgres Test Connection",
+        "service_kind": "postgres",
+        "required": [
+            {"env_name": "DATABASE_URL", "purpose": "postgres_test_database_url"},
+        ],
+    },
+}
 
 _SERVICE_VIEW_CAPABILITIES: dict[str, dict[str, str]] = {
     "github": {
@@ -870,6 +907,10 @@ class AgentBootstrapSkill(Skill):
                 "agent_operation_incidents_list",
                 "agent_repo_discover",
                 "agent_repo_enroll",
+                "agent_workspace_upload_create",
+                "agent_workspace_upload_get",
+                "agent_execution_candidate_create",
+                "agent_execution_candidate_get",
                 "agent_workspace_bundle_create",
                 "agent_workspace_bundle_get",
                 "agent_test_plan_compile",
@@ -888,6 +929,9 @@ class AgentBootstrapSkill(Skill):
                 "agent_app_list",
                 "agent_knowledge_pack_upsert",
                 "agent_audit_list",
+                "agent_app_secret_capabilities_list",
+                "agent_app_secret_bindings_put",
+                "agent_app_secret_bindings_list",
                 "agent_secret_ref_upsert",
                 "agent_secret_ref_list",
                 "agent_gap_list",
@@ -974,6 +1018,10 @@ class AgentBootstrapSkill(Skill):
             "agent_operation_incidents_list": self._handle_operation_incidents_list,
             "agent_repo_discover": self._handle_repo_discover,
             "agent_repo_enroll": self._handle_repo_enroll,
+            "agent_workspace_upload_create": self._handle_workspace_upload_create,
+            "agent_workspace_upload_get": self._handle_workspace_upload_get,
+            "agent_execution_candidate_create": self._handle_execution_candidate_create,
+            "agent_execution_candidate_get": self._handle_execution_candidate_get,
             "agent_workspace_bundle_create": self._handle_workspace_bundle_create,
             "agent_workspace_bundle_get": self._handle_workspace_bundle_get,
             "agent_test_plan_compile": self._handle_test_plan_compile,
@@ -992,6 +1040,9 @@ class AgentBootstrapSkill(Skill):
             "agent_app_list": self._handle_app_list,
             "agent_knowledge_pack_upsert": self._handle_knowledge_pack_upsert,
             "agent_audit_list": self._handle_audit_list,
+            "agent_app_secret_capabilities_list": self._handle_app_secret_capabilities_list,
+            "agent_app_secret_bindings_put": self._handle_app_secret_bindings_put,
+            "agent_app_secret_bindings_list": self._handle_app_secret_bindings_list,
             "agent_secret_ref_upsert": self._handle_secret_ref_upsert,
             "agent_secret_ref_list": self._handle_secret_ref_list,
             "agent_gap_list": self._handle_gap_list,
@@ -1217,10 +1268,16 @@ class AgentBootstrapSkill(Skill):
             "accessible_apps": apps,
             "routes": {
                 "apps": "/service/ai/v1/agent/apps",
+                "workspace_upload_create": "/service/ai/v1/agent/apps/:appId/workspace-uploads",
+                "workspace_upload_get": "/service/ai/v1/agent/workspace-uploads/:uploadId",
+                "execution_candidates": "/service/ai/v1/agent/apps/:appId/execution-candidates",
+                "execution_candidate_get": "/service/ai/v1/agent/execution-candidates/:candidateId",
                 "workspace_bundle_create": "/service/ai/v1/agent/apps/:appId/workspace-bundles",
                 "workspace_bundle_get": "/service/ai/v1/agent/workspace-bundles/:bundleId",
                 "test_plan_compile": "/service/ai/v1/agent/apps/:appId/test-plans/compile",
                 "publish_candidates": "/service/ai/v1/agent/apps/:appId/publish-candidates",
+                "secret_capabilities": "/service/ai/v1/agent/apps/:appId/secret-capabilities",
+                "secret_bindings": "/service/ai/v1/agent/apps/:appId/secret-bindings",
                 "operations": "/service/ai/v1/agent/operations",
                 "operation": "/service/ai/v1/agent/operations/:operationId",
                 "operation_evidence": "/service/ai/v1/agent/operations/:operationId/evidence",
@@ -1970,6 +2027,723 @@ class AgentBootstrapSkill(Skill):
             "metadata": dict(raw_metadata) if isinstance(raw_metadata, dict) else {},
         }
 
+    def _command_from_hint(self, value: Any) -> list[str] | None:
+        if isinstance(value, list):
+            parts = [str(part).strip() for part in value if str(part).strip()]
+            return parts or None
+        text = str(value or "").strip()
+        if not text:
+            return None
+        return ["bash", "-lc", text]
+
+    def _repo_root_for_manifest(
+        self,
+        workspace_root: Path,
+        manifest: dict[str, Any],
+        repo_key: str,
+    ) -> Path:
+        for repo in list(manifest.get("repos") or []):
+            if str(repo.get("repo_key") or "") == repo_key:
+                return (workspace_root / str(repo.get("path") or ".")).resolve()
+        raise ValueError(f"Manifest repo `{repo_key}` not found")
+
+    def _detect_node_repo_plan(
+        self,
+        repo_root: Path,
+        *,
+        repo_hints: dict[str, Any],
+        global_hints: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        package_json_path = repo_root / "package.json"
+        if not package_json_path.exists():
+            return None
+        try:
+            package_json = json.loads(package_json_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            package_json = {}
+        scripts = dict(package_json.get("scripts") or {})
+        explicit_test = self._command_from_hint(
+            repo_hints.get("test_entrypoint") or global_hints.get("test_entrypoint")
+        )
+        explicit_install = self._command_from_hint(
+            repo_hints.get("install_command") or global_hints.get("install_command")
+        )
+        if (repo_root / "pnpm-lock.yaml").exists():
+            package_manager = "pnpm"
+            install_command = explicit_install or ["pnpm", "install", "--frozen-lockfile"]
+            detected_test_command = (
+                ["pnpm", "run", "ci:test"]
+                if "ci:test" in scripts
+                else ["pnpm", "run", "test:ci"]
+                if "test:ci" in scripts
+                else ["pnpm", "run", "test"]
+                if "test" in scripts
+                else None
+            )
+        elif (repo_root / "yarn.lock").exists():
+            package_manager = "yarn"
+            install_command = explicit_install or ["yarn", "install", "--frozen-lockfile"]
+            detected_test_command = (
+                ["yarn", "ci:test"]
+                if "ci:test" in scripts
+                else ["yarn", "test:ci"]
+                if "test:ci" in scripts
+                else ["yarn", "test"]
+                if "test" in scripts
+                else None
+            )
+        else:
+            package_manager = "npm"
+            install_command = explicit_install or ["npm", "ci"]
+            detected_test_command = (
+                ["npm", "run", "ci:test"]
+                if "ci:test" in scripts
+                else ["npm", "run", "test:ci"]
+                if "test:ci" in scripts
+                else ["npm", "run", "test"]
+                if "test" in scripts
+                else None
+            )
+        test_command = explicit_test or detected_test_command
+        if test_command is None:
+            return None
+        return {
+            "runtime": "node",
+            "package_manager": package_manager,
+            "install_command": install_command,
+            "test_command": test_command,
+            "summary": f"{package_manager} test workflow",
+        }
+
+    def _detect_python_repo_plan(
+        self,
+        repo_root: Path,
+        *,
+        repo_hints: dict[str, Any],
+        global_hints: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        has_python_project = any(
+            (repo_root / marker).exists()
+            for marker in ["pyproject.toml", "requirements.txt", "setup.py", "tox.ini"]
+        )
+        if not has_python_project:
+            return None
+        explicit_test = self._command_from_hint(
+            repo_hints.get("test_entrypoint") or global_hints.get("test_entrypoint")
+        )
+        explicit_install = self._command_from_hint(
+            repo_hints.get("install_command") or global_hints.get("install_command")
+        )
+        install_command = explicit_install
+        if install_command is None:
+            if (repo_root / "requirements.txt").exists():
+                install_command = [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
+            else:
+                install_command = [sys.executable, "-m", "pip", "install", "-e", "."]
+        test_command = explicit_test
+        if test_command is None:
+            has_pytest_target = any(
+                (repo_root / marker).exists() for marker in ["pytest.ini", "conftest.py"]
+            ) or (repo_root / "tests").exists()
+            if not has_pytest_target:
+                return None
+            test_command = [sys.executable, "-m", "pytest"]
+        return {
+            "runtime": "python",
+            "install_command": install_command,
+            "test_command": test_command,
+            "summary": "pytest workflow",
+        }
+
+    def _build_uploaded_ci_execution_plan(
+        self,
+        *,
+        workspace_root: Path,
+        candidate_set: dict[str, Any],
+        manifest: dict[str, Any],
+        secret_capability_status: dict[str, Any],
+    ) -> dict[str, Any]:
+        global_hints = dict(manifest.get("hints") or {})
+        primary_repo_key = str(manifest.get("primary_repo_key") or "").strip()
+        primary_repo_root = self._repo_root_for_manifest(workspace_root, manifest, primary_repo_key)
+        compose_candidates = [
+            self._normalize_workspace_relative_path(
+                str(global_hints.get("compose_file") or ""),
+                default="",
+            )
+            if str(global_hints.get("compose_file") or "").strip()
+            else None,
+            "docker-compose.yml",
+            "compose.yml",
+            "compose.yaml",
+            f"{self._normalize_workspace_relative_path(str(primary_repo_root.relative_to(workspace_root)) or '.', default='.')}/docker-compose.yml",
+            f"{self._normalize_workspace_relative_path(str(primary_repo_root.relative_to(workspace_root)) or '.', default='.')}/compose.yml",
+            f"{self._normalize_workspace_relative_path(str(primary_repo_root.relative_to(workspace_root)) or '.', default='.')}/compose.yaml",
+        ]
+        compose_file = None
+        for candidate in compose_candidates:
+            if not candidate:
+                continue
+            candidate_path = (workspace_root / candidate).resolve()
+            if candidate_path.exists() and candidate_path.is_file():
+                compose_file = self._normalize_workspace_relative_path(candidate)
+                break
+
+        planning_gaps: list[dict[str, Any]] = []
+        shard_payloads: list[dict[str, Any]] = []
+        repo_summary = [
+            {
+                "repo_key": str(repo.get("repo_key") or ""),
+                "path": str(repo.get("path") or ""),
+                "role": str(repo.get("role") or "").strip() or None,
+            }
+            for repo in list(manifest.get("repos") or [])
+            if isinstance(repo, dict)
+        ]
+
+        if compose_file:
+            primary_repo = next(
+                (
+                    dict(repo)
+                    for repo in list(manifest.get("repos") or [])
+                    if isinstance(repo, dict)
+                    and str(repo.get("repo_key") or "").strip() == primary_repo_key
+                ),
+                {},
+            )
+            repo_hints = dict(primary_repo.get("hints") or {})
+            repo_plan = self._detect_node_repo_plan(
+                primary_repo_root,
+                repo_hints=repo_hints,
+                global_hints=global_hints,
+            ) or self._detect_python_repo_plan(
+                primary_repo_root,
+                repo_hints=repo_hints,
+                global_hints=global_hints,
+            )
+            explicit_test = self._command_from_hint(global_hints.get("test_entrypoint"))
+            test_command = explicit_test or (dict(repo_plan or {}).get("test_command"))
+            install_command = dict(repo_plan or {}).get("install_command")
+            if test_command is None:
+                planning_gaps.append(
+                    {
+                        "gap_id": "missing_test_entrypoint",
+                        "summary": "Could not infer a safe test entrypoint for the uploaded stack.",
+                        "repo_key": primary_repo_key,
+                        "repo_path": str(primary_repo.get("path") or "."),
+                        "expected": "candidate_manifest.hints.test_entrypoint or a standard project test script",
+                        "suggested_fix": (
+                            "Add candidate_manifest.hints.test_entrypoint or define a standard "
+                            "test command such as package.json scripts.test or pytest."
+                        ),
+                    }
+                )
+            else:
+                compose_project = f"zcgs-{str(candidate_set.get('metadata', {}).get('execution_candidate_id') or '')[:12] or 'upload'}"
+                step_specs: list[dict[str, Any]] = [
+                    {
+                        "step_id": "compose-up",
+                        "label": "Start stack with Docker Compose",
+                        "cwd": ".",
+                        "command": [
+                            "docker",
+                            "compose",
+                            "-f",
+                            compose_file,
+                            "-p",
+                            compose_project,
+                            "up",
+                            "-d",
+                            "--build",
+                        ],
+                    },
+                    {
+                        "step_id": "compose-ps",
+                        "label": "Capture Compose service state",
+                        "cwd": ".",
+                        "command": [
+                            "docker",
+                            "compose",
+                            "-f",
+                            compose_file,
+                            "-p",
+                            compose_project,
+                            "ps",
+                        ],
+                    },
+                ]
+                if install_command:
+                    step_specs.append(
+                        {
+                            "step_id": f"{primary_repo_key}-install",
+                            "label": f"Install dependencies for {primary_repo_key}",
+                            "cwd": str(primary_repo.get("path") or "."),
+                            "command": list(install_command),
+                        }
+                    )
+                step_specs.append(
+                    {
+                        "step_id": f"{primary_repo_key}-test",
+                        "label": f"Run tests for {primary_repo_key}",
+                        "cwd": str(primary_repo.get("path") or "."),
+                        "command": list(test_command),
+                    }
+                )
+                shard_payloads.append(
+                    {
+                        "shard_id": "uploaded-compose-stack",
+                        "lane_id": "uploaded-compose-stack",
+                        "lane_label": "Uploaded stack validation",
+                        "lane_family": "uploaded_ci",
+                        "validation_mode": "uploaded_ci",
+                        "purpose": "Start the uploaded stack and run its primary test entrypoint.",
+                        "blocking": True,
+                        "repo_ids": [str(repo.get("repo_key") or "") for repo in manifest.get("repos", [])],
+                        "depends_on": [],
+                        "expected_artifacts": ["compose_ps", "test_output"],
+                        "required_paths": [compose_file],
+                        "metadata": {
+                            "step_specs": step_specs,
+                            "cleanup_commands": [
+                                [
+                                    "docker",
+                                    "compose",
+                                    "-f",
+                                    compose_file,
+                                    "-p",
+                                    compose_project,
+                                    "down",
+                                    "-v",
+                                    "--remove-orphans",
+                                ]
+                            ],
+                            "strategy": "docker_compose",
+                        },
+                    }
+                )
+
+        if not compose_file:
+            for repo in list(manifest.get("repos") or []):
+                if not isinstance(repo, dict):
+                    continue
+                repo_key = str(repo.get("repo_key") or "").strip()
+                repo_path = str(repo.get("path") or ".")
+                repo_root = self._repo_root_for_manifest(workspace_root, manifest, repo_key)
+                repo_hints = dict(repo.get("hints") or {})
+                repo_plan = self._detect_node_repo_plan(
+                    repo_root,
+                    repo_hints=repo_hints,
+                    global_hints=global_hints,
+                ) or self._detect_python_repo_plan(
+                    repo_root,
+                    repo_hints=repo_hints,
+                    global_hints=global_hints,
+                )
+                if repo_plan is None:
+                    planning_gaps.append(
+                        {
+                            "gap_id": f"missing_execution_contract:{repo_key}",
+                            "summary": f"Could not infer a safe test contract for `{repo_key}`.",
+                            "repo_key": repo_key,
+                            "repo_path": repo_path,
+                            "expected": (
+                                "Docker Compose, candidate_manifest.hints.test_entrypoint, "
+                                "package.json scripts.test, or pytest"
+                            ),
+                            "suggested_fix": (
+                                "Add candidate_manifest hints for this repo or define a standard "
+                                "project test command so the CI worker can run it safely."
+                            ),
+                        }
+                    )
+                    continue
+                step_specs = [
+                    {
+                        "step_id": f"{repo_key}-install",
+                        "label": f"Install dependencies for {repo_key}",
+                        "cwd": repo_path,
+                        "command": list(repo_plan["install_command"]),
+                    },
+                    {
+                        "step_id": f"{repo_key}-test",
+                        "label": f"Run tests for {repo_key}",
+                        "cwd": repo_path,
+                        "command": list(repo_plan["test_command"]),
+                    },
+                ]
+                shard_payloads.append(
+                    {
+                        "shard_id": f"{repo_key}-tests",
+                        "lane_id": f"{repo_key}-tests",
+                        "lane_label": f"{repo_key} tests",
+                        "lane_family": "uploaded_ci",
+                        "validation_mode": "uploaded_ci",
+                        "purpose": f"Run the autodetected test workflow for `{repo_key}`.",
+                        "blocking": True,
+                        "repo_ids": [repo_key],
+                        "depends_on": [],
+                        "expected_artifacts": ["test_output"],
+                        "required_paths": [repo_path],
+                        "metadata": {
+                            "step_specs": step_specs,
+                            "cleanup_commands": [],
+                            "strategy": str(repo_plan.get("runtime") or "autodetect"),
+                        },
+                    }
+                )
+
+        summary = (
+            "Autodetected an uploaded-code CI plan."
+            if not planning_gaps
+            else "Uploaded-code CI planning is blocked until the missing execution hints are provided."
+        )
+        return {
+            "strategy": "docker_compose" if compose_file else "repo_autodetect",
+            "summary": summary,
+            "blocking": bool(planning_gaps),
+            "repo_summary": repo_summary,
+            "planning_gaps": planning_gaps,
+            "secret_capability_status": secret_capability_status,
+            "shards": shard_payloads,
+        }
+
+    def _build_uploaded_ci_system_plan(
+        self,
+        *,
+        candidate_set: dict[str, Any],
+        detected_plan: dict[str, Any],
+    ) -> dict[str, Any]:
+        profile = {
+            "mode_id": "uploaded_ci",
+            "mode_label": "Uploaded Code CI",
+            "description": "Autodetected validation plan for uploaded customer code.",
+            "available": True,
+            "repo_ids": [repo["repo_id"] for repo in list(candidate_set.get("repos") or [])],
+            "lane_families": ["uploaded_ci"],
+            "blocking_categories": ["execution_contract"] if detected_plan.get("blocking") else [],
+            "shards": list(detected_plan.get("shards") or []),
+            "metadata": {
+                "strategy": str(detected_plan.get("strategy") or "repo_autodetect"),
+            },
+        }
+        return {
+            "system_id": str(candidate_set.get("system_id") or "uploaded-ci"),
+            "mode_id": "uploaded_ci",
+            "candidate_set": candidate_set,
+            "profiles": [profile],
+            "shards": list(detected_plan.get("shards") or []),
+            "blocking_categories": list(profile["blocking_categories"]),
+            "summary": str(detected_plan.get("summary") or "Uploaded code CI plan"),
+            "metadata": {
+                "generated_at": datetime.now(UTC).isoformat(),
+                "selected_mode_ids": ["uploaded_ci"],
+                "execution_plan_summary": str(detected_plan.get("summary") or ""),
+                "planning_gaps": list(detected_plan.get("planning_gaps") or []),
+                "secret_capability_status": dict(detected_plan.get("secret_capability_status") or {}),
+                "repo_summary": list(detected_plan.get("repo_summary") or []),
+            },
+        }
+
+    def _build_uploaded_ci_readiness(
+        self,
+        *,
+        candidate_set: dict[str, Any],
+        detected_plan: dict[str, Any],
+    ) -> dict[str, Any]:
+        planning_gaps = [dict(gap) for gap in list(detected_plan.get("planning_gaps") or [])]
+        recommended_steps = [
+            {
+                "step_id": str(gap.get("gap_id") or f"gap-{index}"),
+                "title": str(gap.get("summary") or "Fix uploaded CI planning gap"),
+                "instructions": [
+                    str(gap.get("suggested_fix") or "").strip()
+                    or "Add the missing manifest hint or test contract and retry the run.",
+                ],
+                "blocking": True,
+                "metadata": {
+                    "repo_key": str(gap.get("repo_key") or "").strip() or None,
+                    "repo_path": str(gap.get("repo_path") or "").strip() or None,
+                    "expected": str(gap.get("expected") or "").strip() or None,
+                },
+            }
+            for index, gap in enumerate(planning_gaps, start=1)
+        ]
+        secret_status = dict(detected_plan.get("secret_capability_status") or {})
+        missing_capabilities = [
+            capability_id
+            for capability_id, status in secret_status.items()
+            if str((status or {}).get("status") or "") != "ready"
+        ]
+        if missing_capabilities:
+            recommended_steps.append(
+                {
+                    "step_id": "bind-approved-secrets",
+                    "title": "Bind the required approved secret capabilities",
+                    "instructions": [
+                        "Use the app secret-bindings API to provide the required sandbox or test secrets.",
+                        f"Missing capabilities: {', '.join(sorted(missing_capabilities))}.",
+                    ],
+                    "blocking": True,
+                    "metadata": {"missing_capabilities": missing_capabilities},
+                }
+            )
+        blocking = bool(planning_gaps or missing_capabilities)
+        return {
+            "system_id": str(candidate_set.get("system_id") or "uploaded-ci"),
+            "mode_id": "uploaded_ci",
+            "status": "blocked" if blocking else "ready",
+            "blocking": blocking,
+            "summary": (
+                "Uploaded CI is blocked until the missing execution hints and approved secret "
+                "capabilities are provided."
+                if blocking
+                else "Uploaded CI is ready to execute."
+            ),
+            "blocker_count": len(planning_gaps) + len(missing_capabilities),
+            "blocking_shards": [
+                str(shard.get("shard_id") or "")
+                for shard in list(detected_plan.get("shards") or [])
+                if bool(shard.get("blocking", True))
+            ],
+            "missing_repo_ids": [],
+            "recommended_next_steps": recommended_steps
+            or [
+                {
+                    "step_id": "execute-uploaded-ci",
+                    "title": "Execute the uploaded CI plan",
+                    "instructions": [
+                        "Run the uploaded candidate-backed system run and review the generated report."
+                    ],
+                    "blocking": False,
+                    "metadata": {},
+                }
+            ],
+            "metadata": {
+                "planning_gaps": planning_gaps,
+                "secret_capability_status": secret_status,
+                "repo_summary": list(detected_plan.get("repo_summary") or []),
+            },
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+
+    def _build_uploaded_ci_coaching(
+        self,
+        *,
+        candidate_set: dict[str, Any],
+        detected_plan: dict[str, Any],
+        principal_id: str | None,
+    ) -> list[dict[str, Any]]:
+        planning_gaps = [dict(gap) for gap in list(detected_plan.get("planning_gaps") or [])]
+        secret_status = dict(detected_plan.get("secret_capability_status") or {})
+        findings = []
+        recommendations = []
+        for index, gap in enumerate(planning_gaps, start=1):
+            repo_key = str(gap.get("repo_key") or "").strip() or None
+            findings.append(
+                {
+                    "finding_id": str(gap.get("gap_id") or f"uploaded-ci-gap-{index}"),
+                    "coaching_kind": "uploaded_ci",
+                    "rule_code": "uploaded_ci_missing_execution_contract",
+                    "summary": str(gap.get("summary") or "Uploaded CI planning gap"),
+                    "remediation": str(gap.get("suggested_fix") or ""),
+                    "blocking": True,
+                    "metadata": {
+                        "repo_key": repo_key,
+                        "repo_path": str(gap.get("repo_path") or "").strip() or None,
+                        "expected": str(gap.get("expected") or "").strip() or None,
+                    },
+                }
+            )
+            recommendations.append(
+                {
+                    "title": f"Fix the `{repo_key or 'workspace'}` execution contract",
+                    "instructions": [
+                        str(gap.get("suggested_fix") or "").strip()
+                        or "Add the missing manifest hint or test command and rerun the upload.",
+                    ],
+                    "agents_md_update": (
+                        "When a project cannot be autodetected safely, add the minimum "
+                        "candidate_manifest hint required to make the run deterministic."
+                    ),
+                }
+            )
+        missing_capabilities = [
+            capability_id
+            for capability_id, status in secret_status.items()
+            if str((status or {}).get("status") or "") != "ready"
+        ]
+        if missing_capabilities:
+            findings.append(
+                {
+                    "finding_id": "uploaded-ci-missing-approved-secrets",
+                    "coaching_kind": "uploaded_ci",
+                    "rule_code": "uploaded_ci_missing_secret_capability",
+                    "summary": (
+                        "The uploaded run requires approved secret-backed test capabilities "
+                        "that are not fully bound."
+                    ),
+                    "remediation": (
+                        "Bind the required approved secret capabilities before rerunning the "
+                        "candidate-backed system run."
+                    ),
+                    "blocking": True,
+                    "metadata": {"missing_capabilities": missing_capabilities},
+                }
+            )
+            recommendations.append(
+                {
+                    "title": "Bind the missing approved secret capabilities",
+                    "instructions": [
+                        f"Add bindings for: {', '.join(sorted(missing_capabilities))}.",
+                        "Keep the binding app-scoped and use only approved sandbox or test credentials.",
+                    ],
+                    "agents_md_update": (
+                        "If the run declares required approved secret capabilities, verify those "
+                        "bindings before requesting execution."
+                    ),
+                }
+            )
+        if not findings:
+            findings.append(
+                {
+                    "finding_id": "uploaded-ci-ready",
+                    "coaching_kind": "uploaded_ci",
+                    "rule_code": "uploaded_ci_ready",
+                    "summary": "The uploaded code candidate is ready for remote execution.",
+                    "remediation": "Execute the candidate-backed system run and review the report.",
+                    "blocking": False,
+                    "metadata": {"repo_summary": list(detected_plan.get("repo_summary") or [])},
+                }
+            )
+            recommendations.append(
+                {
+                    "title": "Execute the candidate-backed run",
+                    "instructions": [
+                        "Start the system run and inspect the report, readiness, and evidence surfaces."
+                    ],
+                    "agents_md_update": (
+                        "Prefer uploaded candidate-backed system runs when validating a local "
+                        "workspace before any GitHub or deployment mutation."
+                    ),
+                }
+            )
+        feedback = AgentCoachingFeedback(
+            feedback_id=f"uploaded-ci-{str(candidate_set.get('metadata', {}).get('execution_candidate_id') or 'candidate')}",
+            principal_id=principal_id,
+            repo_id=str((candidate_set.get("repos") or [{}])[0].get("repo_id") or "") or None,
+            scope="app",
+            status="open",
+            blocking=any(bool(finding.get("blocking")) for finding in findings),
+            recurrence_count=1,
+            confidence=1.0,
+            summary=str(detected_plan.get("summary") or "Uploaded CI coaching"),
+            findings=[AgentCoachingFinding.model_validate(finding) for finding in findings],
+            recommendations=[
+                AgentInstructionRecommendation.model_validate(recommendation)
+                for recommendation in recommendations
+            ],
+            rule_violations=[],
+            evidence_references=[],
+            metadata={
+                "candidate_set": candidate_set,
+                "secret_capability_status": secret_status,
+                "planning_gaps": planning_gaps,
+            },
+            created_at=datetime.now(UTC).isoformat(),
+            updated_at=datetime.now(UTC).isoformat(),
+        )
+        return [feedback.model_dump(mode="json", exclude_none=True)]
+
+    async def _uploaded_ci_context_from_candidate(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        execution_candidate_id: str,
+    ) -> tuple[
+        dict[str, Any],
+        dict[str, Any],
+        dict[str, Any],
+        dict[str, Any],
+        dict[str, Any],
+        dict[str, Any],
+        list[dict[str, Any]],
+    ]:
+        candidate = await self._storage.get_execution_candidate(owner_id, execution_candidate_id)
+        if candidate is None:
+            raise ValueError(f"Execution candidate `{execution_candidate_id}` not found")
+        app_id = str(candidate.get("app_id") or "")
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        upload = await self._storage.get_workspace_upload(owner_id, str(candidate.get("upload_id") or ""))
+        if upload is None:
+            raise ValueError(
+                f"Workspace upload `{candidate.get('upload_id')}` for candidate `{execution_candidate_id}` was not found"
+            )
+        manifest = dict((candidate.get("candidate") or {}).get("manifest") or upload.get("manifest") or {})
+        candidate_set = {
+            "system_id": f"uploaded-ci:{app_id}",
+            "mode_id": "uploaded_ci",
+            "repos": [
+                {
+                    "repo_id": str(repo.get("repo_key") or ""),
+                    "git_ref": f"upload:{execution_candidate_id[:12]}",
+                    "role": str(repo.get("role") or "").strip() or None,
+                    "metadata": {
+                        "repo_key": str(repo.get("repo_key") or ""),
+                        "path": str(repo.get("path") or "."),
+                    },
+                }
+                for repo in list(manifest.get("repos") or [])
+                if isinstance(repo, dict)
+            ],
+            "metadata": {
+                "source_kind": "uploaded_ci",
+                "app_id": app_id,
+                "execution_candidate_id": execution_candidate_id,
+                "workspace_upload_id": str(upload.get("upload_id") or ""),
+                "layout": str(manifest.get("layout") or "single_repo"),
+                "primary_repo_key": str(manifest.get("primary_repo_key") or ""),
+            },
+        }
+        archive_bytes = self._decode_workspace_upload_bytes(str(upload.get("bundle_base64") or ""))
+        with tempfile.TemporaryDirectory(prefix="uploaded-ci-plan-") as temp_dir:
+            workspace_root = Path(temp_dir).resolve()
+            with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as archive:
+                self._extract_tar_safely(archive, workspace_root)
+            _, secret_status = await self._resolve_execution_secret_environment(
+                owner_id,
+                app_profile,
+                [
+                    str(entry).strip()
+                    for entry in list(manifest.get("required_secret_capabilities") or [])
+                    if str(entry).strip()
+                ],
+            )
+            detected_plan = self._build_uploaded_ci_execution_plan(
+                workspace_root=workspace_root,
+                candidate_set=candidate_set,
+                manifest=manifest,
+                secret_capability_status=secret_status,
+            )
+        plan = self._build_uploaded_ci_system_plan(
+            candidate_set=candidate_set,
+            detected_plan=detected_plan,
+        )
+        readiness = self._build_uploaded_ci_readiness(
+            candidate_set=candidate_set,
+            detected_plan=detected_plan,
+        )
+        coaching = self._build_uploaded_ci_coaching(
+            candidate_set=candidate_set,
+            detected_plan=detected_plan,
+            principal_id=principal_id,
+        )
+        return candidate, upload, app_profile, candidate_set, plan, readiness, coaching
+
     async def _handle_system_validation_matrix_get(
         self,
         request: SkillRequest,
@@ -2008,9 +2782,10 @@ class AgentBootstrapSkill(Skill):
         label: str,
         cwd: Path,
         command: list[str],
+        env: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         started_at = datetime.now(UTC).isoformat()
-        result = await self._run_command(command, cwd=cwd, check=False)
+        result = await self._run_command(command, cwd=cwd, env=env, check=False)
         completed_at = datetime.now(UTC).isoformat()
         return {
             "step_id": step_id,
@@ -2102,6 +2877,194 @@ class AgentBootstrapSkill(Skill):
             "steps": step_results,
         }
 
+    async def _execute_uploaded_ci_shard(
+        self,
+        *,
+        workspace_root: Path,
+        shard: dict[str, Any],
+        env: dict[str, str],
+    ) -> dict[str, Any]:
+        started_at = datetime.now(UTC).isoformat()
+        metadata = dict(shard.get("metadata") or {})
+        step_results: list[dict[str, Any]] = []
+        status = "passed"
+        repo_ids = [str(repo_id).strip() for repo_id in list(shard.get("repo_ids") or []) if str(repo_id).strip()]
+        for index, step in enumerate(list(metadata.get("step_specs") or []), start=1):
+            if not isinstance(step, dict):
+                continue
+            step_id = str(step.get("step_id") or f"step-{index}").strip() or f"step-{index}"
+            cwd_hint = self._normalize_workspace_relative_path(str(step.get("cwd") or "."), default=".")
+            cwd = (workspace_root / cwd_hint).resolve()
+            command = self._system_command_parts(step.get("command"))
+            step_result = await self._execute_system_run_step(
+                repo_id=repo_ids[0] if repo_ids else "uploaded-workspace",
+                step_id=step_id,
+                label=str(step.get("label") or step_id).strip() or step_id,
+                cwd=cwd,
+                command=command,
+                env=env,
+            )
+            step_results.append(step_result)
+            if step_result["status"] != "passed":
+                status = "failed"
+                break
+        for cleanup in list(metadata.get("cleanup_commands") or []):
+            command = self._system_command_parts(cleanup)
+            await self._run_command(command, cwd=workspace_root, env=env, check=False)
+        return {
+            "shard_id": str(shard.get("shard_id") or "").strip(),
+            "lane_id": str(shard.get("lane_id") or "").strip() or None,
+            "lane_label": str(shard.get("lane_label") or "").strip() or None,
+            "lane_family": str(shard.get("lane_family") or "uploaded_ci"),
+            "validation_mode": "uploaded_ci",
+            "purpose": str(shard.get("purpose") or "").strip(),
+            "blocking": bool(shard.get("blocking", True)),
+            "repo_ids": repo_ids,
+            "depends_on": list(shard.get("depends_on") or []),
+            "expected_artifacts": list(shard.get("expected_artifacts") or []),
+            "required_paths": list(shard.get("required_paths") or []),
+            "status": status,
+            "started_at": started_at,
+            "completed_at": datetime.now(UTC).isoformat(),
+            "steps": step_results,
+        }
+
+    async def _execute_uploaded_ci_system_run(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        system_run: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        candidate_set = dict(system_run.get("candidate_set") or {})
+        metadata = dict(candidate_set.get("metadata") or {})
+        execution_candidate_id = str(metadata.get("execution_candidate_id") or "").strip()
+        if not execution_candidate_id:
+            raise ValueError("Uploaded CI system run is missing execution_candidate_id")
+        candidate, upload, app_profile, _, _, _, _ = await self._uploaded_ci_context_from_candidate(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            execution_candidate_id=execution_candidate_id,
+        )
+        manifest = dict((candidate.get("candidate") or {}).get("manifest") or upload.get("manifest") or {})
+        secret_env, secret_status = await self._resolve_execution_secret_environment(
+            owner_id,
+            app_profile,
+            [
+                str(entry).strip()
+                for entry in list(manifest.get("required_secret_capabilities") or [])
+                if str(entry).strip()
+            ],
+        )
+        if any(str((status or {}).get("status") or "") != "ready" for status in secret_status.values()):
+            updated = await self._storage.update_system_run(
+                owner_id,
+                str(system_run["system_run_id"]),
+                status="blocked",
+                started_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
+                metadata_patch={"secret_capability_status": secret_status},
+                error={
+                    "code": "uploaded_ci_missing_secret_capability",
+                    "message": "Uploaded CI execution is blocked until the required approved secret capabilities are bound.",
+                },
+            )
+            report = await self._storage.refresh_system_run_report(owner_id, str(system_run["system_run_id"]))
+            return updated, report
+
+        archive_bytes = self._decode_workspace_upload_bytes(str(upload.get("bundle_base64") or ""))
+        workspace_root = (_UPLOADED_CI_WORKSPACE_ROOT / str(system_run["system_run_id"])).resolve()
+        shutil.rmtree(workspace_root, ignore_errors=True)
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        try:
+            with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as archive:
+                self._extract_tar_safely(archive, workspace_root)
+
+            plan = dict(system_run.get("plan") or {})
+            raw_shards = [
+                dict(shard) for shard in list(plan.get("shards") or []) if isinstance(shard, dict)
+            ]
+            batches = resolve_system_run_batches(raw_shards)
+            await self._storage.update_system_run(
+                owner_id,
+                str(system_run["system_run_id"]),
+                status="running",
+                started_at=datetime.now(UTC),
+                metadata_patch={
+                    "execution_candidate_id": execution_candidate_id,
+                    "workspace_upload_id": str(upload.get("upload_id") or ""),
+                    "secret_capability_status": secret_status,
+                },
+            )
+            execution_summary: dict[str, Any] = {
+                "generated_at": datetime.now(UTC).isoformat(),
+                "all_passed": True,
+                "batches": [],
+                "shards": [],
+            }
+            failed = False
+            for batch_index, batch in enumerate(batches):
+                batch_result: dict[str, Any] = {
+                    "batch_index": batch_index,
+                    "shard_ids": [str(shard.get("shard_id") or "") for shard in batch],
+                    "status": "passed",
+                    "shards": [],
+                }
+                if failed:
+                    skipped = [
+                        {
+                            "shard_id": str(shard.get("shard_id") or "").strip(),
+                            "lane_id": str(shard.get("lane_id") or "").strip() or None,
+                            "lane_label": str(shard.get("lane_label") or "").strip() or None,
+                            "lane_family": str(shard.get("lane_family") or "uploaded_ci"),
+                            "validation_mode": "uploaded_ci",
+                            "purpose": str(shard.get("purpose") or "").strip(),
+                            "blocking": bool(shard.get("blocking", True)),
+                            "repo_ids": list(shard.get("repo_ids") or []),
+                            "depends_on": list(shard.get("depends_on") or []),
+                            "expected_artifacts": list(shard.get("expected_artifacts") or []),
+                            "required_paths": list(shard.get("required_paths") or []),
+                            "status": "skipped",
+                            "skip_reason": "previous shard failed",
+                            "steps": [],
+                        }
+                        for shard in batch
+                    ]
+                    batch_result["status"] = "skipped"
+                    batch_result["shards"] = skipped
+                    execution_summary["batches"].append(batch_result)
+                    execution_summary["shards"].extend(skipped)
+                    execution_summary["all_passed"] = False
+                    continue
+                results = [
+                    await self._execute_uploaded_ci_shard(
+                        workspace_root=workspace_root,
+                        shard=shard,
+                        env={**os.environ, **secret_env},
+                    )
+                    for shard in batch
+                ]
+                batch_result["shards"] = results
+                if any(result["status"] != "passed" for result in results):
+                    batch_result["status"] = "failed"
+                    execution_summary["all_passed"] = False
+                    failed = True
+                execution_summary["batches"].append(batch_result)
+                execution_summary["shards"].extend(results)
+            status = "succeeded" if execution_summary["all_passed"] else "failed"
+            updated = await self._storage.update_system_run(
+                owner_id,
+                str(system_run["system_run_id"]),
+                status=status,
+                execution=execution_summary,
+                completed_at=datetime.now(UTC),
+                metadata_patch={"secret_capability_status": secret_status},
+            )
+            report = await self._storage.refresh_system_run_report(owner_id, str(system_run["system_run_id"]))
+            return updated, report
+        finally:
+            shutil.rmtree(workspace_root, ignore_errors=True)
+
     async def _handle_system_run_create(
         self,
         request: SkillRequest,
@@ -2109,6 +3072,35 @@ class AgentBootstrapSkill(Skill):
         _public_base_url: str,
     ) -> SkillResponse:
         principal_id = str(request.context.get("principal_id") or "").strip() or None
+        execution_candidate_id = str(request.context.get("execution_candidate_id") or "").strip()
+        if execution_candidate_id:
+            candidate, upload, _app_profile, candidate_set, plan, readiness, coaching = (
+                await self._uploaded_ci_context_from_candidate(
+                    owner_id=owner_id,
+                    principal_id=principal_id,
+                    execution_candidate_id=execution_candidate_id,
+                )
+            )
+            system_run = await self._storage.create_system_run(
+                owner_id,
+                candidate_set=candidate_set,
+                plan=plan,
+                readiness=readiness,
+                coaching=coaching,
+                metadata={
+                    "principal_id": principal_id,
+                    "created_from": "agent_bootstrap_uploaded_ci",
+                    "app_id": str(candidate.get("app_id") or ""),
+                    "execution_candidate_id": execution_candidate_id,
+                    "workspace_upload_id": str(upload.get("upload_id") or ""),
+                    "source_kind": "uploaded_ci",
+                },
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message=f"Created uploaded CI system run `{system_run['system_run_id']}`.",
+                data={"system_run": system_run},
+            )
         candidate_set = self._system_candidate_set_from_request(request)
         plan = build_system_run_plan(candidate_set=candidate_set)
         readiness = build_system_rollout_readiness(candidate_set=candidate_set)
@@ -2185,6 +3177,20 @@ class AgentBootstrapSkill(Skill):
             return SkillResponse.error_response(
                 request.id,
                 f"System run `{system_run_id}` not found",
+            )
+        if str((system_run.get("candidate_set") or {}).get("metadata", {}).get("source_kind") or "") == "uploaded_ci":
+            updated, report = await self._execute_uploaded_ci_system_run(
+                owner_id=owner_id,
+                principal_id=str(request.context.get("principal_id") or "").strip() or None,
+                system_run=system_run,
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message=(
+                    f"Executed uploaded CI system run `{system_run_id}` with status "
+                    f"`{str((updated or {}).get('status') or 'unknown')}`."
+                ),
+                data={"system_run": updated, "report": report},
             )
         readiness = dict(system_run.get("readiness") or {})
         if bool(readiness.get("blocking")):
@@ -2297,6 +3303,18 @@ class AgentBootstrapSkill(Skill):
         _owner_id: str,
         _public_base_url: str,
     ) -> SkillResponse:
+        execution_candidate_id = str(request.context.get("execution_candidate_id") or "").strip()
+        if execution_candidate_id:
+            _, _, _, _, plan, _, _ = await self._uploaded_ci_context_from_candidate(
+                owner_id=_normalize_owner_id(request),
+                principal_id=str(request.context.get("principal_id") or "").strip() or None,
+                execution_candidate_id=execution_candidate_id,
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message="Loaded uploaded CI system run plan.",
+                data={"system_run_plan": plan},
+            )
         candidate_set = self._system_candidate_set_from_request(request)
         plan = build_system_run_plan(candidate_set=candidate_set)
         return SkillResponse(
@@ -2476,6 +3494,19 @@ class AgentBootstrapSkill(Skill):
         _public_base_url: str,
     ) -> SkillResponse:
         principal_id = str(request.context.get("principal_id") or "").strip() or None
+        execution_candidate_id = str(request.context.get("execution_candidate_id") or "").strip()
+        if execution_candidate_id:
+            _, _, _, _, _, _, coaching = await self._uploaded_ci_context_from_candidate(
+                owner_id=_normalize_owner_id(request),
+                principal_id=principal_id,
+                execution_candidate_id=execution_candidate_id,
+            )
+            coaching = await self._prepare_coaching_payload(coaching)
+            return SkillResponse(
+                request_id=request.id,
+                message=f"Loaded {len(coaching)} uploaded CI coaching item(s).",
+                data={"coaching": coaching},
+            )
         candidate_set = self._system_candidate_set_from_request(request)
         coaching = build_system_coaching(
             candidate_set=candidate_set,
@@ -2494,6 +3525,18 @@ class AgentBootstrapSkill(Skill):
         _owner_id: str,
         _public_base_url: str,
     ) -> SkillResponse:
+        execution_candidate_id = str(request.context.get("execution_candidate_id") or "").strip()
+        if execution_candidate_id:
+            _, _, _, _, _, readiness, _ = await self._uploaded_ci_context_from_candidate(
+                owner_id=_normalize_owner_id(request),
+                principal_id=str(request.context.get("principal_id") or "").strip() or None,
+                execution_candidate_id=execution_candidate_id,
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message="Loaded uploaded CI rollout readiness.",
+                data={"rollout_readiness": readiness},
+            )
         candidate_set = self._system_candidate_set_from_request(request)
         readiness = build_system_rollout_readiness(candidate_set=candidate_set)
         return SkillResponse(
@@ -3110,6 +4153,689 @@ class AgentBootstrapSkill(Skill):
             request_id=request.id,
             message=f"Enrolled `{github_repo}` into managed broker control.",
             data=enrolled,
+        )
+
+    def _normalize_workspace_relative_path(
+        self,
+        value: str | None,
+        *,
+        default: str = ".",
+    ) -> str:
+        candidate = str(value or default).strip().replace("\\", "/")
+        if not candidate:
+            return default
+        if candidate == ".":
+            return "."
+        path = Path(candidate)
+        if path.is_absolute():
+            raise ValueError(f"Path `{candidate}` must be relative")
+        parts = [part for part in path.parts if part not in {"", "."}]
+        if any(part == ".." for part in parts):
+            raise ValueError(f"Path `{candidate}` cannot escape the workspace root")
+        return "/".join(parts) or "."
+
+    def _normalize_candidate_manifest(self, raw_manifest: Any) -> dict[str, Any]:
+        if not isinstance(raw_manifest, dict):
+            raise ValueError("candidate_manifest.json must be a JSON object")
+        layout = str(raw_manifest.get("layout") or "single_repo").strip().lower() or "single_repo"
+        if layout not in {"single_repo", "multi_repo"}:
+            raise ValueError("candidate_manifest.layout must be `single_repo` or `multi_repo`")
+        repos_raw = [
+            dict(entry)
+            for entry in list(raw_manifest.get("repos") or [])
+            if isinstance(entry, dict)
+        ]
+        if not repos_raw and layout == "single_repo":
+            repos_raw = [{"repo_key": "primary", "path": ".", "role": "primary"}]
+        if not repos_raw:
+            raise ValueError("candidate_manifest.repos must include at least one repo")
+
+        repos: list[dict[str, Any]] = []
+        seen_repo_keys: set[str] = set()
+        for index, repo in enumerate(repos_raw, start=1):
+            repo_key = _slugify_repo_id(
+                str(repo.get("repo_key") or repo.get("name") or f"repo-{index}")
+            )
+            if repo_key in seen_repo_keys:
+                raise ValueError(f"candidate_manifest.repos contains duplicate repo_key `{repo_key}`")
+            seen_repo_keys.add(repo_key)
+            repos.append(
+                {
+                    "repo_key": repo_key,
+                    "path": self._normalize_workspace_relative_path(
+                        str(repo.get("path") or "."),
+                    ),
+                    "role": str(
+                        repo.get("role") or ("primary" if index == 1 else "support")
+                    ).strip()
+                    or None,
+                    "hints": dict(repo.get("hints") or {}),
+                }
+            )
+        primary_repo_key = _slugify_repo_id(
+            str(raw_manifest.get("primary_repo_key") or repos[0]["repo_key"])
+        )
+        if primary_repo_key not in seen_repo_keys:
+            raise ValueError(
+                f"candidate_manifest.primary_repo_key `{primary_repo_key}` is not declared in repos"
+            )
+        required_secret_capabilities = [
+            str(entry).strip()
+            for entry in list(raw_manifest.get("required_secret_capabilities") or [])
+            if str(entry).strip()
+        ]
+        unknown_capabilities = [
+            capability
+            for capability in required_secret_capabilities
+            if capability not in _APPROVED_SECRET_CAPABILITIES
+        ]
+        if unknown_capabilities:
+            raise ValueError(
+                "candidate_manifest.required_secret_capabilities contains unsupported "
+                f"capabilities: {', '.join(sorted(unknown_capabilities))}"
+            )
+        return {
+            "layout": layout,
+            "repos": repos,
+            "primary_repo_key": primary_repo_key,
+            "hints": dict(raw_manifest.get("hints") or {}),
+            "required_secret_capabilities": required_secret_capabilities,
+        }
+
+    def _decode_workspace_upload_bytes(self, bundle_base64: str) -> bytes:
+        encoded = str(bundle_base64 or "").strip()
+        if not encoded:
+            raise ValueError("bundle.tar.gz is required")
+        try:
+            archive_bytes = base64.b64decode(encoded, validate=True)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("Workspace upload archive is not valid base64") from exc
+        if not archive_bytes:
+            raise ValueError("Workspace upload archive is empty")
+        if len(archive_bytes) > _WORKSPACE_UPLOAD_MAX_BYTES:
+            raise ValueError(
+                f"Workspace upload archive exceeds {_WORKSPACE_UPLOAD_MAX_BYTES} bytes"
+            )
+        return archive_bytes
+
+    def _inspect_workspace_upload(
+        self,
+        archive_bytes: bytes,
+        manifest: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            archive = tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz")
+        except tarfile.TarError as exc:
+            raise ValueError("Workspace upload must be a valid tar.gz archive") from exc
+
+        extracted_total = 0
+        file_count = 0
+        directories: set[str] = set()
+        normalized_names: list[str] = []
+        with archive:
+            for member in archive.getmembers():
+                normalized_name = self._normalize_workspace_relative_path(member.name, default="")
+                if member.issym() or member.islnk():
+                    raise ValueError(f"Archive member `{member.name}` uses an unsupported link")
+                if member.isdir():
+                    if normalized_name:
+                        directories.add(normalized_name)
+                    continue
+                if not member.isfile():
+                    raise ValueError(
+                        f"Archive member `{member.name}` uses an unsupported file type"
+                    )
+                if int(member.size or 0) > _WORKSPACE_UPLOAD_MAX_FILE_BYTES:
+                    raise ValueError(
+                        f"Archive member `{member.name}` exceeds the per-file size limit"
+                    )
+                extracted_total += int(member.size or 0)
+                if extracted_total > _WORKSPACE_UPLOAD_MAX_EXTRACTED_BYTES:
+                    raise ValueError("Workspace upload exceeds the extracted size limit")
+                file_count += 1
+                if normalized_name:
+                    normalized_names.append(normalized_name)
+                    parent = Path(normalized_name).parent
+                    if str(parent) not in {"", "."}:
+                        directories.add(self._normalize_workspace_relative_path(str(parent)))
+
+        if file_count == 0:
+            raise ValueError("Workspace upload archive does not contain any files")
+
+        missing_repo_paths = []
+        for repo in list(manifest.get("repos") or []):
+            repo_path = str(repo.get("path") or ".").strip() or "."
+            if repo_path == ".":
+                continue
+            has_match = any(
+                name == repo_path or name.startswith(f"{repo_path}/") for name in normalized_names
+            ) or repo_path in directories
+            if not has_match:
+                missing_repo_paths.append(repo_path)
+
+        validation_status = "validated"
+        blocking_errors: list[str] = []
+        if missing_repo_paths:
+            validation_status = "invalid"
+            blocking_errors.append(
+                "The archive is missing repo path(s): " + ", ".join(sorted(missing_repo_paths))
+            )
+
+        top_level_entries = sorted(
+            {
+                Path(name).parts[0]
+                for name in normalized_names
+                if Path(name).parts
+            }
+        )
+        return {
+            "status": validation_status,
+            "file_count": file_count,
+            "top_level_entries": top_level_entries,
+            "extracted_size_bytes": extracted_total,
+            "missing_repo_paths": missing_repo_paths,
+            "blocking_errors": blocking_errors,
+        }
+
+    def _sanitize_workspace_upload_for_response(
+        self,
+        upload: dict[str, Any],
+    ) -> dict[str, Any]:
+        sanitized = dict(upload)
+        sanitized.pop("bundle_base64", None)
+        return sanitized
+
+    def _sanitize_execution_candidate_for_response(
+        self,
+        candidate: dict[str, Any],
+    ) -> dict[str, Any]:
+        return dict(candidate)
+
+    async def _serialize_app_secret_bindings(
+        self,
+        owner_id: str,
+        app_profile: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        profile = dict(app_profile.get("profile") or {})
+        raw_bindings = dict(profile.get("approved_secret_bindings") or {})
+        serialized: list[dict[str, Any]] = []
+        for capability_id, binding in sorted(raw_bindings.items()):
+            capability = _APPROVED_SECRET_CAPABILITIES.get(capability_id)
+            if capability is None or not isinstance(binding, dict):
+                continue
+            secrets_payload: dict[str, Any] = {}
+            required_entries = [
+                dict(entry) for entry in list(capability.get("required") or []) if isinstance(entry, dict)
+            ]
+            all_bound = True
+            for required in required_entries:
+                env_name = str(required.get("env_name") or "").strip()
+                bound = dict((binding.get("secrets") or {}).get(env_name) or {})
+                secret_ref_id = str(bound.get("secret_ref_id") or "").strip() or None
+                secret_ref = (
+                    await self._storage.get_secret_ref(owner_id, secret_ref_id)
+                    if secret_ref_id
+                    else None
+                )
+                has_secret = bool(secret_ref and secret_ref.get("has_secret"))
+                if not has_secret:
+                    all_bound = False
+                secrets_payload[env_name] = {
+                    "secret_ref_id": secret_ref_id,
+                    "purpose": str(required.get("purpose") or "").strip() or None,
+                    "has_secret": has_secret,
+                    "active": bool(secret_ref.get("active", True)) if secret_ref else False,
+                }
+            serialized.append(
+                {
+                    "capability_id": capability_id,
+                    "title": str(capability.get("title") or capability_id),
+                    "service_kind": str(capability.get("service_kind") or "").strip() or None,
+                    "status": "ready" if all_bound else "missing_secrets",
+                    "secrets": secrets_payload,
+                    "updated_at": str(binding.get("updated_at") or "").strip() or None,
+                }
+            )
+        return serialized
+
+    async def _build_secret_capability_status_map(
+        self,
+        owner_id: str,
+        app_profile: dict[str, Any],
+        requested_capabilities: list[str],
+    ) -> dict[str, Any]:
+        bindings_by_capability = {
+            str(entry.get("capability_id") or ""): entry
+            for entry in await self._serialize_app_secret_bindings(owner_id, app_profile)
+        }
+        status_map: dict[str, Any] = {}
+        for capability_id in requested_capabilities:
+            capability = _APPROVED_SECRET_CAPABILITIES.get(capability_id)
+            binding = bindings_by_capability.get(capability_id)
+            status_map[capability_id] = {
+                "capability_id": capability_id,
+                "title": str((capability or {}).get("title") or capability_id),
+                "service_kind": str((capability or {}).get("service_kind") or "").strip() or None,
+                "status": str((binding or {}).get("status") or "missing_binding"),
+                "secrets": dict((binding or {}).get("secrets") or {}),
+            }
+        return status_map
+
+    async def _resolve_execution_secret_environment(
+        self,
+        owner_id: str,
+        app_profile: dict[str, Any],
+        required_capabilities: list[str],
+    ) -> tuple[dict[str, str], dict[str, Any]]:
+        profile = dict(app_profile.get("profile") or {})
+        raw_bindings = dict(profile.get("approved_secret_bindings") or {})
+        env: dict[str, str] = {}
+        status_map: dict[str, Any] = {}
+        for capability_id in required_capabilities:
+            capability = _APPROVED_SECRET_CAPABILITIES.get(capability_id)
+            binding = dict(raw_bindings.get(capability_id) or {})
+            capability_status = {
+                "capability_id": capability_id,
+                "title": str((capability or {}).get("title") or capability_id),
+                "service_kind": str((capability or {}).get("service_kind") or "").strip() or None,
+                "status": "ready",
+                "secrets": {},
+            }
+            if capability is None:
+                capability_status["status"] = "unsupported"
+                status_map[capability_id] = capability_status
+                continue
+            for required in list(capability.get("required") or []):
+                if not isinstance(required, dict):
+                    continue
+                env_name = str(required.get("env_name") or "").strip()
+                bound = dict((binding.get("secrets") or {}).get(env_name) or {})
+                secret_ref_id = str(bound.get("secret_ref_id") or "").strip() or None
+                secret_ref = (
+                    await self._storage.get_secret_ref(owner_id, secret_ref_id)
+                    if secret_ref_id
+                    else None
+                )
+                secret_value = await self._storage.get_secret_ref_value(owner_id, secret_ref_id or "")
+                has_secret = bool(secret_value)
+                if not has_secret:
+                    capability_status["status"] = (
+                        "missing_binding" if not secret_ref_id else "missing_secret"
+                    )
+                else:
+                    env[env_name] = secret_value or ""
+                capability_status["secrets"][env_name] = {
+                    "secret_ref_id": secret_ref_id,
+                    "has_secret": has_secret,
+                    "purpose": str(required.get("purpose") or "").strip() or None,
+                }
+            status_map[capability_id] = capability_status
+        return env, status_map
+
+    async def _handle_workspace_upload_create(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = _normalize_principal_id(request)
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        archive_bytes = self._decode_workspace_upload_bytes(
+            str(request.context.get("bundle_base64") or "")
+        )
+        manifest = self._normalize_candidate_manifest(
+            dict(request.context.get("candidate_manifest") or {})
+        )
+        validation = self._inspect_workspace_upload(archive_bytes, manifest)
+        retention_hours = max(
+            1,
+            min(
+                int(
+                    (app_profile.get("profile") or {}).get("candidate_retention_hours")
+                    or request.context.get("candidate_retention_hours")
+                    or 24
+                ),
+                168,
+            ),
+        )
+        upload = await self._storage.create_workspace_upload(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            layout=str(manifest["layout"]),
+            digest_sha256=hashlib.sha256(archive_bytes).hexdigest(),
+            size_bytes=len(archive_bytes),
+            manifest=manifest,
+            validation=validation,
+            bundle_base64=base64.b64encode(archive_bytes).decode("utf-8"),
+            status=str(validation.get("status") or "uploaded"),
+            expires_at=datetime.now(UTC) + timedelta(hours=retention_hours),
+        )
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind=None,
+            resource=app_id,
+            action="workspace_upload.create",
+            decision="allowed",
+            audit={
+                "upload_id": upload["upload_id"],
+                "layout": manifest["layout"],
+                "repo_keys": [repo["repo_key"] for repo in manifest["repos"]],
+                "status": validation.get("status"),
+            },
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Created workspace upload `{upload['upload_id']}`.",
+            data={"upload": self._sanitize_workspace_upload_for_response(upload)},
+        )
+
+    async def _handle_workspace_upload_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        upload_id = str(request.context.get("upload_id") or "").strip()
+        if not upload_id:
+            return SkillResponse.error_response(request.id, "upload_id is required")
+        upload = await self._storage.get_workspace_upload(owner_id, upload_id)
+        if upload is None:
+            return SkillResponse.error_response(request.id, f"Workspace upload `{upload_id}` not found")
+        principal_id = _normalize_principal_id(request)
+        await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=str(upload.get("app_id") or ""),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded workspace upload `{upload_id}`.",
+            data={"upload": self._sanitize_workspace_upload_for_response(upload)},
+        )
+
+    async def _handle_execution_candidate_create(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        upload_id = str(request.context.get("upload_id") or "").strip()
+        if not app_id or not upload_id:
+            return SkillResponse.error_response(request.id, "app_id and upload_id are required")
+        principal_id = _normalize_principal_id(request)
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        upload = await self._storage.get_workspace_upload(owner_id, upload_id)
+        if upload is None:
+            return SkillResponse.error_response(request.id, f"Workspace upload `{upload_id}` not found")
+        if str(upload.get("app_id") or "") != app_id:
+            return SkillResponse.error_response(
+                request.id,
+                f"Workspace upload `{upload_id}` does not belong to app `{app_id}`",
+            )
+        manifest = dict(upload.get("manifest") or {})
+        requested_capabilities = [
+            str(entry).strip()
+            for entry in list(manifest.get("required_secret_capabilities") or [])
+            if str(entry).strip()
+        ]
+        secret_capability_status = await self._build_secret_capability_status_map(
+            owner_id,
+            app_profile,
+            requested_capabilities,
+        )
+        repo_summary = [
+            {
+                "repo_key": str(repo.get("repo_key") or ""),
+                "path": str(repo.get("path") or ""),
+                "role": str(repo.get("role") or "").strip() or None,
+            }
+            for repo in list(manifest.get("repos") or [])
+            if isinstance(repo, dict)
+        ]
+        validation = dict(upload.get("validation") or {})
+        candidate = await self._storage.create_execution_candidate(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            upload_id=upload_id,
+            candidate={
+                "upload_id": upload_id,
+                "layout": str(manifest.get("layout") or "single_repo"),
+                "manifest": manifest,
+                "repo_summary": repo_summary,
+                "digest_sha256": str(upload.get("digest_sha256") or ""),
+                "size_bytes": int(upload.get("size_bytes") or 0),
+                "primary_repo_key": str(manifest.get("primary_repo_key") or ""),
+                "required_secret_capabilities": requested_capabilities,
+                "secret_capability_status": secret_capability_status,
+                "validation_status": str(validation.get("status") or "validated"),
+            },
+            validation=validation,
+            status=(
+                "ready"
+                if str(validation.get("status") or "validated") == "validated"
+                else "invalid"
+            ),
+            expires_at=(
+                datetime.fromisoformat(str(upload["expires_at"]))
+                if upload.get("expires_at")
+                else datetime.now(UTC) + timedelta(hours=24)
+            ),
+        )
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind=None,
+            resource=app_id,
+            action="execution_candidate.create",
+            decision="allowed",
+            audit={
+                "candidate_id": candidate["candidate_id"],
+                "upload_id": upload_id,
+                "layout": manifest.get("layout"),
+            },
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Created execution candidate `{candidate['candidate_id']}`.",
+            data={
+                "candidate": self._sanitize_execution_candidate_for_response(candidate),
+                "upload": self._sanitize_workspace_upload_for_response(upload),
+            },
+        )
+
+    async def _handle_execution_candidate_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        candidate_id = str(request.context.get("candidate_id") or "").strip()
+        if not candidate_id:
+            return SkillResponse.error_response(request.id, "candidate_id is required")
+        candidate = await self._storage.get_execution_candidate(owner_id, candidate_id)
+        if candidate is None:
+            return SkillResponse.error_response(
+                request.id,
+                f"Execution candidate `{candidate_id}` not found",
+            )
+        principal_id = _normalize_principal_id(request)
+        await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=str(candidate.get("app_id") or ""),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded execution candidate `{candidate_id}`.",
+            data={"candidate": self._sanitize_execution_candidate_for_response(candidate)},
+        )
+
+    async def _handle_app_secret_capabilities_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = _normalize_principal_id(request)
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        bound_status = {
+            str(entry.get("capability_id") or ""): entry
+            for entry in await self._serialize_app_secret_bindings(owner_id, app_profile)
+        }
+        capabilities = []
+        for capability_id, capability in sorted(_APPROVED_SECRET_CAPABILITIES.items()):
+            required_entries = [
+                dict(entry) for entry in list(capability.get("required") or []) if isinstance(entry, dict)
+            ]
+            binding = bound_status.get(capability_id)
+            capabilities.append(
+                {
+                    "capability_id": capability_id,
+                    "title": str(capability.get("title") or capability_id),
+                    "service_kind": str(capability.get("service_kind") or "").strip() or None,
+                    "required": required_entries,
+                    "status": str((binding or {}).get("status") or "missing_binding"),
+                    "binding": binding,
+                }
+            )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(capabilities)} secret capabilities for `{app_id}`.",
+            data={"secret_capabilities": capabilities},
+        )
+
+    async def _handle_app_secret_bindings_put(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        capability_id = str(request.context.get("capability_id") or "").strip()
+        secrets_input = dict(request.context.get("secrets") or {})
+        if not app_id or not capability_id:
+            return SkillResponse.error_response(request.id, "app_id and capability_id are required")
+        capability = _APPROVED_SECRET_CAPABILITIES.get(capability_id)
+        if capability is None:
+            return SkillResponse.error_response(
+                request.id,
+                f"Unsupported secret capability `{capability_id}`",
+            )
+        principal_id = _normalize_principal_id(request)
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        persisted_secrets: dict[str, Any] = {}
+        for required in list(capability.get("required") or []):
+            if not isinstance(required, dict):
+                continue
+            env_name = str(required.get("env_name") or "").strip()
+            secret_payload = dict(secrets_input.get(env_name) or {})
+            secret_ref_id = str(secret_payload.get("secret_ref_id") or "").strip()
+            secret_value = str(secret_payload.get("secret_value") or "").strip() or None
+            if not secret_ref_id:
+                secret_ref_id = _slugify_repo_id(f"{app_id}-{capability_id}-{env_name}")
+            if secret_value is None:
+                existing = await self._storage.get_secret_ref(owner_id, secret_ref_id)
+                if existing is None or not existing.get("has_secret"):
+                    return SkillResponse.error_response(
+                        request.id,
+                        f"Secret `{env_name}` for `{capability_id}` requires secret_value or a populated secret_ref_id",
+                    )
+            await self._storage.upsert_secret_ref(
+                owner_id,
+                secret_ref_id=secret_ref_id,
+                purpose=str(required.get("purpose") or env_name),
+                secret_value=secret_value,
+                metadata={
+                    "app_id": app_id,
+                    "capability_id": capability_id,
+                    "env_name": env_name,
+                    "managed_by": "app_secret_binding",
+                },
+                active=True,
+            )
+            persisted_secrets[env_name] = {"secret_ref_id": secret_ref_id}
+
+        profile = dict(app_profile.get("profile") or {})
+        bindings = dict(profile.get("approved_secret_bindings") or {})
+        bindings[capability_id] = {
+            "capability_id": capability_id,
+            "service_kind": str(capability.get("service_kind") or "").strip() or None,
+            "secrets": persisted_secrets,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        profile["approved_secret_bindings"] = bindings
+        updated_app = await self._storage.upsert_agent_app_profile(
+            owner_id,
+            app_id=app_id,
+            display_name=str(app_profile.get("display_name") or app_id),
+            profile=profile,
+            active=bool(app_profile.get("active", True)),
+        )
+        binding_statuses = await self._serialize_app_secret_bindings(owner_id, updated_app)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Updated secret binding `{capability_id}` for `{app_id}`.",
+            data={
+                "binding": next(
+                    (
+                        entry
+                        for entry in binding_statuses
+                        if str(entry.get("capability_id") or "") == capability_id
+                    ),
+                    None,
+                ),
+                "bindings": binding_statuses,
+            },
+        )
+
+    async def _handle_app_secret_bindings_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = _normalize_principal_id(request)
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        bindings = await self._serialize_app_secret_bindings(owner_id, app_profile)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(bindings)} secret binding(s) for `{app_id}`.",
+            data={"bindings": bindings},
         )
 
     async def _handle_workspace_bundle_create(

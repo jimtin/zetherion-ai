@@ -545,7 +545,12 @@ def test_system_run_report_and_usage_summarize_executed_system_validation() -> N
             ],
             "execution": execution,
             "usage_summary": usage,
-            "metadata": {"environment": "local"},
+            "metadata": {
+                "environment": "local",
+                "secret_capability_status": {
+                    "stripe_test": {"status": "ready"}
+                },
+            },
             "error": {},
             "created_at": "2026-03-17T09:58:00Z",
             "updated_at": "2026-03-17T10:02:00Z",
@@ -556,6 +561,7 @@ def test_system_run_report_and_usage_summarize_executed_system_validation() -> N
 
     assert resolve_system_run_batches(plan["shards"])
     assert report["usage_summary"]["billable_minutes"] == 2.0
+    assert report["usage_summary"]["metadata"]["source_kind"] is None
     assert report["run_graph"]["nodes"][0]["node_id"] == "system-run:system-run-1"
     assert report["diagnostic_summary"]["blocking"] is True
     assert report["diagnostic_findings"][0]["code"] == "system_shard_failed"
@@ -927,3 +933,92 @@ def test_system_run_helpers_cover_cycles_list_candidates_and_unplanned_shards(
         node["node_id"] == "system-shard:system-run-extra:ad-hoc"
         for node in report["run_graph"]["nodes"]
     )
+
+
+def test_uploaded_ci_system_run_report_surfaces_candidate_metadata() -> None:
+    report = build_system_run_report(
+        {
+            "system_run_id": "system-run-upload-1",
+            "system_id": "uploaded-ci",
+            "mode_id": "uploaded_ci",
+            "status": "succeeded",
+            "candidate_set": {
+                "system_id": "uploaded-ci",
+                "mode_id": "uploaded_ci",
+                "repos": [{"repo_id": "app", "git_ref": "upload:cand-1"}],
+                "metadata": {
+                    "source_kind": "uploaded_ci",
+                    "app_id": "uploaded-app",
+                    "workspace_upload_id": "upload-1",
+                    "execution_candidate_id": "cand-1",
+                    "repo_summary": [{"repo_key": "app", "path": ".", "role": "app"}],
+                    "execution_plan_summary": "Autodetected an uploaded-code CI plan.",
+                    "secret_capability_status": {
+                        "stripe_test": {"status": "ready"}
+                    },
+                },
+            },
+            "plan": {
+                "system_id": "uploaded-ci",
+                "mode_id": "uploaded_ci",
+                "candidate_set": {
+                    "repos": [{"repo_id": "app", "git_ref": "upload:cand-1"}]
+                },
+                "profiles": [],
+                "shards": [],
+                "blocking_categories": [],
+                "summary": "Uploaded CI plan",
+                "metadata": {
+                    "execution_plan_summary": "Autodetected an uploaded-code CI plan."
+                },
+            },
+            "readiness": {
+                "system_id": "uploaded-ci",
+                "mode_id": "uploaded_ci",
+                "status": "ready",
+                "blocking": False,
+                "summary": "Uploaded CI is ready to execute.",
+                "blocker_count": 0,
+                "blocking_shards": [],
+                "missing_repo_ids": [],
+                "recommended_next_steps": [],
+                "metadata": {},
+                "checked_at": "2026-03-17T10:00:00Z",
+            },
+            "coaching": [],
+            "execution": {"all_passed": True, "batches": [], "shards": []},
+            "usage_summary": {
+                "system_run_id": "system-run-upload-1",
+                "system_id": "uploaded-ci",
+                "mode_id": "uploaded_ci",
+                "repo_ids": ["app"],
+                "billable_minutes": 1.25,
+                "artifact_count": 0,
+                "metadata": {
+                    "source_kind": "uploaded_ci",
+                    "execution_candidate_id": "cand-1",
+                },
+                "generated_at": "2026-03-17T10:00:00Z",
+            },
+            "metadata": {
+                "secret_capability_status": {
+                    "stripe_test": {"status": "ready"}
+                }
+            },
+            "error": {},
+            "created_at": "2026-03-17T09:58:00Z",
+            "updated_at": "2026-03-17T10:02:00Z",
+            "started_at": "2026-03-17T10:00:00Z",
+            "completed_at": "2026-03-17T10:02:00Z",
+        }
+    )
+
+    assert report["source_kind"] == "uploaded_ci"
+    assert report["app_id"] == "uploaded-app"
+    assert report["execution_candidate_id"] == "cand-1"
+    assert report["workspace_upload_id"] == "upload-1"
+    assert report["repo_summary"] == [{"repo_key": "app", "path": ".", "role": "app"}]
+    assert report["execution_plan_summary"] == "Autodetected an uploaded-code CI plan."
+    assert report["secret_capability_status"]["stripe_test"]["status"] == "ready"
+    assert report["evidence"][0]["evidence_ref_id"] == "uploaded-ci:system-run-upload-1:candidate"
+    assert report["all_evidence_references"][1]["evidence_ref_id"] == "uploaded-ci:system-run-upload-1:secrets"

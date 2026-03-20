@@ -44,6 +44,10 @@ def _storage() -> MagicMock:
     storage.create_workspace_bundle = AsyncMock()
     storage.mark_workspace_bundle_downloaded = AsyncMock()
     storage.get_workspace_bundle = AsyncMock()
+    storage.create_workspace_upload = AsyncMock()
+    storage.get_workspace_upload = AsyncMock(return_value=None)
+    storage.create_execution_candidate = AsyncMock()
+    storage.get_execution_candidate = AsyncMock(return_value=None)
     storage.create_compiled_plan = AsyncMock()
     storage.create_publish_candidate = AsyncMock()
     storage.list_agent_principals = AsyncMock(return_value=[])
@@ -66,6 +70,9 @@ def _storage() -> MagicMock:
         return_value={"request_id": "service-1", "status": "executed"}
     )
     storage.list_secret_refs = AsyncMock(return_value=[])
+    storage.get_secret_ref = AsyncMock(return_value=None)
+    storage.get_secret_ref_value = AsyncMock(return_value=None)
+    storage.upsert_secret_ref = AsyncMock()
     storage.list_agent_session_interactions = AsyncMock(return_value=[])
     storage.find_managed_operation_by_ref = AsyncMock(return_value=None)
     storage.create_managed_operation = AsyncMock(
@@ -1354,7 +1361,9 @@ async def test_system_run_execution_helpers_cover_failures_and_blocked_states(
     skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
     skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
 
-    async def _fake_run(command: list[str], *, cwd: Path, check: bool) -> dict[str, Any]:
+    async def _fake_run(
+        command: list[str], *, cwd: Path, env: dict[str, str] | None = None, check: bool
+    ) -> dict[str, Any]:
         if command[-1] == "exit 1":
             return {"returncode": 1, "stdout": "", "stderr": "boom"}
         return {"returncode": 0, "stdout": str(cwd), "stderr": ""}
@@ -1462,6 +1471,172 @@ async def test_system_run_execution_helpers_cover_failures_and_blocked_states(
     assert "system_run_id is required" in (missing_response.error or "")
     assert blocked_response.success is True
     assert blocked_response.data["system_run"]["status"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_uploaded_ci_workspace_candidate_and_secret_binding_flow() -> None:
+    storage = _storage()
+    app_profile = {
+        "app_id": "uploaded-app",
+        "display_name": "Uploaded App",
+        "active": True,
+        "profile": {
+            "candidate_retention_hours": 12,
+            "approved_secret_bindings": {},
+        },
+    }
+    storage.get_agent_app_profile.return_value = app_profile
+    storage.list_agent_app_profiles.return_value = [app_profile]
+    storage.list_external_access_grants.return_value = [
+        {
+            "active": True,
+            "resource_type": "app",
+            "resource_id": "uploaded-app",
+        }
+    ]
+
+    archive_buffer = io.BytesIO()
+    with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+        payload = b'{"name":"uploaded-app","scripts":{"test":"echo ok"}}'
+        info = tarfile.TarInfo(name="package.json")
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+    bundle_base64 = base64.b64encode(archive_buffer.getvalue()).decode("ascii")
+    manifest = {
+        "layout": "single_repo",
+        "repos": [{"repo_key": "app", "path": ".", "role": "app"}],
+        "primary_repo_key": "app",
+        "required_secret_capabilities": ["stripe_test"],
+    }
+    upload_record = {
+        "upload_id": "upload-1",
+        "principal_id": "principal-1",
+        "app_id": "uploaded-app",
+        "status": "validated",
+        "layout": "single_repo",
+        "digest_sha256": "digest-1",
+        "size_bytes": len(archive_buffer.getvalue()),
+        "manifest": manifest,
+        "validation": {
+            "status": "validated",
+            "file_count": 1,
+            "top_level_entries": ["package.json"],
+            "missing_repo_paths": [],
+            "blocking_errors": [],
+        },
+        "bundle_base64": bundle_base64,
+        "expires_at": "2026-03-22T00:00:00+00:00",
+    }
+    storage.create_workspace_upload.return_value = upload_record
+    storage.get_workspace_upload.return_value = upload_record
+    storage.create_execution_candidate.return_value = {
+        "candidate_id": "cand-1",
+        "principal_id": "principal-1",
+        "app_id": "uploaded-app",
+        "upload_id": "upload-1",
+        "status": "ready",
+        "candidate": {
+            "upload_id": "upload-1",
+            "layout": "single_repo",
+            "manifest": manifest,
+            "repo_summary": [{"repo_key": "app", "path": ".", "role": "app"}],
+            "required_secret_capabilities": ["stripe_test"],
+            "secret_capability_status": {
+                "stripe_test": {"status": "missing_binding"}
+            },
+        },
+        "validation": upload_record["validation"],
+        "expires_at": "2026-03-22T00:00:00+00:00",
+    }
+    storage.get_secret_ref.return_value = {
+        "secret_ref_id": "uploaded-app-stripe-test-stripe-secret-key",
+        "has_secret": True,
+        "active": True,
+    }
+    updated_app_profile = {
+        **app_profile,
+        "profile": {
+            **app_profile["profile"],
+            "approved_secret_bindings": {
+                "stripe_test": {
+                    "capability_id": "stripe_test",
+                    "service_kind": "stripe",
+                    "secrets": {
+                        "STRIPE_SECRET_KEY": {
+                            "secret_ref_id": "uploaded-app-stripe-test-stripe-secret-key"
+                        },
+                        "STRIPE_PUBLISHABLE_KEY": {
+                            "secret_ref_id": "uploaded-app-stripe-test-stripe-publishable-key"
+                        },
+                    },
+                    "updated_at": "2026-03-21T00:00:00+00:00",
+                }
+            },
+        },
+    }
+    storage.upsert_agent_app_profile.return_value = updated_app_profile
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    upload_response = await skill.handle(
+        SkillRequest(
+            intent="agent_workspace_upload_create",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "principal-1",
+                "app_id": "uploaded-app",
+                "bundle_base64": bundle_base64,
+                "candidate_manifest": manifest,
+            },
+        )
+    )
+    candidate_response = await skill.handle(
+        SkillRequest(
+            intent="agent_execution_candidate_create",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "principal-1",
+                "app_id": "uploaded-app",
+                "upload_id": "upload-1",
+            },
+        )
+    )
+    binding_response = await skill.handle(
+        SkillRequest(
+            intent="agent_app_secret_bindings_put",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "principal-1",
+                "app_id": "uploaded-app",
+                "capability_id": "stripe_test",
+                "secrets": {
+                    "STRIPE_SECRET_KEY": {"secret_value": "sk_test_123"},
+                    "STRIPE_PUBLISHABLE_KEY": {"secret_value": "pk_test_123"},
+                },
+            },
+        )
+    )
+
+    assert upload_response.success is True
+    assert upload_response.data["upload"]["upload_id"] == "upload-1"
+    assert "bundle_base64" not in upload_response.data["upload"]
+    assert candidate_response.success is True
+    assert candidate_response.data["candidate"]["candidate_id"] == "cand-1"
+    assert (
+        candidate_response.data["candidate"]["candidate"]["secret_capability_status"][
+            "stripe_test"
+        ]["status"]
+        == "missing_binding"
+    )
+    assert binding_response.success is True
+    assert binding_response.data["binding"]["capability_id"] == "stripe_test"
+    assert storage.upsert_secret_ref.await_count == 2
+    storage.create_workspace_upload.assert_awaited()
+    storage.create_execution_candidate.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -1613,7 +1788,9 @@ async def test_system_run_handlers_cover_listing_not_found_and_skipped_batches()
     assert missing_execute.success is False
     assert "not found" in str(missing_execute.error)
 
-    async def _fake_run(command: list[str], *, cwd: Path, check: bool) -> dict[str, Any]:
+    async def _fake_run(
+        command: list[str], *, cwd: Path, env: dict[str, str] | None = None, check: bool
+    ) -> dict[str, Any]:
         if command[-1] == "exit 1":
             return {"returncode": 1, "stdout": "", "stderr": "boom"}
         return {"returncode": 0, "stdout": str(cwd), "stderr": ""}
