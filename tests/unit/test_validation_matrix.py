@@ -12,6 +12,7 @@ from zetherion_ai.owner_ci.system_validation import (
     _candidate_set_from_input,
     _duration_seconds,
     _normalized_state,
+    build_uploaded_ci_retry_classifier,
     build_system_coaching,
     build_system_rollout_readiness,
     build_system_run_plan,
@@ -1020,5 +1021,82 @@ def test_uploaded_ci_system_run_report_surfaces_candidate_metadata() -> None:
     assert report["repo_summary"] == [{"repo_key": "app", "path": ".", "role": "app"}]
     assert report["execution_plan_summary"] == "Autodetected an uploaded-code CI plan."
     assert report["secret_capability_status"]["stripe_test"]["status"] == "ready"
+    assert report["retry_classifier"]["root_problem_signature"] == "status:complete"
+    assert report["retry_classifier"]["retry_guidance"]["action"] == "complete"
     assert report["evidence"][0]["evidence_ref_id"] == "uploaded-ci:system-run-upload-1:candidate"
     assert report["all_evidence_references"][1]["evidence_ref_id"] == "uploaded-ci:system-run-upload-1:secrets"
+
+
+def test_uploaded_ci_retry_classifier_prefers_missing_secret_and_planning_gaps() -> None:
+    retry_classifier = build_uploaded_ci_retry_classifier(
+        status="blocked",
+        readiness={
+            "status": "blocked",
+            "summary": "Uploaded CI is blocked until required hints and secrets are added.",
+            "blocker_count": 2,
+            "metadata": {
+                "planning_gaps": [
+                    {
+                        "gap_id": "gap-compose",
+                        "summary": "Missing compose hint",
+                    }
+                ],
+                "secret_capability_status": {
+                    "stripe_test": {"status": "missing_binding"}
+                },
+            },
+        },
+        coaching=[
+            {
+                "findings": [
+                    {
+                        "finding_id": "gap-compose",
+                        "rule_code": "uploaded_ci_missing_execution_contract",
+                        "blocking": True,
+                    }
+                ]
+            }
+        ],
+        diagnostic_findings=[],
+        execution={},
+        error={},
+    )
+
+    assert retry_classifier["root_problem_source"] == "missing_secret_capability"
+    assert retry_classifier["root_problem_signature"] == "missing_secret_capability:stripe_test"
+    assert retry_classifier["retry_guidance"]["action"] == "configure_approved_secrets"
+    assert retry_classifier["retry_guidance"]["stop_recommended"] is True
+    assert retry_classifier["progress_indicators"]["planning_gap_ids"] == ["gap-compose"]
+
+
+def test_uploaded_ci_retry_classifier_identifies_failed_shard_progress() -> None:
+    retry_classifier = build_uploaded_ci_retry_classifier(
+        status="failed",
+        readiness={
+            "status": "ready",
+            "summary": "Uploaded CI is ready to execute.",
+            "blocker_count": 0,
+            "metadata": {},
+        },
+        coaching=[],
+        diagnostic_findings=[
+            {
+                "code": "system_shard_failed",
+                "blocking": True,
+                "summary": "Shard failed",
+            }
+        ],
+        execution={
+            "shards": [
+                {"shard_id": "build", "status": "passed"},
+                {"shard_id": "integration", "status": "failed"},
+            ]
+        },
+        error={},
+    )
+
+    assert retry_classifier["root_problem_source"] == "diagnostic_finding_code"
+    assert retry_classifier["root_problem_signature"] == "diagnostic_finding_code:system_shard_failed"
+    assert retry_classifier["progress_indicators"]["passed_shard_count"] == 1
+    assert retry_classifier["progress_indicators"]["failed_shard_ids"] == ["integration"]
+    assert retry_classifier["retry_guidance"]["action"] == "inspect_failed_shard"
