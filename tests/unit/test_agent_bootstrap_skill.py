@@ -1304,6 +1304,7 @@ async def test_system_run_handlers_create_execute_and_retrieve_reports() -> None
     assert execute_response.data["system_run"]["status"] == "succeeded"
     assert report_response.success is True
     assert report_response.data["report"]["system_run_id"] == "system-run-1"
+    assert report_response.data["retry_classifier"] is None
     assert usage_response.success is True
     assert usage_response.data["usage_summary"]["billable_minutes"] == 0.0
 
@@ -1637,6 +1638,321 @@ async def test_uploaded_ci_workspace_candidate_and_secret_binding_flow() -> None
     assert storage.upsert_secret_ref.await_count == 2
     storage.create_workspace_upload.assert_awaited()
     storage.create_execution_candidate.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_uploaded_ci_submission_composes_upload_candidate_execution_and_retry_signals() -> None:
+    storage = _storage()
+    app_profile = {
+        "app_id": "uploaded-app",
+        "display_name": "Uploaded App",
+        "active": True,
+        "profile": {
+            "candidate_retention_hours": 12,
+            "approved_secret_bindings": {},
+        },
+    }
+    storage.get_agent_app_profile.return_value = app_profile
+    storage.list_agent_app_profiles.return_value = [app_profile]
+    storage.list_external_access_grants.return_value = [
+        {
+            "active": True,
+            "resource_type": "app",
+            "resource_id": "uploaded-app",
+        }
+    ]
+
+    archive_buffer = io.BytesIO()
+    with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+        payload = b'{"name":"uploaded-app","scripts":{"test":"echo ok"}}'
+        info = tarfile.TarInfo(name="package.json")
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+    bundle_base64 = base64.b64encode(archive_buffer.getvalue()).decode("ascii")
+    upload_record = {
+        "upload_id": "upload-1",
+        "principal_id": "principal-1",
+        "app_id": "uploaded-app",
+        "status": "validated",
+        "layout": "single_repo",
+        "digest_sha256": "digest-1",
+        "size_bytes": len(archive_buffer.getvalue()),
+        "manifest": {
+            "layout": "single_repo",
+            "repos": [{"repo_key": "app", "path": ".", "role": "app", "hints": {}}],
+            "primary_repo_key": "app",
+            "hints": {"test_entrypoint": "npm test"},
+            "required_secret_capabilities": [],
+        },
+        "validation": {
+            "status": "validated",
+            "file_count": 1,
+            "top_level_entries": ["package.json"],
+            "missing_repo_paths": [],
+            "blocking_errors": [],
+        },
+        "bundle_base64": bundle_base64,
+        "expires_at": "2026-03-22T00:00:00+00:00",
+    }
+    storage.create_workspace_upload.return_value = upload_record
+    storage.get_workspace_upload.return_value = upload_record
+    storage.create_execution_candidate.return_value = {
+        "candidate_id": "cand-1",
+        "principal_id": "principal-1",
+        "app_id": "uploaded-app",
+        "upload_id": "upload-1",
+        "status": "ready",
+        "candidate": {
+            "upload_id": "upload-1",
+            "layout": "single_repo",
+            "manifest": upload_record["manifest"],
+            "repo_summary": [{"repo_key": "app", "path": ".", "role": "app"}],
+            "required_secret_capabilities": [],
+            "secret_capability_status": {},
+            "execution_plan_summary": "Autodetected an uploaded-code CI plan.",
+        },
+        "validation": upload_record["validation"],
+        "expires_at": "2026-03-22T00:00:00+00:00",
+    }
+    storage.get_execution_candidate.return_value = storage.create_execution_candidate.return_value
+    planned_system_run = {
+        "system_run_id": "system-run-upload-1",
+        "system_id": "uploaded-ci:uploaded-app",
+        "mode_id": "uploaded_ci",
+        "status": "planned",
+        "candidate_set": {
+            "system_id": "uploaded-ci:uploaded-app",
+            "mode_id": "uploaded_ci",
+            "repos": [{"repo_id": "app", "git_ref": "upload:cand-1"}],
+            "metadata": {
+                "source_kind": "uploaded_ci",
+                "app_id": "uploaded-app",
+                "execution_candidate_id": "cand-1",
+                "workspace_upload_id": "upload-1",
+            },
+        },
+        "plan": {"shards": []},
+        "readiness": {
+            "status": "ready",
+            "blocking": False,
+            "summary": "Uploaded CI is ready to execute.",
+            "blocker_count": 0,
+            "metadata": {},
+        },
+        "coaching": [],
+        "execution": {},
+        "metadata": {
+            "app_id": "uploaded-app",
+            "source_kind": "uploaded_ci",
+            "execution_candidate_id": "cand-1",
+        },
+    }
+    storage.create_system_run.return_value = planned_system_run
+    storage.get_system_run.return_value = planned_system_run
+
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+    skill._execute_uploaded_ci_system_run = AsyncMock(  # type: ignore[method-assign]
+        return_value=(
+            {
+                "system_run_id": "system-run-upload-1",
+                "status": "succeeded",
+            },
+            {
+                "system_run_id": "system-run-upload-1",
+                "status": "succeeded",
+                "execution_plan_summary": "Autodetected an uploaded-code CI plan.",
+                "readiness": {"status": "ready", "blocking": False},
+                "coaching": [],
+                "retry_classifier": {
+                    "root_problem_signature": "status:complete",
+                    "retry_guidance": {"action": "complete", "stop_recommended": True},
+                },
+            },
+        )
+    )
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="agent_uploaded_ci_submission_create",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "principal-1",
+                "app_id": "uploaded-app",
+                "bundle_base64": bundle_base64,
+                "candidate_manifest": {},
+                "override_hints": {
+                    "hints": {
+                        "test_entrypoint": "npm test",
+                    }
+                },
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["workspace_upload_id"] == "upload-1"
+    assert response.data["execution_candidate_id"] == "cand-1"
+    assert response.data["system_run_id"] == "system-run-upload-1"
+    assert response.data["accepted_manifest"]["hints"]["test_entrypoint"] == "npm test"
+    assert (
+        response.data["planning_status"]["retry_classifier"]["root_problem_signature"]
+        == "status:complete"
+    )
+
+
+@pytest.mark.asyncio
+async def test_uploaded_ci_secret_materials_and_preflight_retry_classifier_routes() -> None:
+    storage = _storage()
+    app_profile = {
+        "app_id": "uploaded-app",
+        "display_name": "Uploaded App",
+        "active": True,
+        "profile": {
+            "approved_secret_bindings": {},
+        },
+    }
+    storage.get_agent_app_profile.return_value = app_profile
+    storage.list_agent_app_profiles.return_value = [app_profile]
+    storage.list_external_access_grants.return_value = [
+        {
+            "active": True,
+            "resource_type": "app",
+            "resource_id": "uploaded-app",
+        }
+    ]
+    storage.list_secret_refs.return_value = [
+        {
+            "secret_ref_id": "uploaded-app-stripe-test-stripe-secret-key",
+            "purpose": "stripe_test_secret_key",
+            "has_secret": True,
+            "active": True,
+            "updated_at": "2026-03-21T00:00:00+00:00",
+            "metadata": {
+                "app_id": "uploaded-app",
+                "capability_id": "stripe_test",
+                "env_name": "STRIPE_SECRET_KEY",
+            },
+        }
+    ]
+
+    archive_buffer = io.BytesIO()
+    with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+        payload = b'{"name":"uploaded-app","scripts":{"test":"echo ok"}}'
+        info = tarfile.TarInfo(name="package.json")
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+    bundle_base64 = base64.b64encode(archive_buffer.getvalue()).decode("ascii")
+    upload_record = {
+        "upload_id": "upload-1",
+        "principal_id": "principal-1",
+        "app_id": "uploaded-app",
+        "status": "validated",
+        "layout": "single_repo",
+        "digest_sha256": "digest-1",
+        "size_bytes": len(archive_buffer.getvalue()),
+        "manifest": {
+            "layout": "single_repo",
+            "repos": [{"repo_key": "app", "path": ".", "role": "app", "hints": {}}],
+            "primary_repo_key": "app",
+            "hints": {},
+            "required_secret_capabilities": ["stripe_test"],
+        },
+        "validation": {
+            "status": "validated",
+            "file_count": 1,
+            "top_level_entries": ["package.json"],
+            "missing_repo_paths": [],
+            "blocking_errors": [],
+        },
+        "bundle_base64": bundle_base64,
+        "expires_at": "2026-03-22T00:00:00+00:00",
+    }
+    candidate_record = {
+        "candidate_id": "cand-1",
+        "principal_id": "principal-1",
+        "app_id": "uploaded-app",
+        "upload_id": "upload-1",
+        "status": "ready",
+        "candidate": {
+            "upload_id": "upload-1",
+            "layout": "single_repo",
+            "manifest": upload_record["manifest"],
+            "repo_summary": [{"repo_key": "app", "path": ".", "role": "app"}],
+            "required_secret_capabilities": ["stripe_test"],
+            "secret_capability_status": {
+                "stripe_test": {"status": "missing_binding"}
+            },
+        },
+        "validation": upload_record["validation"],
+        "expires_at": "2026-03-22T00:00:00+00:00",
+    }
+    storage.get_execution_candidate.return_value = candidate_record
+    storage.get_workspace_upload.return_value = upload_record
+
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    materials_put = await skill.handle(
+        SkillRequest(
+            intent="agent_app_secret_materials_put",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "principal-1",
+                "app_id": "uploaded-app",
+                "capability_id": "stripe_test",
+                "materials": {
+                    "STRIPE_SECRET_KEY": {"secret_value": "sk_test_123"},
+                },
+            },
+        )
+    )
+    materials_list = await skill.handle(
+        SkillRequest(
+            intent="agent_app_secret_materials_list",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "principal-1",
+                "app_id": "uploaded-app",
+                "capability_id": "stripe_test",
+            },
+        )
+    )
+    coaching = await skill.handle(
+        SkillRequest(
+            intent="agent_system_coaching_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "principal-1",
+                "execution_candidate_id": "cand-1",
+            },
+        )
+    )
+    readiness = await skill.handle(
+        SkillRequest(
+            intent="agent_system_rollout_readiness_get",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "principal-1",
+                "execution_candidate_id": "cand-1",
+            },
+        )
+    )
+
+    assert materials_put.success is True
+    assert materials_list.success is True
+    assert materials_list.data["secret_materials"][0]["capability_id"] == "stripe_test"
+    assert coaching.success is True
+    assert readiness.success is True
+    assert coaching.data["retry_classifier"]["root_problem_source"] == "missing_secret_capability"
+    assert readiness.data["retry_classifier"]["retry_guidance"]["action"] == "configure_approved_secrets"
 
 
 @pytest.mark.asyncio

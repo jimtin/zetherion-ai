@@ -874,6 +874,248 @@ def build_system_run_usage_summary(
     return usage.model_dump(mode="json")
 
 
+def _planning_gap_ids(readiness: dict[str, Any], coaching: list[dict[str, Any]]) -> list[str]:
+    gap_ids = [
+        str(gap.get("gap_id") or "").strip()
+        for gap in list(dict(readiness.get("metadata") or {}).get("planning_gaps") or [])
+        if isinstance(gap, dict) and str(gap.get("gap_id") or "").strip()
+    ]
+    if gap_ids:
+        return gap_ids
+    for feedback in coaching:
+        for finding in list(dict(feedback).get("findings") or []):
+            if not isinstance(finding, dict):
+                continue
+            if str(finding.get("rule_code") or "").strip() != "uploaded_ci_missing_execution_contract":
+                continue
+            finding_id = str(finding.get("finding_id") or "").strip()
+            if finding_id:
+                gap_ids.append(finding_id)
+    return gap_ids
+
+
+def _missing_secret_capability_ids(
+    readiness: dict[str, Any],
+    coaching: list[dict[str, Any]],
+) -> list[str]:
+    capability_ids = [
+        capability_id
+        for capability_id, status in dict(
+            dict(readiness.get("metadata") or {}).get("secret_capability_status") or {}
+        ).items()
+        if str((status or {}).get("status") or "").strip() != "ready"
+    ]
+    if capability_ids:
+        return sorted(set(capability_ids))
+    for feedback in coaching:
+        for finding in list(dict(feedback).get("findings") or []):
+            if not isinstance(finding, dict):
+                continue
+            metadata = dict(finding.get("metadata") or {})
+            capability_ids.extend(
+                str(item).strip()
+                for item in list(metadata.get("missing_capabilities") or [])
+                if str(item).strip()
+            )
+    return sorted(set(capability_ids))
+
+
+def _blocking_coaching_finding(
+    coaching: list[dict[str, Any]],
+) -> tuple[str | None, str | None]:
+    for feedback in coaching:
+        for finding in list(dict(feedback).get("findings") or []):
+            if not isinstance(finding, dict):
+                continue
+            if not bool(finding.get("blocking")):
+                continue
+            rule_code = str(finding.get("rule_code") or "").strip() or None
+            summary = str(finding.get("summary") or "").strip() or None
+            if rule_code or summary:
+                return rule_code, summary
+    return None, None
+
+
+def _blocking_diagnostic_finding(
+    diagnostic_findings: list[dict[str, Any]],
+) -> tuple[str | None, str | None]:
+    for finding in diagnostic_findings:
+        if not isinstance(finding, dict):
+            continue
+        if not bool(finding.get("blocking")):
+            continue
+        code = str(finding.get("code") or "").strip() or None
+        summary = str(finding.get("summary") or "").strip() or None
+        if code or summary:
+            return code, summary
+    return None, None
+
+
+def build_uploaded_ci_retry_classifier(
+    *,
+    status: str | None = None,
+    readiness: dict[str, Any] | None = None,
+    coaching: list[dict[str, Any]] | None = None,
+    diagnostic_findings: list[dict[str, Any]] | None = None,
+    execution: dict[str, Any] | None = None,
+    error: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    readiness_payload = dict(readiness or {})
+    coaching_payload = [dict(item) for item in list(coaching or []) if isinstance(item, dict)]
+    finding_payload = [
+        dict(item) for item in list(diagnostic_findings or []) if isinstance(item, dict)
+    ]
+    execution_payload = dict(execution or {})
+    error_payload = dict(error or {})
+
+    missing_secret_capabilities = _missing_secret_capability_ids(
+        readiness_payload,
+        coaching_payload,
+    )
+    planning_gap_ids = _planning_gap_ids(readiness_payload, coaching_payload)
+    coaching_rule_code, coaching_summary = _blocking_coaching_finding(coaching_payload)
+    diagnostic_code, diagnostic_summary = _blocking_diagnostic_finding(finding_payload)
+    execution_shards = [
+        dict(item) for item in list(execution_payload.get("shards") or []) if isinstance(item, dict)
+    ]
+    passed_shard_ids = [
+        str(shard.get("shard_id") or "").strip()
+        for shard in execution_shards
+        if str(shard.get("status") or "").strip() == "passed"
+    ]
+    failed_shard_ids = [
+        str(shard.get("shard_id") or "").strip()
+        for shard in execution_shards
+        if str(shard.get("status") or "").strip() == "failed"
+    ]
+    skipped_shard_ids = [
+        str(shard.get("shard_id") or "").strip()
+        for shard in execution_shards
+        if str(shard.get("status") or "").strip() == "skipped"
+    ]
+    error_code = str(error_payload.get("code") or "").strip()
+    error_message = str(error_payload.get("message") or "").strip()
+
+    root_problem_source = "status"
+    root_problem_signature = "status:unknown"
+    root_problem_summary = (
+        str(readiness_payload.get("summary") or "").strip()
+        or "Uploaded CI status is not yet classified."
+    )
+    retry_action = "continue_repair"
+    stop_recommended = False
+
+    if error_code:
+        root_problem_source = "gateway_error_code"
+        root_problem_signature = f"gateway_error_code:{error_code}"
+        root_problem_summary = error_message or error_code
+        if error_code == "uploaded_ci_missing_secret_capability":
+            retry_action = "configure_approved_secrets"
+            stop_recommended = True
+        elif any(
+            token in error_code
+            for token in ("auth", "billing", "quota", "rate", "spend", "suspend")
+        ):
+            retry_action = "resolve_external_blocker"
+            stop_recommended = True
+        else:
+            retry_action = "inspect_failed_shard"
+    elif missing_secret_capabilities:
+        root_problem_source = "missing_secret_capability"
+        root_problem_signature = (
+            "missing_secret_capability:" + ",".join(sorted(missing_secret_capabilities))
+        )
+        root_problem_summary = (
+            "Approved secret-backed execution is blocked until the required capabilities are "
+            "configured."
+        )
+        retry_action = "configure_approved_secrets"
+        stop_recommended = True
+    elif planning_gap_ids:
+        root_problem_source = "planning_gap"
+        root_problem_signature = f"planning_gap:{planning_gap_ids[0]}"
+        root_problem_summary = (
+            str(readiness_payload.get("summary") or "").strip()
+            or "Uploaded CI is missing execution-contract hints."
+        )
+        retry_action = "continue_repair"
+    elif coaching_rule_code:
+        root_problem_source = "coaching_rule_code"
+        root_problem_signature = f"coaching_rule_code:{coaching_rule_code}"
+        root_problem_summary = coaching_summary or coaching_rule_code
+        retry_action = "continue_repair"
+    elif diagnostic_code:
+        root_problem_source = "diagnostic_finding_code"
+        root_problem_signature = f"diagnostic_finding_code:{diagnostic_code}"
+        root_problem_summary = diagnostic_summary or diagnostic_code
+        retry_action = "inspect_failed_shard"
+    elif failed_shard_ids:
+        root_problem_source = "failed_shard"
+        root_problem_signature = f"failed_shard:{failed_shard_ids[0]}"
+        root_problem_summary = f"Uploaded CI failed in shard `{failed_shard_ids[0]}`."
+        retry_action = "inspect_failed_shard"
+    else:
+        normalized_status = str(status or readiness_payload.get("status") or "").strip().lower()
+        if normalized_status in {"ready", "planned"}:
+            root_problem_source = "status"
+            root_problem_signature = "status:ready_to_execute"
+            root_problem_summary = (
+                str(readiness_payload.get("summary") or "").strip()
+                or "Uploaded CI is ready to execute."
+            )
+            retry_action = "execute_uploaded_ci"
+        elif normalized_status in {"succeeded", "passed"}:
+            root_problem_source = "status"
+            root_problem_signature = "status:complete"
+            root_problem_summary = "Uploaded CI completed successfully."
+            retry_action = "complete"
+            stop_recommended = True
+
+    blocker_count = int(
+        readiness_payload.get("blocker_count")
+        or (
+            len(planning_gap_ids)
+            + len(missing_secret_capabilities)
+            + sum(1 for finding in finding_payload if bool(finding.get("blocking")))
+        )
+    )
+    progress_indicators = {
+        "blocking_finding_count": sum(
+            1 for finding in finding_payload if bool(finding.get("blocking"))
+        ),
+        "passed_shard_count": len([item for item in passed_shard_ids if item]),
+        "failed_shard_count": len([item for item in failed_shard_ids if item]),
+        "skipped_shard_count": len([item for item in skipped_shard_ids if item]),
+        "total_shard_count": len([item for item in execution_shards if item]),
+        "planning_gap_ids": planning_gap_ids,
+        "failed_shard_ids": [item for item in failed_shard_ids if item],
+        "missing_secret_capabilities": missing_secret_capabilities,
+        "external_blocker": stop_recommended
+        and retry_action in {"configure_approved_secrets", "resolve_external_blocker"},
+        "execution_phase": (
+            "planning"
+            if not execution_shards
+            else "completed"
+            if str(status or "").strip().lower() in {"succeeded", "failed", "blocked"}
+            else "running"
+        ),
+    }
+
+    return {
+        "source_kind": "uploaded_ci",
+        "root_problem_source": root_problem_source,
+        "root_problem_signature": root_problem_signature,
+        "root_problem_summary": root_problem_summary,
+        "blocker_count": blocker_count,
+        "progress_indicators": progress_indicators,
+        "retry_guidance": {
+            "action": retry_action,
+            "stop_recommended": stop_recommended,
+            "reason": root_problem_summary,
+        },
+    }
+
+
 def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
     normalized = SystemRun.model_validate(system_run)
     candidate_metadata = dict(normalized.candidate_set.metadata or {})
@@ -1253,6 +1495,18 @@ def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
                 },
             }
         )
+    retry_classifier = (
+        build_uploaded_ci_retry_classifier(
+            status=normalized.status,
+            readiness=normalized.readiness.model_dump(mode="json"),
+            coaching=coaching_payload,
+            diagnostic_findings=findings,
+            execution=dict(normalized.execution or {}),
+            error=dict(normalized.error or {}),
+        )
+        if str(candidate_metadata.get("source_kind") or "").strip() == "uploaded_ci"
+        else None
+    )
     return {
         "system_run_id": normalized.system_run_id,
         "system_id": normalized.system_id,
@@ -1286,6 +1540,7 @@ def build_system_run_report(system_run: dict[str, Any]) -> dict[str, Any]:
         "evidence": evidence,
         "all_evidence_references": evidence,
         "coaching": coaching_payload,
+        "retry_classifier": retry_classifier,
         "usage_summary": (
             normalized.usage_summary.model_dump(mode="json")
             if normalized.usage_summary is not None

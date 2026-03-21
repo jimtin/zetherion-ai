@@ -38,6 +38,7 @@ from zetherion_ai.owner_ci.models import (
     ServiceAdoptionCoaching,
 )
 from zetherion_ai.owner_ci.system_validation import (
+    build_uploaded_ci_retry_classifier,
     build_system_coaching,
     build_system_rollout_readiness,
     build_system_run_plan,
@@ -907,6 +908,7 @@ class AgentBootstrapSkill(Skill):
                 "agent_operation_incidents_list",
                 "agent_repo_discover",
                 "agent_repo_enroll",
+                "agent_uploaded_ci_submission_create",
                 "agent_workspace_upload_create",
                 "agent_workspace_upload_get",
                 "agent_execution_candidate_create",
@@ -930,6 +932,8 @@ class AgentBootstrapSkill(Skill):
                 "agent_knowledge_pack_upsert",
                 "agent_audit_list",
                 "agent_app_secret_capabilities_list",
+                "agent_app_secret_materials_put",
+                "agent_app_secret_materials_list",
                 "agent_app_secret_bindings_put",
                 "agent_app_secret_bindings_list",
                 "agent_secret_ref_upsert",
@@ -1018,6 +1022,7 @@ class AgentBootstrapSkill(Skill):
             "agent_operation_incidents_list": self._handle_operation_incidents_list,
             "agent_repo_discover": self._handle_repo_discover,
             "agent_repo_enroll": self._handle_repo_enroll,
+            "agent_uploaded_ci_submission_create": self._handle_uploaded_ci_submission_create,
             "agent_workspace_upload_create": self._handle_workspace_upload_create,
             "agent_workspace_upload_get": self._handle_workspace_upload_get,
             "agent_execution_candidate_create": self._handle_execution_candidate_create,
@@ -1041,6 +1046,8 @@ class AgentBootstrapSkill(Skill):
             "agent_knowledge_pack_upsert": self._handle_knowledge_pack_upsert,
             "agent_audit_list": self._handle_audit_list,
             "agent_app_secret_capabilities_list": self._handle_app_secret_capabilities_list,
+            "agent_app_secret_materials_put": self._handle_app_secret_materials_put,
+            "agent_app_secret_materials_list": self._handle_app_secret_materials_list,
             "agent_app_secret_bindings_put": self._handle_app_secret_bindings_put,
             "agent_app_secret_bindings_list": self._handle_app_secret_bindings_list,
             "agent_secret_ref_upsert": self._handle_secret_ref_upsert,
@@ -3340,7 +3347,10 @@ class AgentBootstrapSkill(Skill):
         return SkillResponse(
             request_id=request.id,
             message=f"Loaded system run report for `{system_run_id}`.",
-            data={"report": report},
+            data={
+                "report": report,
+                "retry_classifier": dict((report or {}).get("retry_classifier") or {}) or None,
+            },
         )
 
     async def _handle_system_run_graph_get(
@@ -3449,10 +3459,14 @@ class AgentBootstrapSkill(Skill):
             return SkillResponse.error_response(request.id, "system_run_id is required")
         coaching = await self._storage.get_system_run_coaching(owner_id, system_run_id)
         coaching = await self._prepare_coaching_payload(coaching)
+        report = await self._storage.get_system_run_report(owner_id, system_run_id)
         return SkillResponse(
             request_id=request.id,
             message=f"Loaded {len(coaching)} coaching item(s) for `{system_run_id}`.",
-            data={"coaching": coaching},
+            data={
+                "coaching": coaching,
+                "retry_classifier": dict((report or {}).get("retry_classifier") or {}) or None,
+            },
         )
 
     async def _handle_system_run_readiness_get(
@@ -3465,10 +3479,14 @@ class AgentBootstrapSkill(Skill):
         if not system_run_id:
             return SkillResponse.error_response(request.id, "system_run_id is required")
         readiness = await self._storage.get_system_run_readiness(owner_id, system_run_id)
+        report = await self._storage.get_system_run_report(owner_id, system_run_id)
         return SkillResponse(
             request_id=request.id,
             message=f"Loaded system run readiness for `{system_run_id}`.",
-            data={"readiness": readiness},
+            data={
+                "readiness": readiness,
+                "retry_classifier": dict((report or {}).get("retry_classifier") or {}) or None,
+            },
         )
 
     async def _handle_system_run_usage_get(
@@ -3502,10 +3520,15 @@ class AgentBootstrapSkill(Skill):
                 execution_candidate_id=execution_candidate_id,
             )
             coaching = await self._prepare_coaching_payload(coaching)
+            retry_classifier = await self._build_uploaded_ci_retry_classifier_for_candidate(
+                owner_id=_normalize_owner_id(request),
+                principal_id=principal_id,
+                execution_candidate_id=execution_candidate_id,
+            )
             return SkillResponse(
                 request_id=request.id,
                 message=f"Loaded {len(coaching)} uploaded CI coaching item(s).",
-                data={"coaching": coaching},
+                data={"coaching": coaching, "retry_classifier": retry_classifier},
             )
         candidate_set = self._system_candidate_set_from_request(request)
         coaching = build_system_coaching(
@@ -3532,10 +3555,15 @@ class AgentBootstrapSkill(Skill):
                 principal_id=str(request.context.get("principal_id") or "").strip() or None,
                 execution_candidate_id=execution_candidate_id,
             )
+            retry_classifier = await self._build_uploaded_ci_retry_classifier_for_candidate(
+                owner_id=_normalize_owner_id(request),
+                principal_id=str(request.context.get("principal_id") or "").strip() or None,
+                execution_candidate_id=execution_candidate_id,
+            )
             return SkillResponse(
                 request_id=request.id,
                 message="Loaded uploaded CI rollout readiness.",
-                data={"rollout_readiness": readiness},
+                data={"rollout_readiness": readiness, "retry_classifier": retry_classifier},
             )
         candidate_set = self._system_candidate_set_from_request(request)
         readiness = build_system_rollout_readiness(candidate_set=candidate_set)
@@ -4351,6 +4379,100 @@ class AgentBootstrapSkill(Skill):
     ) -> dict[str, Any]:
         return dict(candidate)
 
+    def _merge_candidate_manifest_override_hints(
+        self,
+        manifest: dict[str, Any],
+        override_hints: Any,
+    ) -> dict[str, Any]:
+        if not isinstance(override_hints, dict):
+            return manifest
+        merged = dict(manifest)
+        root_hints = dict(merged.get("hints") or {})
+        root_hints.update(
+            {
+                key: value
+                for key, value in dict(override_hints.get("hints") or {}).items()
+                if value is not None
+            }
+        )
+        merged["hints"] = root_hints
+        repo_hint_overrides = dict(override_hints.get("repo_hints") or {})
+        merged_repos: list[dict[str, Any]] = []
+        for repo in list(merged.get("repos") or []):
+            if not isinstance(repo, dict):
+                continue
+            repo_key = str(repo.get("repo_key") or "").strip()
+            override = dict(repo_hint_overrides.get(repo_key) or {})
+            repo_hints = dict(repo.get("hints") or {})
+            repo_hints.update({key: value for key, value in override.items() if value is not None})
+            repo_payload = dict(repo)
+            repo_payload["hints"] = repo_hints
+            merged_repos.append(repo_payload)
+        if merged_repos:
+            merged["repos"] = merged_repos
+        return merged
+
+    async def _serialize_app_secret_materials(
+        self,
+        owner_id: str,
+        app_id: str,
+        *,
+        capability_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        secret_refs = await self._storage.list_secret_refs(owner_id, active_only=False)
+        grouped: dict[str, dict[str, Any]] = {}
+        for secret_ref in secret_refs:
+            metadata = dict(secret_ref.get("metadata") or {})
+            if str(metadata.get("app_id") or "").strip() != app_id:
+                continue
+            secret_capability_id = str(metadata.get("capability_id") or "").strip()
+            env_name = str(metadata.get("env_name") or "").strip()
+            if not secret_capability_id or not env_name:
+                continue
+            if capability_id and secret_capability_id != capability_id:
+                continue
+            capability = _APPROVED_SECRET_CAPABILITIES.get(secret_capability_id)
+            if capability is None:
+                continue
+            entry = grouped.setdefault(
+                secret_capability_id,
+                {
+                    "capability_id": secret_capability_id,
+                    "title": str(capability.get("title") or secret_capability_id),
+                    "service_kind": str(capability.get("service_kind") or "").strip() or None,
+                    "materials": {},
+                },
+            )
+            entry["materials"][env_name] = {
+                "secret_ref_id": str(secret_ref.get("secret_ref_id") or "").strip(),
+                "purpose": str(secret_ref.get("purpose") or "").strip() or None,
+                "has_secret": bool(secret_ref.get("has_secret")),
+                "active": bool(secret_ref.get("active", True)),
+                "updated_at": str(secret_ref.get("updated_at") or "").strip() or None,
+            }
+        return [grouped[key] for key in sorted(grouped)]
+
+    async def _build_uploaded_ci_retry_classifier_for_candidate(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        execution_candidate_id: str,
+    ) -> dict[str, Any]:
+        _, _, _, _, _, readiness, coaching = await self._uploaded_ci_context_from_candidate(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            execution_candidate_id=execution_candidate_id,
+        )
+        return build_uploaded_ci_retry_classifier(
+            status=str(readiness.get("status") or "planned"),
+            readiness=readiness,
+            coaching=coaching,
+            diagnostic_findings=[],
+            execution={},
+            error={},
+        )
+
     async def _serialize_app_secret_bindings(
         self,
         owner_id: str,
@@ -4491,7 +4613,7 @@ class AgentBootstrapSkill(Skill):
             str(request.context.get("bundle_base64") or "")
         )
         manifest = self._normalize_candidate_manifest(
-            dict(request.context.get("candidate_manifest") or {})
+            request.context.get("candidate_manifest") or {}
         )
         validation = self._inspect_workspace_upload(archive_bytes, manifest)
         retention_hours = max(
@@ -4561,6 +4683,152 @@ class AgentBootstrapSkill(Skill):
             request_id=request.id,
             message=f"Loaded workspace upload `{upload_id}`.",
             data={"upload": self._sanitize_workspace_upload_for_response(upload)},
+        )
+
+    async def _handle_uploaded_ci_submission_create(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = _normalize_principal_id(request)
+        await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        manifest = self._normalize_candidate_manifest(
+            request.context.get("candidate_manifest") or {}
+        )
+        merged_manifest = self._merge_candidate_manifest_override_hints(
+            manifest,
+            request.context.get("override_hints"),
+        )
+
+        upload_response = await self._handle_workspace_upload_create(
+            SkillRequest(
+                id=request.id,
+                user_id=request.user_id,
+                intent="agent_workspace_upload_create",
+                message=request.message,
+                context={
+                    **dict(request.context),
+                    "app_id": app_id,
+                    "principal_id": principal_id,
+                    "candidate_manifest": merged_manifest,
+                },
+            ),
+            owner_id,
+            public_base_url,
+        )
+        if not upload_response.success:
+            return upload_response
+        upload = dict(upload_response.data.get("upload") or {})
+        upload_id = str(upload.get("upload_id") or "").strip()
+        if not upload_id:
+            return SkillResponse.error_response(request.id, "Workspace upload did not return upload_id")
+
+        candidate_response = await self._handle_execution_candidate_create(
+            SkillRequest(
+                id=request.id,
+                user_id=request.user_id,
+                intent="agent_execution_candidate_create",
+                message=request.message,
+                context={
+                    "owner_id": owner_id,
+                    "principal_id": principal_id,
+                    "app_id": app_id,
+                    "upload_id": upload_id,
+                },
+            ),
+            owner_id,
+            public_base_url,
+        )
+        if not candidate_response.success:
+            return candidate_response
+        candidate = dict(candidate_response.data.get("candidate") or {})
+        execution_candidate_id = str(candidate.get("candidate_id") or "").strip()
+        if not execution_candidate_id:
+            return SkillResponse.error_response(
+                request.id,
+                "Execution candidate did not return candidate_id",
+            )
+
+        create_response = await self._handle_system_run_create(
+            SkillRequest(
+                id=request.id,
+                user_id=request.user_id,
+                intent="agent_system_run_create",
+                message=request.message,
+                context={
+                    "owner_id": owner_id,
+                    "principal_id": principal_id,
+                    "execution_candidate_id": execution_candidate_id,
+                },
+            ),
+            owner_id,
+            public_base_url,
+        )
+        if not create_response.success:
+            return create_response
+        system_run = dict(create_response.data.get("system_run") or {})
+        system_run_id = str(system_run.get("system_run_id") or "").strip()
+        if not system_run_id:
+            return SkillResponse.error_response(request.id, "System run creation did not return system_run_id")
+
+        execute_response = await self._handle_system_run_execute(
+            SkillRequest(
+                id=request.id,
+                user_id=request.user_id,
+                intent="agent_system_run_execute",
+                message=request.message,
+                context={
+                    "owner_id": owner_id,
+                    "principal_id": principal_id,
+                    "system_run_id": system_run_id,
+                },
+            ),
+            owner_id,
+            public_base_url,
+        )
+        if not execute_response.success:
+            return execute_response
+
+        report = dict(execute_response.data.get("report") or {})
+        retry_classifier = dict(report.get("retry_classifier") or {})
+        readiness = dict(
+            report.get("readiness") or system_run.get("readiness") or create_response.data.get("readiness") or {}
+        )
+        coaching = list(report.get("coaching") or system_run.get("coaching") or [])
+        return SkillResponse(
+            request_id=request.id,
+            message=(
+                f"Created and executed uploaded CI submission for `{app_id}` as system run "
+                f"`{system_run_id}`."
+            ),
+            data={
+                "workspace_upload_id": upload_id,
+                "execution_candidate_id": execution_candidate_id,
+                "system_run_id": system_run_id,
+                "accepted_manifest": merged_manifest,
+                "planning_status": {
+                    "execution_plan_summary": str(
+                        report.get("execution_plan_summary")
+                        or ((candidate.get("candidate") or {}).get("execution_plan_summary") or "")
+                    ).strip()
+                    or None,
+                    "retry_classifier": retry_classifier or None,
+                },
+                "upload": upload,
+                "candidate": candidate,
+                "system_run": dict(execute_response.data.get("system_run") or system_run),
+                "report": report,
+                "readiness": readiness,
+                "coaching": coaching,
+            },
         )
 
     async def _handle_execution_candidate_create(
@@ -4726,6 +4994,103 @@ class AgentBootstrapSkill(Skill):
             request_id=request.id,
             message=f"Loaded {len(capabilities)} secret capabilities for `{app_id}`.",
             data={"secret_capabilities": capabilities},
+        )
+
+    async def _handle_app_secret_materials_put(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        capability_id = str(request.context.get("capability_id") or "").strip()
+        materials_input = dict(
+            request.context.get("materials") or request.context.get("secrets") or {}
+        )
+        if not app_id or not capability_id:
+            return SkillResponse.error_response(request.id, "app_id and capability_id are required")
+        capability = _APPROVED_SECRET_CAPABILITIES.get(capability_id)
+        if capability is None:
+            return SkillResponse.error_response(
+                request.id,
+                f"Unsupported secret capability `{capability_id}`",
+            )
+        if not materials_input:
+            return SkillResponse.error_response(
+                request.id,
+                "materials must include at least one approved secret payload",
+            )
+        principal_id = _normalize_principal_id(request)
+        await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        required_entries = {
+            str(entry.get("env_name") or "").strip(): dict(entry)
+            for entry in list(capability.get("required") or [])
+            if isinstance(entry, dict) and str(entry.get("env_name") or "").strip()
+        }
+        for env_name, material in materials_input.items():
+            required = required_entries.get(str(env_name).strip())
+            if required is None:
+                return SkillResponse.error_response(
+                    request.id,
+                    f"Unsupported secret material `{env_name}` for capability `{capability_id}`",
+                )
+            payload = dict(material or {})
+            secret_ref_id = str(payload.get("secret_ref_id") or "").strip()
+            if not secret_ref_id:
+                secret_ref_id = _slugify_repo_id(f"{app_id}-{capability_id}-{env_name}")
+            await self._storage.upsert_secret_ref(
+                owner_id,
+                secret_ref_id=secret_ref_id,
+                purpose=str(required.get("purpose") or env_name),
+                secret_value=str(payload.get("secret_value") or "").strip() or None,
+                metadata={
+                    "app_id": app_id,
+                    "capability_id": capability_id,
+                    "env_name": env_name,
+                    "managed_by": "app_secret_material",
+                },
+                active=bool(payload.get("active", True)),
+            )
+        secret_materials = await self._serialize_app_secret_materials(
+            owner_id,
+            app_id,
+            capability_id=capability_id,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Updated secret materials for `{capability_id}` on `{app_id}`.",
+            data={"secret_materials": secret_materials},
+        )
+
+    async def _handle_app_secret_materials_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = _normalize_principal_id(request)
+        await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        capability_id = str(request.context.get("capability_id") or "").strip() or None
+        secret_materials = await self._serialize_app_secret_materials(
+            owner_id,
+            app_id,
+            capability_id=capability_id,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(secret_materials)} secret material group(s) for `{app_id}`.",
+            data={"secret_materials": secret_materials},
         )
 
     async def _handle_app_secret_bindings_put(
